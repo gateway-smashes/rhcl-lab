@@ -1,0 +1,13 @@
+---
+- name: Skip observability role when disabled
+  ansible.builtin.meta: end_play
+  when: not (observability_enabled | bool)
+
+- name: Validate observability role action
+  ansible.builtin.assert:
+    that:
+      - (component_action | default(rhcl_action)) in ["install", "remove", "validate"]
+    fail_msg: "Requested observability action must be install, remove, or validate."
+
+- name: Run observability action
+  ansible.builtin.include_tasks: "{{ component_action | default(rhcl_action) }}.yml"

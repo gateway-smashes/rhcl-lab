@@ -1,0 +1,10 @@
+---
+- name: Check whether oc is available on the control host
+  ansible.builtin.command:
+    argv:
+      - oc
+      - version
+      - --client
+  register: oc_cli_check
+  changed_when: false
+  failed_when: oc_cli_check.rc != 0

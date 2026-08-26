@@ -1,0 +1,20 @@
+# Item 47 — OpenShift service serving CA for BackendTLSPolicy validation.
+#
+#   oc get configmap service-ca.crt -n openshift-config-managed \
+#     -o jsonpath='{.data.service-ca\.crt}' > /tmp/service-ca.crt
+#   oc create configmap backend-tls-service-ca -n rhcl-apps \
+#     --from-file=ca.crt=/tmp/service-ca.crt \
+#     --dry-run=client -o yaml | oc apply -f -
+#
+# apps-install creates this ConfigMap when APPS_BACKEND_TLS_ROUTE_ENABLED=true.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-tls-service-ca
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-backend-tls-poc
+    rhcl.poc/item: "47"
+data:
+  ca.crt: |
+    # REPLACE — run the oc commands in the header comment above.

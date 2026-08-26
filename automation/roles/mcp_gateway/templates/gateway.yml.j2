@@ -1,0 +1,33 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ mcp_gateway_gateway_name }}
+  namespace: {{ mcp_gateway_gateway_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-mcp-gateway
+    rhcl-lab/requirement: req059-mcp-operator
+    istio.io/rev: openshift-gateway
+  annotations:
+    # Istio OpenShift Gateway controller — same data plane as rhcl-apps-gateway.
+    networking.istio.io/service-type: {{ mcp_gateway_gateway_service_type }}
+spec:
+  gatewayClassName: {{ mcp_gateway_gatewayclass_name }}
+  listeners:
+    - name: {{ mcp_gateway_listener_name }}
+{% if mcp_gateway_listener_hostname_resolved | length > 0 %}
+      hostname: {{ mcp_gateway_listener_hostname_resolved | to_json }}
+{% endif %}
+      port: {{ mcp_gateway_port }}
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: {{ mcp_gateway_server_listener_name }}
+{% if mcp_gateway_server_listener_hostname_resolved | length > 0 %}
+      hostname: {{ mcp_gateway_server_listener_hostname_resolved | to_json }}
+{% endif %}
+      port: {{ mcp_gateway_port }}
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: All

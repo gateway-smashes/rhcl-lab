@@ -1,0 +1,31 @@
+# RHDH Operator — Red Hat Developer Hub 1.6 (tested pair with the Kuadrant
+# Backstage plugin v0.1.0 / Backstage 1.45.3).
+#
+# The operator is cluster-scoped via a dedicated namespace + OperatorGroup.
+# Channel `fast-1.6` pins the 1.6 line; move to a newer channel only when
+# Kuadrant certifies the plugin against it.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rhdh-operator
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: rhdh-operator
+  namespace: rhdh-operator
+spec:
+  targetNamespaces: []   # AllNamespaces install mode
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: rhdh
+  namespace: rhdh-operator
+spec:
+  channel: fast-1.6
+  installPlanApproval: Automatic
+  name: rhdh
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace

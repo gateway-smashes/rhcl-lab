@@ -1,0 +1,11 @@
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: {{ apps_backend_primary_name }}-http1
+  namespace: {{ apps_namespace }}
+spec:
+  host: {{ apps_backend_primary_name }}.{{ apps_namespace }}.svc.cluster.local
+  trafficPolicy:
+    connectionPool:
+      http:
+        h2UpgradePolicy: DO_NOT_UPGRADE

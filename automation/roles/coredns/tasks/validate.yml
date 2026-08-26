@@ -1,0 +1,80 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Query the CoreDNS namespace
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Namespace
+    name: "{{ coredns_namespace }}"
+  register: coredns_namespace_info
+  changed_when: false
+
+- name: Assert that the CoreDNS namespace exists
+  ansible.builtin.assert:
+    that:
+      - coredns_namespace_info.resources | length == 1
+    fail_msg: "Namespace {{ coredns_namespace }} does not exist."
+
+- name: Query the CoreDNS deployment
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ coredns_namespace }}"
+    name: "{{ coredns_deployment_name }}"
+  register: coredns_deployment
+  changed_when: false
+
+- name: Assert that the CoreDNS deployment is available
+  ansible.builtin.assert:
+    that:
+      - coredns_deployment.resources | length == 1
+      - (coredns_deployment.resources[0].status.availableReplicas | default(0)) | int >= 1
+    fail_msg: "Deployment {{ coredns_namespace }}/{{ coredns_deployment_name }} is missing or unavailable."
+
+- name: Query the CoreDNS service
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Service
+    namespace: "{{ coredns_namespace }}"
+    name: "{{ coredns_service_name }}"
+  register: coredns_service
+  changed_when: false
+
+- name: Assert that the CoreDNS service exists
+  ansible.builtin.assert:
+    that:
+      - coredns_service.resources | length == 1
+    fail_msg: "Service {{ coredns_namespace }}/{{ coredns_service_name }} does not exist."
+
+- name: Query the CoreDNS ConfigMap
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: ConfigMap
+    namespace: "{{ coredns_namespace }}"
+    name: "{{ coredns_configmap_name }}"
+  register: coredns_configmap
+  changed_when: false
+
+- name: Assert that the CoreDNS ConfigMap exists
+  ansible.builtin.assert:
+    that:
+      - coredns_configmap.resources | length == 1
+    fail_msg: "ConfigMap {{ coredns_namespace }}/{{ coredns_configmap_name }} does not exist."
+
+- name: Query CoreDNS pods
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ coredns_namespace }}"
+  register: coredns_pods
+  changed_when: false
+
+- name: Assert that CoreDNS pods are running
+  ansible.builtin.assert:
+    that:
+      - (coredns_pods.resources | selectattr('metadata.name', 'search', 'coredns') | list | length) >= 1
+      - (coredns_pods.resources | selectattr('metadata.name', 'search', 'coredns') | selectattr('status.phase', 'equalto', 'Running') | list | length) >= 1
+    fail_msg: "CoreDNS pods are missing or not running in namespace {{ coredns_namespace }}."

@@ -1,0 +1,10 @@
+---
+- name: Install MetalLB Operator
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  roles:
+    - role: metallb
+      vars:
+        rhcl_action: install

@@ -1,0 +1,49 @@
+# Public browser-facing MCP route on listener `mcp` → broker Service `mcp-gateway:8080`.
+#
+#   export RHCL_ZONE_ROOT_DOMAIN=sandbox2314.opentlc.com
+#   envsubst < tests/req059/manifests/44-mcp-custom-httproute.yaml | oc apply -f -
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mcp-gateway-route-custom
+  namespace: mcp-gateway
+  labels:
+    rhcl-lab/requirement: req059-mcp-operator
+spec:
+  parentRefs:
+    - name: rhcl-mcp-gateway
+      namespace: mcp-gateway
+      sectionName: mcp
+  hostnames:
+    - mcp-gateway.${RHCL_ZONE_ROOT_DOMAIN}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /mcp
+      filters:
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            add:
+              - name: Access-Control-Allow-Origin
+                value: "*"
+              - name: Access-Control-Allow-Methods
+                value: "GET, POST, PUT, DELETE, OPTIONS, HEAD"
+              - name: Access-Control-Allow-Headers
+                value: "Content-Type, Authorization, Accept, Origin, X-Requested-With, MCP-Session-Id, x-flow-trace-id, x-client-app, x-consumer-id"
+              - name: Access-Control-Expose-Headers
+                value: "MCP-Session-Id, mcp-session-id"
+              - name: Access-Control-Max-Age
+                value: "3600"
+              - name: Vary
+                value: "Origin"
+      backendRefs:
+        - name: mcp-gateway
+          port: 8080
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /.well-known/oauth-protected-resource
+      backendRefs:
+        - name: mcp-gateway
+          port: 8080

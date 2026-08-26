@@ -1,0 +1,43 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Assert the custom console deployment is available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ custom_console_namespace }}"
+    name: "{{ custom_console_name }}"
+  register: custom_console_deploy
+  changed_when: false
+
+- name: Assert the ConsolePlugin exists
+  kubernetes.core.k8s_info:
+    api_version: console.openshift.io/v1
+    kind: ConsolePlugin
+    name: "{{ custom_console_plugin_name }}"
+  register: custom_console_cp
+  changed_when: false
+
+- name: Query the OpenShift Console configuration
+  kubernetes.core.k8s_info:
+    api_version: operator.openshift.io/v1
+    kind: Console
+    name: cluster
+  register: custom_console_console
+  changed_when: false
+
+- name: Fail when the custom console is not fully wired
+  ansible.builtin.assert:
+    that:
+      - custom_console_deploy.resources | length == 1
+      - (custom_console_deploy.resources[0].status.availableReplicas | default(0)) >= 1
+      - custom_console_cp.resources | length == 1
+      - custom_console_plugin_name in (custom_console_console.resources[0].spec.plugins | default([]))
+    fail_msg: >-
+      Custom console not fully installed — check the Deployment availability,
+      the ConsolePlugin '{{ custom_console_plugin_name }}', and that it's listed in
+      console.operator/cluster spec.plugins.
+    success_msg: "Custom RHCL Console is deployed, registered, and enabled."

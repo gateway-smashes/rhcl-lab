@@ -1,0 +1,78 @@
+# EnvoyFilter — RHCL_ACCESS StdoutAccessLog on rhcl-apps-gateway.
+#
+# Two patches:
+#   1. HTTP_FILTER (Lua): parses usage.total_tokens from the JSON response body
+#      (same OpenAI-shaped field Kuadrant's WASM reads for TokenRateLimitPolicy)
+#      and stores it in dynamic metadata rhcl.ai/total_tokens. SSE/streaming
+#      responses are skipped (cannot buffer); the log then shows tokens=-.
+#   2. NETWORK_FILTER (MERGE on HttpConnectionManager, @type required for
+#      Gateway API): appends the RHCL_ACCESS StdoutAccessLog which reads the
+#      metadata via %DYNAMIC_METADATA(rhcl.ai:total_tokens)%.
+#
+# Pair with 34-telemetry-disable-default-access-log.yaml so only RHCL_ACCESS
+# lines are emitted (avoids duplicate Kubernetes timestamps dropping RHCL).
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: rhcl-gateway-access-log
+  namespace: openshift-ingress
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+    rhcl.redhat.com/requirement: req040
+spec:
+  workloadSelector:
+    labels:
+      gateway.networking.k8s.io/gateway-name: rhcl-apps-gateway
+  configPatches:
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+              subFilter:
+                name: envoy.filters.http.router
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.lua.rhcl_tokens
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+            default_source_code:
+              inline_string: |
+                function envoy_on_response(response_handle)
+                  local ct = response_handle:headers():get("content-type") or ""
+                  if not string.find(ct, "application/json", 1, true) then
+                    return
+                  end
+                  local body = response_handle:body()
+                  if body == nil or body:length() == 0 then
+                    return
+                  end
+                  local raw = body:getBytes(0, body:length())
+                  local total = string.match(raw, '"total_tokens"%s*:%s*(%d+)')
+                  if total then
+                    response_handle:streamInfo():dynamicMetadata():set(
+                      "rhcl.ai", "total_tokens", total)
+                  end
+                end
+    - applyTo: NETWORK_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+      patch:
+        operation: MERGE
+        value:
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+            access_log:
+              - name: envoy.access_loggers.stdout
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                  log_format:
+                    text_format: "RHCL_ACCESS start=%START_TIME% method=%REQ(:METHOD)% path=%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% status=%RESPONSE_CODE% consumer=%REQ(x-consumer-id)% tokens=%DYNAMIC_METADATA(rhcl.ai:total_tokens)% duration_ms=%DURATION% trace=%REQ(x-flow-trace-id)% route=%ROUTE_NAME%\n"

@@ -1,0 +1,20 @@
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: {{ apps_rhoai_frontend_image_name }}
+  namespace: {{ apps_namespace }}
+  labels:
+    app: {{ apps_rhoai_frontend_name }}
+    rhcl-lab/component: rhoai-assistant
+{% if apps_image_source == 'quay' %}
+spec:
+  tags:
+    - name: latest
+      from:
+        kind: DockerImage
+        name: {{ apps_rhoai_frontend_image_quay }}
+      referencePolicy:
+        type: Source
+      importPolicy:
+        scheduled: false
+{% endif %}

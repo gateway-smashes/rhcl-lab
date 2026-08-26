@@ -1,0 +1,20 @@
+[
+  {
+    "id": "qwen3-14b",
+    "displayName": "Qwen3 14B",
+    "provider": "rhoai",
+    "runtime": "litellm",
+    "origin": "EXTERNAL",
+    "endpoint": "https://maas-rhdp.apps.maas.redhatworkshops.io/v1",
+    "status": "UNKNOWN",
+    "priority": 10,
+    "contextWindow": 32768,
+    "streamingSupported": true,
+    "toolsSupported": false,
+    "visionSupported": false,
+    "fallbackModel": null,
+    "enabled": true,
+    "estimatedInputCost": 0.0,
+    "estimatedOutputCost": 0.0
+  }
+]

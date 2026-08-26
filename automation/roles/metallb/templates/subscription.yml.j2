@@ -1,0 +1,11 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: {{ metallb_subscription_name }}
+  namespace: {{ metallb_namespace }}
+spec:
+  channel: {{ metallb_channel }}
+  installPlanApproval: Automatic
+  name: {{ metallb_operator_name }}
+  source: {{ metallb_source }}
+  sourceNamespace: {{ metallb_source_namespace }}

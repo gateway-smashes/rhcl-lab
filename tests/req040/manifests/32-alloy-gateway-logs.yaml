@@ -1,0 +1,193 @@
+# Grafana Alloy — tails openshift-ingress/rhcl-apps-gateway istio-proxy logs
+# via the Kubernetes API (no hostPath; compatible with OpenShift restricted SCC).
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rhcl-alloy-gateway-logs
+  namespace: rhcl-logging
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+    rhcl.redhat.com/requirement: req040
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: rhcl-alloy-gateway-logs
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+    rhcl.redhat.com/requirement: req040
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: rhcl-alloy-gateway-logs
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+    rhcl.redhat.com/requirement: req040
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: rhcl-alloy-gateway-logs
+subjects:
+  - kind: ServiceAccount
+    name: rhcl-alloy-gateway-logs
+    namespace: rhcl-logging
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alloy-config
+  namespace: rhcl-logging
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+    rhcl.redhat.com/requirement: req040
+data:
+  config.alloy: |
+    logging {
+      level = "info"
+    }
+
+    discovery.kubernetes "pods" {
+      role = "pod"
+      namespaces {
+        names = ["openshift-ingress"]
+      }
+    }
+
+    discovery.relabel "gateway_pods" {
+      targets = discovery.kubernetes.pods.targets
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_gateway_networking_k8s_io_gateway_name"]
+        regex         = "rhcl-apps-gateway"
+        action        = "keep"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_container_name"]
+        regex         = "istio-proxy"
+        action        = "keep"
+      }
+
+      rule {
+        target_label = "job"
+        replacement  = "rhcl-gateway"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        target_label  = "namespace"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_name"]
+        target_label  = "pod"
+      }
+    }
+
+    loki.source.kubernetes "gateway" {
+      targets    = discovery.relabel.gateway_pods.output
+      forward_to = [loki.process.gateway.receiver]
+    }
+
+    loki.process "gateway" {
+      forward_to = [loki.write.local.receiver]
+
+      stage.drop {
+        expression          = "envoy wasm"
+        drop_counter_reason = "wasm_noise"
+      }
+
+      stage.drop {
+        expression          = "\tinfo\t|\twarning\t|\terror\t"
+        drop_counter_reason = "istio_noise"
+      }
+
+      stage.drop {
+        expression          = "^\\["
+        drop_counter_reason = "istio_access_log"
+      }
+    }
+
+    loki.write "local" {
+      endpoint {
+        url = "http://loki.rhcl-logging.svc.cluster.local:3100/loki/api/v1/push"
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rhcl-alloy-gateway-logs
+  namespace: rhcl-logging
+  labels:
+    app: rhcl-alloy-gateway-logs
+    app.kubernetes.io/part-of: rhcl-poc
+    rhcl.redhat.com/requirement: req040
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rhcl-alloy-gateway-logs
+  template:
+    metadata:
+      labels:
+        app: rhcl-alloy-gateway-logs
+        app.kubernetes.io/part-of: rhcl-poc
+        rhcl.redhat.com/requirement: req040
+    spec:
+      serviceAccountName: rhcl-alloy-gateway-logs
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: alloy
+          image: docker.io/grafana/alloy:v1.4.3
+          args:
+            - run
+            - /etc/alloy/config.alloy
+            - --storage.path=/var/lib/alloy
+            - --server.http.listen-addr=0.0.0.0:12345
+          ports:
+            - name: http
+              containerPort: 12345
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alloy
+            - name: data
+              mountPath: /var/lib/alloy
+      volumes:
+        - name: config
+          configMap:
+            name: alloy-config
+        - name: data
+          emptyDir: {}

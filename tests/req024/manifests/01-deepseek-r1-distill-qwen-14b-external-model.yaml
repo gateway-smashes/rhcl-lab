@@ -1,0 +1,37 @@
+# REQ 024 — Register LiteLLM (OpenAI-compatible) as OpenShift AI MaaS ExternalModel
+#
+# Prerequisite: create the LiteLLM credential Secret first (never commit the key):
+#   read -s LITELLM_API_KEY && echo
+#   oc create secret generic litellm-api-key \
+#     --from-literal=api-key="${LITELLM_API_KEY}" \
+#     --labels=inference.networking.k8s.io/bbr-managed=true \
+#     -n external-models
+#   unset LITELLM_API_KEY
+#
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: ExternalModel
+metadata:
+  name: deepseek-r1-distill-qwen-14b-external
+  namespace: external-models
+  labels:
+    app.kubernetes.io/part-of: rhcl-req024-external-model
+spec:
+  provider: openai
+  # FQDN only — no https://, no /v1, no /v1/chat/completions
+  endpoint: maas-rhdp.apps.maas.redhatworkshops.io
+  # Upstream model name sent to LiteLLM in the "model" field
+  targetModel: deepseek-r1-distill-qwen-14b
+  credentialRef:
+    name: litellm-api-key
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSModelRef
+metadata:
+  name: deepseek-r1-distill-qwen-14b-external
+  namespace: external-models
+  labels:
+    app.kubernetes.io/part-of: rhcl-req024-external-model
+spec:
+  modelRef:
+    kind: ExternalModel
+    name: deepseek-r1-distill-qwen-14b-external

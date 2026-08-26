@@ -1,0 +1,15 @@
+---
+- name: Validate custom_console role action
+  ansible.builtin.assert:
+    that:
+      - (component_action | default(custom_console_action | default('install'))) in ["install", "remove", "validate"]
+    fail_msg: "Requested custom_console action must be install, remove, or validate."
+
+- name: Skip custom console when disabled
+  ansible.builtin.debug:
+    msg: "Custom RHCL Console disabled (custom_console_enabled=false) — skipping."
+  when: not (custom_console_enabled | bool)
+
+- name: Run custom_console action
+  ansible.builtin.include_tasks: "{{ component_action | default(custom_console_action | default('install')) }}.yml"
+  when: custom_console_enabled | bool

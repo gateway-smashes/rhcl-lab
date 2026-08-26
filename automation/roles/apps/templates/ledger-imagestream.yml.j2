@@ -1,0 +1,30 @@
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: {{ apps_ledger_image_name }}
+  namespace: {{ apps_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-banking-poc
+    rhcl.poc/item: "38"
+{% if apps_image_source == 'quay' and (apps_ledger_image_quay | default('', true) | length) > 0 %}
+spec:
+  # Em apps_image_source == 'quay', a ImageStream importa a imagem externa.
+  # ledger-api é um microserviço novo — defina APPS_LEDGER_IMAGE_QUAY com a
+  # imagem publicada, ou use o modo de build (default) para construir via
+  # BuildConfig a partir de apps/backend/ledger-api.
+  tags:
+    - name: latest
+      from:
+        kind: DockerImage
+        name: {{ apps_ledger_image_quay }}
+      referencePolicy:
+        type: Source
+      importPolicy:
+        scheduled: false
+{% endif %}
+{# Nota: quando apps_image_source == 'quay' mas APPS_LEDGER_IMAGE_QUAY
+   ainda não foi publicada, a ImageStream é criada sem `spec.tags`.
+   O k8s aceita — o operador preenche depois via `oc tag` ou define
+   a env var e re-roda o playbook. O antigo formato renderizava
+   `name:` vazio e a API rejeitava com "must be of the form ..." (422). #}
+

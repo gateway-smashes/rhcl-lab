@@ -1,0 +1,29 @@
+# Corporate profile — Route OpenShift própria pro Keycloak, consumida pelo NGINX interno
+# do banco (label de ingress class). Terminação/porta vêm de rhbk_tls_mode:
+#   passthrough (default corporate): termination=passthrough -> port https (8443); o pod
+#     serve o cert internal corporate CA e o NGINX só repassa o TLS (precisa suportar SNI passthrough).
+#   edge: termination=edge -> port http (8080); TLS termina aqui e o Keycloak roda
+#     HTTP atrás do proxy (xforwarded). Reaproveita o label apps_openshift_route_*.
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ rhbk_hostname | replace('.', '-') }}
+  namespace: {{ rhbk_namespace }}
+{% if apps_openshift_route_ingress_class_label_key %}
+  labels:
+    {{ apps_openshift_route_ingress_class_label_key }}: {{ apps_openshift_route_ingress_class_label_value }}
+{% endif %}
+spec:
+  host: {{ rhbk_hostname }}
+  to:
+    kind: Service
+    name: {{ rhbk_route_target_service }}
+    weight: 100
+  port:
+    targetPort: {{ rhbk_route_target_port }}
+{% if rhbk_route_tls_termination %}
+  tls:
+    termination: {{ rhbk_route_tls_termination }}
+    insecureEdgeTerminationPolicy: Redirect
+{% endif %}
+  wildcardPolicy: None

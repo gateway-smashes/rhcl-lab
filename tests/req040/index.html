@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RHCL Lab - REQ 40 Token counting (RHCL-native)</title>
+<style>
+  :root {
+    --rh-red: #EE0000;
+    --rh-red-dark: #A30000;
+    --rh-black: #151515;
+    --rh-gray-100: #F5F5F5;
+    --rh-gray-200: #E0E0E0;
+    --rh-gray-700: #4D4D4D;
+    --rh-success: #3E8635;
+    --rh-warn: #F0AB00;
+    --rh-info: #2B9AF3;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: "Red Hat Display", "Red Hat Text", -apple-system, BlinkMacSystemFont,
+            "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    color: var(--rh-black);
+    background: var(--rh-gray-100);
+    line-height: 1.45;
+  }
+  header.rh-header {
+    background: var(--rh-black);
+    color: #fff;
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 4px solid var(--rh-red);
+  }
+  header.rh-header .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 0.5px;
+    color: inherit;
+    text-decoration: none;
+  }
+  header.rh-header a.logo:hover { color: var(--rh-red); }
+  header.rh-header .title {
+    margin-left: auto;
+    font-size: 14px;
+    color: #cfcfcf;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px;
+  }
+  h1 {
+    font-size: 28px;
+    margin: 0 0 4px 0;
+  }
+  h2 {
+    font-size: 16px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--rh-gray-700);
+    margin: 32px 0 12px 0;
+    border-bottom: 1px solid var(--rh-gray-200);
+    padding-bottom: 8px;
+  }
+  .subtitle {
+    color: var(--rh-gray-700);
+    margin: 0 0 24px 0;
+  }
+  .panel {
+    background: #fff;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 4px;
+    padding: 20px;
+  }
+  .panel + .panel { margin-top: 16px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .row + .row { margin-top: 12px; }
+  label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--rh-gray-700);
+    display: block;
+    margin-bottom: 4px;
+  }
+  input[type="text"], input[type="url"], input[type="number"], input[type="password"], textarea {
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 8px 10px;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 3px;
+    background: #fff;
+    color: var(--rh-black);
+    flex: 1;
+    min-width: 180px;
+  }
+  textarea {
+    min-height: 72px;
+    resize: vertical;
+  }
+  input:focus, textarea:focus {
+    outline: 2px solid var(--rh-red);
+    outline-offset: -1px;
+    border-color: var(--rh-red);
+  }
+  button {
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    padding: 8px 16px;
+    border: 1px solid var(--rh-red);
+    background: var(--rh-red);
+    color: #fff;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  button:hover { background: var(--rh-red-dark); border-color: var(--rh-red-dark); }
+  button.secondary {
+    background: #fff;
+    color: var(--rh-black);
+    border-color: var(--rh-gray-200);
+  }
+  button.secondary:hover { background: var(--rh-gray-100); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .log {
+    background: var(--rh-black);
+    color: #e8e8e8;
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 16px;
+    border-radius: 3px;
+    max-height: 480px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .log .entry { padding: 4px 0; border-bottom: 1px solid #2a2a2a; }
+  .log .entry:last-child { border-bottom: none; }
+  .log .ts { color: #6a6a6a; margin-right: 8px; }
+  .log .lvl { font-weight: 700; margin-right: 8px; }
+  .log .lvl.info    { color: var(--rh-info); }
+  .log .lvl.success { color: #6EC664; }
+  .log .lvl.warn    { color: var(--rh-warn); }
+  .log .lvl.error   { color: #F87171; }
+  pre.scenario, pre.cmd {
+    background: var(--rh-gray-100);
+    border: 1px solid var(--rh-gray-200);
+    padding: 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    overflow-x: auto;
+    color: var(--rh-black);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  th, td {
+    border-bottom: 1px solid var(--rh-gray-200);
+    padding: 8px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    color: var(--rh-gray-700);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  td.mono, th.mono { font-family: var(--mono); }
+  .num { text-align: right; font-family: var(--mono); }
+  .callout {
+    background: #FFF8E1;
+    border-left: 4px solid var(--rh-warn);
+    padding: 12px 16px;
+    font-size: 13px;
+    margin-top: 12px;
+  }
+  footer {
+    max-width: 1100px;
+    margin: 32px auto;
+    padding: 0 32px;
+    color: var(--rh-gray-700);
+    font-size: 12px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header class="rh-header">
+  <a class="logo" href="/" aria-label="Back to test catalog">
+    <span style="display:inline-block;width:14px;height:14px;background:var(--rh-red);border-radius:2px;"></span>
+    RHCL Lab
+  </a>
+  <div class="title">REQ 40</div>
+</header>
+
+<main>
+  <h1>Token counting per route (RHCL-native)</h1>
+  <p class="subtitle">
+    Generate OpenAI-shaped traffic and read <code>authorized_hits</code> /
+    <code>authorized_calls</code> / <code>limited_calls</code> from Kuadrant
+    Limitador (token totals per route). Per-consumer breakdown lives in Grafana
+    dashboard <strong>RHCL AI Consumer Access Logs</strong> (gateway access log →
+    Loki). No backend Micrometer metric is involved.
+  </p>
+
+  <h2>Scenario</h2>
+  <div class="panel">
+    <pre class="scenario">Browser test page
+    │  POST /api/v1/chat/completions    (x-consumer-id + mock_usage)
+    ▼
+https://banking-api-connectivity.&lt;RHCL_ZONE_ROOT_DOMAIN&gt;/api/v1/chat/completions
+    │  HTTPRoute banking-api-connectivity
+    │  Envoy access log (JSON) ──► stdout ──► Alloy ──► Loki ──► Grafana consumer dashboard
+    │  TokenRateLimitPolicy banking-api-chat-completions-token-limit (REQ 60)
+    │       add_n_to_counter(response.body.usage.total_tokens)
+    │       └─ authorized_hits{limitador_namespace="rhcl-apps/banking-api-connectivity"}
+    │       └─ authorized_calls{...}    /  limited_calls{...} on 429
+    ▼
+Service banking-api-v1:8080 (Quarkus mock)
+    ▲
+    │  ServiceMonitor rhcl-limitador-tokens (REQ 40)
+    ▼
+openshift-user-workload-monitoring/prometheus  ─►  thanos-querier  ─►  Grafana token dashboard</pre>
+    <div class="callout">
+      Limitador aggregates token totals per route (no consumer label). Loki
+      captures <code>x-consumer-id</code> at the gateway for per-consumer
+      <em>call counts</em> and HTTP 429. The default mock usage stays below
+      REQ 60's <code>300 tokens/min</code> budget; bump <em>Calls per consumer</em>
+      high enough and <code>limited_calls</code> / Loki <code>status=429</code>
+      lines will increase.
+    </div>
+  </div>
+
+  <h2>Controls</h2>
+  <div class="panel" id="controls">
+    <div class="row">
+      <div style="flex:2; min-width:320px;">
+        <label for="apiBase">Gateway API base (for traffic generation)</label>
+        <input id="apiBase" type="url" placeholder="https://banking-api-connectivity.example.com" />
+      </div>
+      <div style="flex:1; min-width:180px;">
+        <label for="calls">Calls per consumer</label>
+        <input id="calls" type="number" min="1" max="50" value="3" />
+      </div>
+    </div>
+    <div class="row">
+      <div style="flex:2; min-width:320px;">
+        <label for="consumers">Consumers (one per line, sent as x-consumer-id)</label>
+        <textarea id="consumers">alice-req40
+bob-req40
+charlie-req40</textarea>
+      </div>
+      <div style="flex:1; min-width:180px;">
+        <label for="promptTokens">Prompt tokens</label>
+        <input id="promptTokens" type="number" min="0" max="10000" value="20" />
+      </div>
+      <div style="flex:1; min-width:180px;">
+        <label for="completionTokens">Completion tokens</label>
+        <input id="completionTokens" type="number" min="0" max="10000" value="25" />
+      </div>
+    </div>
+    <div class="row">
+      <div style="flex:2; min-width:320px;">
+        <label for="thanosBase">Thanos Querier base (for /metrics scrape)</label>
+        <input id="thanosBase" type="url" placeholder="https://thanos-querier-openshift-monitoring.apps.example.com" />
+      </div>
+      <div style="flex:2; min-width:320px;">
+        <label for="thanosToken">Bearer token (oc create token prometheus-k8s -n openshift-monitoring)</label>
+        <input id="thanosToken" type="password" placeholder="eyJhbGciOiJSUzI1NiIs..." />
+      </div>
+    </div>
+    <div class="row">
+      <div style="flex:2; min-width:320px;">
+        <label for="limitadorNamespace">limitador_namespace filter</label>
+        <input id="limitadorNamespace" type="text" value="rhcl-apps/banking-api-connectivity" />
+      </div>
+      <div style="flex:1; min-width:180px;">
+        <label for="rangeSeconds">Window (seconds)</label>
+        <input id="rangeSeconds" type="number" min="60" max="86400" value="300" />
+      </div>
+    </div>
+    <div class="row">
+      <button id="runButton">Generate traffic</button>
+      <button class="secondary" id="scrapeButton">Pull Limitador metrics</button>
+      <button class="secondary" id="clearLogButton">Clear log</button>
+    </div>
+  </div>
+
+  <h2>Log</h2>
+  <div class="log" id="log" aria-live="polite"></div>
+
+  <h2>Summary</h2>
+  <div class="panel">
+    <div id="summary">No metrics pulled yet.</div>
+  </div>
+
+  <h2>Grafana dashboards</h2>
+  <div class="panel" id="grafanaPanel">
+    <p style="margin-top:0;">
+      After generating traffic, open Grafana and check both REQ 40 dashboards:
+    </p>
+    <ul>
+      <li><strong>RHCL AI Token Usage</strong> — Limitador <code>authorized_hits</code> (token totals per route).</li>
+      <li><strong>RHCL AI Consumer Access Logs</strong> — per <code>x-consumer-id</code> call counts from gateway access logs (Loki).</li>
+    </ul>
+    <div class="row">
+      <div style="flex:2; min-width:320px;">
+        <label for="grafanaBase">Grafana route</label>
+        <input id="grafanaBase" type="url" placeholder="https://rhcl-grafana-rhcl-grafana.apps.example.com" />
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px;">
+      <a id="grafanaTokensLink" href="#" target="_blank" rel="noopener">Open token dashboard</a>
+      &nbsp;|&nbsp;
+      <a id="grafanaConsumerLink" href="#" target="_blank" rel="noopener">Open consumer dashboard</a>
+    </div>
+  </div>
+
+  <h2>Reference commands</h2>
+  <div class="panel">
+    <p style="margin-top:0;">Direct port-forward to the Limitador metrics endpoint (no auth required):</p>
+    <pre class="cmd">oc -n kuadrant-system port-forward svc/limitador-limitador 18080:8080 &amp;
+curl -s http://localhost:18080/metrics | grep -E '^authorized_|^limited_'</pre>
+
+    <p>Same query via Thanos:</p>
+    <pre class="cmd">TOKEN=$(oc create token prometheus-k8s -n openshift-monitoring)
+THANOS=$(oc -n openshift-monitoring get route thanos-querier -o jsonpath='{.spec.host}')
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  "https://$THANOS/api/v1/query?query=authorized_hits" | jq .</pre>
+
+    <p>PromQL — Grafana dashboard <em>RHCL AI Token Usage</em>:</p>
+    <pre class="cmd">sum(increase(authorized_hits{limitador_namespace="rhcl-apps/banking-api-connectivity"}[$__range]))
+sum(rate (authorized_hits{limitador_namespace="rhcl-apps/banking-api-connectivity"}[5m])) * 60
+sum(increase(limited_calls   {limitador_namespace="rhcl-apps/banking-api-connectivity"}[$__range]))</pre>
+
+    <p>LogQL — Grafana dashboard <em>RHCL AI Consumer Access Logs</em>:</p>
+    <pre class="cmd">sum by (consumer) (count_over_time({job="rhcl-gateway"} |= "RHCL_ACCESS" | regexp `consumer=(?P&lt;consumer&gt;[^ ]+)` | regexp `path=(?P&lt;path&gt;[^ ]+)` | path="/api/v1/chat/completions" | consumer!="-" [1h]))
+sum by (consumer) (rate({job="rhcl-gateway"} |= "RHCL_ACCESS" | regexp `status=(?P&lt;status&gt;[^ ]+)` | status="429" [5m])) * 60
+{job="rhcl-gateway"} |= "RHCL_ACCESS" | regexp `consumer=(?P&lt;consumer&gt;[^ ]+)` | consumer="alice-req40"</pre>
+
+    <p>Confirm gateway RHCL_ACCESS logs (EnvoyFilter):</p>
+    <pre class="cmd">GW=$(oc -n openshift-ingress get pods -l gateway.networking.k8s.io/gateway-name=rhcl-apps-gateway -o jsonpath='{.items[0].metadata.name}')
+oc -n openshift-ingress logs "$GW" -c istio-proxy --tail=5 | grep RHCL_ACCESS</pre>
+  </div>
+</main>
+
+<footer>
+  RHCL Lab - Red Hat Connectivity Link proof-of-concept
+</footer>
+
+<script>
+  const logEl = document.getElementById("log");
+  const summaryEl = document.getElementById("summary");
+  const apiBaseEl = document.getElementById("apiBase");
+  const consumersEl = document.getElementById("consumers");
+  const callsEl = document.getElementById("calls");
+  const promptTokensEl = document.getElementById("promptTokens");
+  const completionTokensEl = document.getElementById("completionTokens");
+  const thanosBaseEl = document.getElementById("thanosBase");
+  const thanosTokenEl = document.getElementById("thanosToken");
+  const limitadorNsEl = document.getElementById("limitadorNamespace");
+  const rangeSecondsEl = document.getElementById("rangeSeconds");
+  const grafanaBaseEl = document.getElementById("grafanaBase");
+  const grafanaTokensLink = document.getElementById("grafanaTokensLink");
+  const grafanaConsumerLink = document.getElementById("grafanaConsumerLink");
+  const runButton = document.getElementById("runButton");
+  const scrapeButton = document.getElementById("scrapeButton");
+
+  function logLine(message, level = "info") {
+    const ts = new Date().toISOString().split("T")[1].replace("Z", "");
+    const entry = document.createElement("div");
+    entry.className = "entry";
+    entry.innerHTML =
+      `<span class="ts">${ts}</span>` +
+      `<span class="lvl ${level}">${level.toUpperCase()}</span>` +
+      escapeHtml(message);
+    logEl.appendChild(entry);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+  }
+
+  function normalizeBase(value) {
+    let raw = String(value || "").trim();
+    if (!raw) raw = window.location.host;
+    if (!/^https?:\/\//i.test(raw)) raw = `https://${raw}`;
+    return raw.replace(/\/+$/, "");
+  }
+
+  function apiBase()    { return apiBaseEl.value.trim().replace(/\/+$/, ""); }
+  function thanosBase() { return thanosBaseEl.value.trim().replace(/\/+$/, ""); }
+
+  function consumers() {
+    return consumersEl.value
+      .split(/[\n,]+/)
+      .map((v) => v.trim())
+      .filter(Boolean);
+  }
+
+  function numberValue(el, fallback) {
+    const n = Number.parseInt(el.value, 10);
+    return Number.isFinite(n) ? Math.max(0, n) : fallback;
+  }
+
+  async function loadEnv() {
+    try {
+      const r = await fetch("/env.json", { cache: "no-store" });
+      if (!r.ok) return {};
+      return await r.json();
+    } catch {
+      return {};
+    }
+  }
+
+  async function init() {
+    const env = await loadEnv();
+    const zone = env.rhclZoneRootDomain || "";
+    const host = env.apiHost ||
+      (zone ? `banking-api-connectivity.${zone}` : "");
+    apiBaseEl.value = normalizeBase(host);
+    const thanosHost = env.thanosQuerierHost ||
+      (zone ? `thanos-querier-openshift-monitoring.${zone}` : "");
+    if (thanosHost) thanosBaseEl.value = normalizeBase(thanosHost);
+    const grafanaHost = env.grafanaHost ||
+      (zone ? `rhcl-grafana-rhcl-grafana.${zone}` : "");
+    if (grafanaHost) grafanaBaseEl.value = normalizeBase(grafanaHost);
+    updateGrafanaLinks();
+    logLine(`apiBase=${apiBaseEl.value}`, "info");
+    if (thanosBaseEl.value) {
+      logLine(`thanosBase=${thanosBaseEl.value}`, "info");
+    } else {
+      logLine("thanosBase unset — fill it before pulling Limitador metrics.", "warn");
+    }
+    if (grafanaBaseEl.value) {
+      logLine(`grafanaBase=${grafanaBaseEl.value}`, "info");
+    }
+  }
+
+  function updateGrafanaLinks() {
+    const base = grafanaBaseEl.value.trim().replace(/\/+$/, "");
+    if (!base) return;
+    grafanaTokensLink.href =
+      `${base}/d/rhcl-ai-token-usage/rhcl-ai-token-usage?orgId=1`;
+    grafanaConsumerLink.href =
+      `${base}/d/rhcl-ai-consumer-logs/rhcl-ai-consumer-access-logs?orgId=1`;
+  }
+
+  grafanaBaseEl.addEventListener("input", updateGrafanaLinks);
+
+  document.getElementById("clearLogButton").addEventListener("click", () => {
+    logEl.innerHTML = "";
+  });
+  runButton.addEventListener("click", generateTraffic);
+  scrapeButton.addEventListener("click", scrapeLimitador);
+
+  async function generateTraffic() {
+    const base = apiBase();
+    const names = consumers();
+    const calls = Math.max(1, numberValue(callsEl, 1));
+    const promptTokens = numberValue(promptTokensEl, 20);
+    const completionTokens = numberValue(completionTokensEl, 25);
+    if (!base || !names.length) {
+      logLine("Set Gateway API base and at least one consumer.", "error");
+      return;
+    }
+    runButton.disabled = true;
+    scrapeButton.disabled = true;
+    try {
+      for (const consumer of names) {
+        for (let i = 1; i <= calls; i++) {
+          const trace = `req40-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+          const body = {
+            model: "banking-mock-gpt",
+            mock_usage: {
+              prompt_tokens: promptTokens,
+              completion_tokens: completionTokens
+            },
+            messages: [
+              {
+                role: "user",
+                content: `REQ 40 token accounting probe for ${consumer}`
+              }
+            ]
+          };
+          const r = await fetch(`${base}/api/v1/chat/completions`, {
+            method: "POST",
+            headers: {
+              "accept": "application/json",
+              "content-type": "application/json",
+              "x-consumer-id": consumer,
+              "x-flow-trace-id": trace
+            },
+            body: JSON.stringify(body)
+          });
+          const level = r.ok ? "success" : "warn";
+          logLine(`${consumer} call ${i}/${calls} -> HTTP ${r.status} trace=${trace}`, level);
+        }
+      }
+      logLine("Traffic burst complete. Wait ~30s then pull Limitador metrics and check Grafana consumer dashboard.", "info");
+    } catch (e) {
+      logLine(`Traffic failed: ${e}`, "error");
+    } finally {
+      runButton.disabled = false;
+      scrapeButton.disabled = false;
+    }
+  }
+
+  async function scrapeLimitador() {
+    const thanos = thanosBase();
+    const token = thanosTokenEl.value.trim();
+    const ns = limitadorNsEl.value.trim() || "rhcl-apps/banking-api-connectivity";
+    const range = Math.max(60, numberValue(rangeSecondsEl, 300));
+    if (!thanos || !token) {
+      logLine("Set Thanos base and Bearer token before pulling metrics.", "error");
+      return;
+    }
+    scrapeButton.disabled = true;
+    try {
+      const filter = `{limitador_namespace="${ns}"}`;
+      const queries = {
+        authorizedHits:  `sum(increase(authorized_hits${filter}[${range}s]))`,
+        authorizedCalls: `sum(increase(authorized_calls${filter}[${range}s]))`,
+        limitedCalls:    `sum(increase(limited_calls${filter}[${range}s]))`,
+        tokensPerMin:    `sum(rate(authorized_hits${filter}[5m])) * 60`,
+        callsPerMin:     `sum(rate(authorized_calls${filter}[5m])) * 60`
+      };
+      const results = {};
+      for (const [key, expr] of Object.entries(queries)) {
+        const url = `${thanos}/api/v1/query?query=${encodeURIComponent(expr)}`;
+        const r = await fetch(url, {
+          headers: { "Authorization": `Bearer ${token}` },
+          cache: "no-store"
+        });
+        if (!r.ok) {
+          logLine(`Thanos ${key} -> HTTP ${r.status}`, "error");
+          results[key] = null;
+          continue;
+        }
+        const body = await r.json();
+        const value = body?.data?.result?.[0]?.value?.[1];
+        results[key] = value != null ? Number.parseFloat(value) : 0;
+        logLine(`${key} = ${results[key]}`, "success");
+      }
+      renderSummary(results, ns, range);
+    } catch (e) {
+      logLine(`Pull failed: ${e}`, "error");
+    } finally {
+      scrapeButton.disabled = false;
+    }
+  }
+
+  function renderSummary(r, ns, rangeSeconds) {
+    const tokens = r.authorizedHits ?? 0;
+    const calls  = r.authorizedCalls ?? 0;
+    const limited = r.limitedCalls ?? 0;
+    const tokensPerMin = r.tokensPerMin ?? 0;
+    const callsPerMin  = r.callsPerMin ?? 0;
+    const avg = calls > 0 ? tokens / calls : 0;
+    summaryEl.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th class="num">Value</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="mono">authorized_hits</td>
+            <td class="num">${tokens.toFixed(0)}</td>
+            <td>tokens authorized for <code>${escapeHtml(ns)}</code> in the last ${rangeSeconds}s</td>
+          </tr>
+          <tr>
+            <td class="mono">authorized_calls</td>
+            <td class="num">${calls.toFixed(0)}</td>
+            <td>API calls authorized by Kuadrant for the same route</td>
+          </tr>
+          <tr>
+            <td class="mono">limited_calls</td>
+            <td class="num">${limited.toFixed(0)}</td>
+            <td>HTTP 429 returned by Limitador (REQ 60 budget exceeded)</td>
+          </tr>
+          <tr>
+            <td>Avg tokens / authorized call</td>
+            <td class="num">${avg.toFixed(1)}</td>
+            <td>authorized_hits / authorized_calls</td>
+          </tr>
+          <tr>
+            <td>Token rate</td>
+            <td class="num">${tokensPerMin.toFixed(1)}</td>
+            <td>tokens / minute (5m moving average)</td>
+          </tr>
+          <tr>
+            <td>Call rate</td>
+            <td class="num">${callsPerMin.toFixed(1)}</td>
+            <td>authorized calls / minute (5m moving average)</td>
+          </tr>
+        </tbody>
+      </table>`;
+  }
+
+  init();
+</script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ apps_rhoai_backend_name }}
+  namespace: {{ apps_namespace }}
+  labels:
+    app: {{ apps_rhoai_backend_name }}
+    rhcl-lab/component: rhoai-assistant
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ apps_rhoai_backend_name }}-external-models-reader
+  namespace: {{ apps_rhoai_external_models_namespace }}
+  labels:
+    app: {{ apps_rhoai_backend_name }}
+    rhcl-lab/component: rhoai-assistant
+rules:
+  - apiGroups: ["maas.opendatahub.io"]
+    resources: ["externalmodels", "maasmodelrefs"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ apps_rhoai_backend_name }}-external-models-reader
+  namespace: {{ apps_rhoai_external_models_namespace }}
+  labels:
+    app: {{ apps_rhoai_backend_name }}
+    rhcl-lab/component: rhoai-assistant
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ apps_rhoai_backend_name }}-external-models-reader
+subjects:
+  - kind: ServiceAccount
+    name: {{ apps_rhoai_backend_name }}
+    namespace: {{ apps_namespace }}

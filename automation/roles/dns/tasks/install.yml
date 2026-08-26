@@ -1,0 +1,75 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Validate DNS provider inputs
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_dns_inputs.yml
+
+# Same Route53 zone discovery flow as the letsencrypt role. When the user
+# leaves RHCL_DNS_AWS_ZONE_ID empty (the common case in fresh sandboxes) the
+# secret used to land without ZONE_ID_FILTER and the Kuadrant DNS operator
+# happily wrote A/CNAME records into whichever zone was lexically closest —
+# usually the sandbox parent, which intercepts DNSPolicy records ahead of the
+# delegated apps sub-zone. Resolve the gateway FQDN and pick the most-specific
+# publicly-delegated zone so DNSPolicy always lands in the right place.
+- name: Resolve the gateway connectivity FQDN for DNS provider zone selection
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: resolve_apps_connectivity_fqdn.yml
+  vars:
+    resolve_fqdn_result_var: rhcl_dns_gateway_fqdn
+  when: rhcl_dns_provider == "aws"
+
+- name: Auto-detect or validate the Route53 hosted zone for the gateway FQDN
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: auto_detect_route53_zone.yml
+  vars:
+    auto_route53_target_fqdn: "{{ rhcl_dns_gateway_fqdn }}"
+    auto_route53_aws_access_key_id: "{{ rhcl_dns_aws_access_key_id }}"
+    auto_route53_aws_secret_access_key: "{{ rhcl_dns_aws_secret_access_key }}"
+    auto_route53_aws_region: "{{ rhcl_dns_aws_region }}"
+    auto_route53_supplied_zone_id: "{{ rhcl_dns_aws_zone_id }}"
+    auto_route53_result_var: rhcl_dns_aws_zone_id_resolved
+    auto_route53_role_context: dns
+  when: rhcl_dns_provider == "aws"
+
+- name: Default the resolved Route53 hosted zone id to empty for non-AWS providers
+  ansible.builtin.set_fact:
+    rhcl_dns_aws_zone_id_resolved: ""
+  when: rhcl_dns_provider != "aws"
+
+- name: Ensure the DNS secret namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ rhcl_dns_namespace }}"
+    state: present
+
+- name: Create or update the DNS provider secret
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'secret-' ~ rhcl_dns_provider ~ '.yml.j2') | from_yaml }}"
+
+- name: Assert namespace alignment for the DNSPolicy
+  ansible.builtin.assert:
+    that:
+      - rhcl_dns_namespace == rhcl_dns_policy_target_gateway_namespace
+    fail_msg: >-
+      DNSPolicy creation requires the DNS provider secret and the target Gateway
+      to share the same namespace (Kuadrant policy targetRef and providerRefs are
+      local-namespace). Got rhcl_dns_namespace='{{ rhcl_dns_namespace }}' and
+      rhcl_dns_policy_target_gateway_namespace='{{ rhcl_dns_policy_target_gateway_namespace }}'.
+      Either set RHCL_DNS_NAMESPACE to match the gateway namespace, or set
+      RHCL_DNS_POLICY_ENABLED=false to skip DNSPolicy creation.
+  when: rhcl_dns_policy_enabled
+
+- name: Create or update the DNSPolicy
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'dnspolicy.yml.j2') | from_yaml }}"
+  when: rhcl_dns_policy_enabled

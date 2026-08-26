@@ -1,0 +1,10 @@
+---
+- name: Remove the custom RHCL Console (OpenShift dynamic plugin)
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  roles:
+    - role: custom_console
+      vars:
+        custom_console_action: remove

@@ -1,0 +1,105 @@
+---
+# Auto-detect (or validate) the public Route53 hosted zone for a given FQDN.
+#
+# Walks up the FQDN one label at a time and returns the hosted zone in the
+# active AWS account whose NS records match the public delegation — i.e. the
+# zone that will actually receive ACME / DNSPolicy traffic.
+#
+# Inputs (set by include_tasks vars:):
+#   auto_route53_target_fqdn       FQDN to resolve (e.g. gateway hostname)
+#   auto_route53_aws_access_key_id AWS access key id
+#   auto_route53_aws_secret_access_key AWS secret
+#   auto_route53_aws_region        AWS region (only used for client init)
+#   auto_route53_supplied_zone_id  Optional. When non-empty, validate that this
+#                                  id is the most-specific delegated zone for
+#                                  the target FQDN instead of discovering.
+#   auto_route53_result_var        Name of the fact to populate with the zone id
+#   auto_route53_role_context      Free-form label used in debug output so the
+#                                  caller (letsencrypt vs dns) is identifiable
+#
+# Output:
+#   The fact named in auto_route53_result_var is set to the resolved zone id.
+#   On validation failure the role aborts with the script's stderr.
+
+- name: Assert auto-detect inputs are present
+  ansible.builtin.assert:
+    that:
+      - auto_route53_target_fqdn | default('') | length > 0
+      - auto_route53_aws_access_key_id | default('') | length > 0
+      - auto_route53_aws_secret_access_key | default('') | length > 0
+      - auto_route53_result_var | default('') | length > 0
+    fail_msg: >-
+      auto_detect_route53_zone.yml requires auto_route53_target_fqdn,
+      auto_route53_aws_access_key_id, auto_route53_aws_secret_access_key and
+      auto_route53_result_var to be set by the caller.
+
+- name: "{{ auto_route53_role_context | default('route53') }} — validate supplied Route53 hosted zone id"
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ role_path }}/files/discover_route53_zone.py"
+      - --validate
+      - "{{ auto_route53_supplied_zone_id }}"
+      - "{{ auto_route53_target_fqdn }}"
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ auto_route53_aws_access_key_id }}"
+    AWS_SECRET_ACCESS_KEY: "{{ auto_route53_aws_secret_access_key }}"
+    AWS_DEFAULT_REGION: "{{ auto_route53_aws_region | default('us-east-1') }}"
+  register: auto_route53_validate
+  changed_when: false
+  failed_when: false
+  when: auto_route53_supplied_zone_id | default('') | length > 0
+
+- name: "{{ auto_route53_role_context | default('route53') }} — abort when supplied zone id is unusable"
+  ansible.builtin.fail:
+    msg: |
+      Supplied Route53 hosted zone id {{ auto_route53_supplied_zone_id }} is not
+      usable for target FQDN {{ auto_route53_target_fqdn }}.
+
+      {{ auto_route53_validate.stderr | default('') }}
+
+      Likely causes:
+        * The id belongs to a previous sandbox (clear it from ~/cluster-secrets.sh).
+        * The id points at a parent zone but a more-specific sub-zone is
+          delegated below it (the role auto-discovery picks the right one when
+          the override is empty).
+        * Credentials are stale (clear RHCL_DNS_AWS_ACCESS_KEY_ID/_SECRET so the
+          role can fall back to kube-system/aws-creds).
+  when:
+    - auto_route53_supplied_zone_id | default('') | length > 0
+    - auto_route53_validate.rc != 0
+
+- name: "{{ auto_route53_role_context | default('route53') }} — accept supplied Route53 hosted zone id"
+  ansible.builtin.set_fact:
+    "{{ auto_route53_result_var }}": "{{ auto_route53_supplied_zone_id }}"
+  when:
+    - auto_route53_supplied_zone_id | default('') | length > 0
+    - auto_route53_validate.rc == 0
+
+- name: "{{ auto_route53_role_context | default('route53') }} — discover Route53 hosted zone from FQDN"
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ role_path }}/files/discover_route53_zone.py"
+      - "{{ auto_route53_target_fqdn }}"
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ auto_route53_aws_access_key_id }}"
+    AWS_SECRET_ACCESS_KEY: "{{ auto_route53_aws_secret_access_key }}"
+    AWS_DEFAULT_REGION: "{{ auto_route53_aws_region | default('us-east-1') }}"
+  register: auto_route53_discover
+  changed_when: false
+  failed_when: auto_route53_discover.rc != 0
+  when: auto_route53_supplied_zone_id | default('') | length == 0
+
+- name: "{{ auto_route53_role_context | default('route53') }} — record discovered Route53 hosted zone id"
+  ansible.builtin.set_fact:
+    "{{ auto_route53_result_var }}": "{{ auto_route53_discover.stdout | trim }}"
+  when: auto_route53_supplied_zone_id | default('') | length == 0
+
+- name: "{{ auto_route53_role_context | default('route53') }} — report resolved Route53 hosted zone"
+  ansible.builtin.debug:
+    msg: >-
+      [{{ auto_route53_role_context | default('route53') }}]
+      target FQDN={{ auto_route53_target_fqdn }} →
+      Route53 hosted zone id={{ lookup('vars', auto_route53_result_var) }}
+      (source={{ 'explicit override' if (auto_route53_supplied_zone_id | default('') | length > 0) else 'auto-discovered' }})

@@ -1,0 +1,12 @@
+apiVersion: kuadrant.io/v1beta1
+kind: Kuadrant
+metadata:
+  name: {{ rhcl_instance_name }}
+  namespace: {{ rhcl_namespace }}
+spec:
+  components:
+    # Developer portal integration — sobe o developer-portal-controller e faz o
+    # APIProduct ser reconciliado (status: planos/auth/OIDC descobertos), que é o
+    # que a console customizada lê. Sem isso o APIProduct fica sem status.
+    developerPortal:
+      enabled: {{ rhcl_developer_portal_enabled | bool | string | lower }}

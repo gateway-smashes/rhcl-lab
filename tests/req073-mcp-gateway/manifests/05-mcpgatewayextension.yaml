@@ -1,0 +1,22 @@
+# Attaches the MCP broker/router to the gateway's "mcp" listener. The Helm chart
+# (0.7.x) creates the Gateway with gateway.create=true but does NOT create this
+# extension, so apply it explicitly. Once it goes Ready the controller
+# provisions the broker Deployment/Service ("mcp-gateway" in this namespace),
+# the /mcp HTTPRoute, and the ext_proc EnvoyFilter.
+#
+# Kept in gateway-system (same namespace as the Gateway) so no cross-namespace
+# ReferenceGrant is needed. publicHost is omitted — it defaults to the mcp
+# listener's hostname (set by the chart's gateway.publicHost).
+apiVersion: mcp.kuadrant.io/v1alpha1
+kind: MCPGatewayExtension
+metadata:
+  name: mcp-gateway
+  namespace: gateway-system
+spec:
+  httpRouteManagement: Enabled
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: mcp-gateway
+    namespace: gateway-system
+    sectionName: mcp

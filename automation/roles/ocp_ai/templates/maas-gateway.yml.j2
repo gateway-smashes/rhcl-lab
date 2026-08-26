@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ ocp_ai_maas_gateway_config_name }}
+  namespace: {{ ocp_ai_maas_gateway_namespace }}
+data:
+  service: |
+    metadata:
+      annotations:
+        service.beta.openshift.io/serving-cert-secret-name: "{{ ocp_ai_maas_gateway_tls_secret_name }}"
+    spec:
+      type: {{ ocp_ai_maas_gateway_service_type }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ ocp_ai_maas_gateway_name }}
+  namespace: {{ ocp_ai_maas_gateway_namespace }}
+  annotations:
+    opendatahub.io/managed: "false"
+    security.opendatahub.io/authorino-tls-bootstrap: "true"
+  labels:
+    istio.io/rev: openshift-gateway
+spec:
+  gatewayClassName: {{ ocp_ai_maas_gatewayclass_name }}
+  infrastructure:
+    parametersRef:
+      group: ""
+      kind: ConfigMap
+      name: {{ ocp_ai_maas_gateway_config_name }}
+  listeners:
+    - name: https
+      port: 443
+      protocol: HTTPS
+{% if ocp_ai_maas_gateway_hostname | length > 0 %}
+      hostname: {{ ocp_ai_maas_gateway_hostname | quote }}
+{% endif %}
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values:
+                  - {{ ocp_ai_maas_gateway_namespace }}
+                  - {{ ocp_ai_applications_namespace }}
+{% for ns in ocp_ai_maas_gateway_extra_route_namespaces %}
+                  - {{ ns }}
+{% endfor %}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: {{ ocp_ai_maas_gateway_tls_secret_name }}

@@ -1,0 +1,7 @@
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: {{ cert_manager_operatorgroup_name }}
+  namespace: {{ cert_manager_namespace }}
+spec:
+  targetNamespaces: []

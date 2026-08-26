@@ -1,0 +1,107 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Remove the connectivity TLS policy
+  kubernetes.core.k8s:
+    api_version: kuadrant.io/v1
+    kind: TLSPolicy
+    namespace: "{{ apps_connectivity_gateway_namespace }}"
+    name: "{{ apps_connectivity_tls_policy_name }}"
+    state: absent
+  when: apps_connectivity_link_enabled
+
+- name: Remove the connectivity TLS secret
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Secret
+    namespace: "{{ apps_connectivity_gateway_namespace }}"
+    name: "{{ apps_connectivity_tls_secret_name }}"
+    state: absent
+  when: apps_connectivity_link_enabled
+
+- name: Remove the connectivity gateway
+  kubernetes.core.k8s:
+    api_version: gateway.networking.k8s.io/v1
+    kind: Gateway
+    namespace: "{{ apps_connectivity_gateway_namespace }}"
+    name: "{{ apps_connectivity_gateway_name }}"
+    state: absent
+  when: apps_connectivity_link_enabled
+
+- name: Remove the connectivity gateway deny-all auth policy
+  kubernetes.core.k8s:
+    api_version: kuadrant.io/v1
+    kind: AuthPolicy
+    namespace: "{{ apps_connectivity_gateway_namespace }}"
+    name: "{{ apps_connectivity_gateway_deny_all_policy_name }}"
+    state: absent
+  when: apps_connectivity_link_enabled
+
+- name: Remove the connectivity per-tier RateLimitPolicy
+  kubernetes.core.k8s:
+    api_version: kuadrant.io/v1
+    kind: RateLimitPolicy
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_connectivity_planpolicy_name }}"
+    state: absent
+  when:
+    - apps_connectivity_link_enabled
+
+# Legacy: clean up the PlanPolicy that older installs created at this name
+# before we switched to a hand-rolled RLP (see kuadrant-operator#2047).
+- name: Remove the legacy connectivity PlanPolicy (if any)
+  kubernetes.core.k8s:
+    api_version: extensions.kuadrant.io/v1alpha1
+    kind: PlanPolicy
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_connectivity_planpolicy_name }}"
+    state: absent
+  when:
+    - apps_connectivity_link_enabled
+
+- name: Remove the connectivity APIProduct
+  kubernetes.core.k8s:
+    api_version: devportal.kuadrant.io/v1alpha1
+    kind: APIProduct
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_connectivity_apiproduct_name }}"
+    state: absent
+  when:
+    - apps_connectivity_link_enabled
+
+- name: Remove tiered connectivity API key secrets
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Secret
+    namespace: "{{ apps_connectivity_apikey_secret_namespace }}"
+    name: "{{ item.name }}"
+    state: absent
+  loop: "{{ apps_connectivity_apikeys }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_apikey_enabled
+
+- name: Remove legacy single-key connectivity API key secret
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Secret
+    namespace: "{{ apps_connectivity_apikey_secret_namespace }}"
+    name: "{{ apps_connectivity_apikey_secret_name }}"
+    state: absent
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_apikey_enabled
+
+- name: Remove the applications namespace and all contained resources
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ apps_namespace }}"
+    state: absent
+    wait: true
+    wait_timeout: 600

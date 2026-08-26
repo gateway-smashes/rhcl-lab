@@ -1,0 +1,189 @@
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: {{ apps_connectivity_route_name }}-apikey
+  namespace: {{ apps_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-banking-poc
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: {{ apps_connectivity_route_name }}
+{% set jwt_path = apps_connectivity_jwt_protected_path %}
+{% set apikey_exclude = "!request.path.startsWith('/api/echo') && !request.path.startsWith('/api/lb-test') && !request.path.startsWith('/ws') && !request.path.startsWith('/api/v1/chat/completions') && !request.path.startsWith('/api/ai')" %}
+{% if apps_connectivity_jwt_enabled %}{% set apikey_exclude = apikey_exclude ~ " && !request.path.startsWith('" ~ jwt_path ~ "')" %}{% endif %}
+{# Paths extras públicos (apps_connectivity_anonymous_extra_paths) — ex. item de Timeout. #}
+{% set ns_anon = namespace(excl=[], incl=[]) %}
+{% for p in apps_connectivity_anonymous_extra_paths %}
+{% set _ = ns_anon.excl.append("!request.path.startsWith('" ~ p ~ "')") %}
+{% set _ = ns_anon.incl.append("request.path.startsWith('" ~ p ~ "')") %}
+{% endfor %}
+{% set extra_anon_exclude = ns_anon.excl | join(' && ') %}
+{% set extra_anon_include = ns_anon.incl | join(' || ') %}
+{% if extra_anon_exclude | length > 0 %}{% set apikey_exclude = apikey_exclude ~ ' && ' ~ extra_anon_exclude %}{% endif %}
+  rules:
+    authentication:
+      cors-preflight:
+        when:
+          - predicate: "request.method == 'OPTIONS'"
+        anonymous: {}
+      public-echo:
+        when:
+          - predicate: "request.path.startsWith('/api/echo') || request.path.startsWith('/api/lb-test')"
+        anonymous: {}
+      # WebSocket upgrade não permite custom header no browser (Sec-WebSocket-*
+      # only). Sem essa regra anônima, o handshake bate 401 e o cliente fecha
+      # com code=1006 antes de qualquer mensagem. Se quiser autenticação no WS,
+      # faça no protocolo (token na primeira mensagem), não no handshake HTTP.
+      public-ws:
+        when:
+          - predicate: "request.path.startsWith('/ws')"
+        anonymous: {}
+      ai-mock:
+        when:
+          - predicate: "request.path.startsWith('/api/v1/models') || request.path.startsWith('/api/v1/chat/completions') || request.path.startsWith('/api/v1/completions') || request.path.startsWith('/api/v1/embeddings') || request.path.startsWith('/api/v1/responses')"
+        anonymous: {}
+{% if apps_connectivity_anonymous_extra_paths | length > 0 %}
+      # Paths extras liberados sem auth via apps_connectivity_anonymous_extra_paths
+      # (ex.: endpoints do item de Timeout — /api/v1/timeout etc.).
+      public-extra:
+        when:
+          - predicate: "{{ extra_anon_include }}"
+        anonymous: {}
+{% endif %}
+{% if apps_connectivity_jwt_enabled %}
+      # Item 71 — OIDC/JWT validado NO GATEWAY. Authorino busca o JWKS do realm
+      # em issuerUrl e verifica assinatura, iss, aud e exp a cada request. O
+      # backend não valida nada — só recebe as claims já verificadas (headers).
+      jwt-keycloak:
+        when:
+          - predicate: "request.path.startsWith('{{ jwt_path }}')"
+          # OPTIONS (CORS preflight) é tratado pela regra anônima cors-preflight.
+          - predicate: "request.method != 'OPTIONS'"
+        jwt:
+          issuerUrl: {{ apps_connectivity_jwt_issuer_url }}
+{% endif %}
+      api-key-header:
+        when:
+          - predicate: "request.method != 'OPTIONS'"
+          - predicate: "!request.path.startsWith('/api/echo') && !request.path.startsWith('/api/lb-test') && !request.path.startsWith('/ws') && !request.path.startsWith('/api/v1/models') && !request.path.startsWith('/api/v1/chat/completions') && !request.path.startsWith('/api/v1/completions') && !request.path.startsWith('/api/v1/embeddings') && !request.path.startsWith('/api/v1/responses')"
+        apiKey:
+          allNamespaces: {{ apps_connectivity_apikey_all_namespaces | bool | string | lower }}
+          selector:
+            matchLabels:
+              authorino.kuadrant.io/managed-by: authorino
+              app: {{ apps_connectivity_apikey_secret_name }}
+        credentials:
+          customHeader:
+            name: api-key
+      api-key-query:
+        when:
+          - predicate: "request.method != 'OPTIONS'"
+          - predicate: "!request.path.startsWith('/api/echo') && !request.path.startsWith('/api/lb-test') && !request.path.startsWith('/ws') && !request.path.startsWith('/api/v1/models') && !request.path.startsWith('/api/v1/chat/completions') && !request.path.startsWith('/api/v1/completions') && !request.path.startsWith('/api/v1/embeddings') && !request.path.startsWith('/api/v1/responses')"
+        apiKey:
+          allNamespaces: {{ apps_connectivity_apikey_all_namespaces | bool | string | lower }}
+          selector:
+            matchLabels:
+              authorino.kuadrant.io/managed-by: authorino
+              app: {{ apps_connectivity_apikey_secret_name }}
+        credentials:
+          queryString:
+            name: api-key
+
+    # Req 19 — Motor de políticas com expressões personalizadas (CEL).
+    # Regras de authorization ativadas por condições específicas; não
+    # impactam os demais testes nem o fluxo normal da API.
+    authorization:
+      # Transferências em modo strict exigem header x-idempotency-key.
+      # Ativada APENAS quando x-cel-strict: true está presente.
+      cel-transfer-idempotency:
+        when:
+          - predicate: "request.method == 'POST' && request.path.startsWith('/api/v1/transfers')"
+          - predicate: "request.headers['x-cel-strict'] == 'true'"
+        opa:
+          rego: |
+            allow {
+              key := input.context.request.http.headers["x-idempotency-key"]
+              key != ""
+            }
+
+      # Bloqueia requests com user-agent contendo 'bot' em paths protegidos.
+      cel-bot-blocking:
+        when:
+          - predicate: "request.headers['user-agent'].contains('bot')"
+          - predicate: "request.method != 'OPTIONS'"
+          - predicate: "!request.path.startsWith('/api/echo') && !request.path.startsWith('/api/lb-test'){% if extra_anon_exclude | length > 0 %} && {{ extra_anon_exclude }}{% endif %}"
+        opa:
+          rego: |
+            allow = false
+{% if apps_connectivity_jwt_enabled and apps_connectivity_jwt_required_role | length > 0 %}
+      # Item 71 — authZ no gateway: exige a realm role configurada no token.
+      # OPTIONS é excluído senão o preflight (identidade anônima, sem roles)
+      # tomaria 403 e o navegador bloquearia o CORS.
+      jwt-require-role:
+        when:
+          - predicate: "request.path.startsWith('{{ jwt_path }}')"
+          - predicate: "request.method != 'OPTIONS'"
+        patternMatching:
+          patterns:
+            - selector: auth.identity.realm_access.roles
+              operator: incl
+              value: {{ apps_connectivity_jwt_required_role }}
+{% endif %}
+
+    response:
+      success:
+        filters:
+          identity:
+            json:
+              properties:
+                userid:
+                  selector: auth.identity.metadata.annotations.secret\.kuadrant\.io/user-id
+                plan-id:
+                  selector: auth.identity.metadata.annotations.secret\.kuadrant\.io/plan-id
+        headers:
+          # x-consumer-id: identidade canônica do consumer encaminhada ao
+          # backend e, mais importante, capturada pelo Telemetry CR do req041
+          # como label `request_headers_x_consumer_id` no `istio_requests_total`.
+          # Esse label alimenta o card "Top consumers" no custom-rhcl-console
+          # plugin (API Product detail). Para api-key, `auth.identity.metadata.name`
+          # resolve pro nome do Secret (ex.: `banking-api-key-alice`). Para JWT,
+          # o selector retorna null e o Authorino omite o header — a chamada
+          # cai no bucket "unknown" do ranking (aceitável; podemos adicionar
+          # selector alternativo para JWT no futuro se houver demanda).
+          # Header emitido SEMPRE (fora do if jwt_enabled) porque ele depende
+          # de api-key, não de JWT.
+          x-consumer-id:
+            plain:
+              selector: auth.identity.metadata.name
+{% if apps_connectivity_jwt_enabled %}
+          # Item 71 — encaminha as claims verificadas pelo gateway pro backend
+          # como x-jwt-*. Selectors nulos (ex.: requests apikey/anonymous) são
+          # omitidos, então não afetam os outros fluxos.
+          x-jwt-sub:
+            plain:
+              selector: auth.identity.sub
+          x-jwt-preferred-username:
+            plain:
+              selector: auth.identity.preferred_username
+          x-jwt-email:
+            plain:
+              selector: auth.identity.email
+          x-jwt-roles:
+            plain:
+              selector: auth.identity.realm_access.roles
+          x-jwt-scope:
+            plain:
+              selector: auth.identity.scope
+          x-jwt-aud:
+            plain:
+              selector: auth.identity.aud
+          x-jwt-iss:
+            plain:
+              selector: auth.identity.iss
+{% endif %}
+      unauthorized:
+        code: 403
+        message:
+          value: "Forbidden: request denied by the gateway authorization policy"

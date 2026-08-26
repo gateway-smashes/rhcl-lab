@@ -1,0 +1,22 @@
+# Manifest demo standalone — DNSPolicy com load balancing por peso.
+# Aplique este manifest em CADA cluster que compartilha o mesmo hostname,
+# variando apenas o weight para refletir a fatia que aquele cluster deve
+# receber via DNS.
+#
+# Cluster A → weight: 80
+# Cluster B → weight: 20
+apiVersion: kuadrant.io/v1
+kind: DNSPolicy
+metadata:
+  name: rhcl-apps-gateway-dns
+  namespace: openshift-ingress
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: rhcl-apps-gateway
+  providerRefs:
+    - name: rhcl-dns-credentials
+  loadBalancing:
+    defaultGeo: true
+    weight: 80

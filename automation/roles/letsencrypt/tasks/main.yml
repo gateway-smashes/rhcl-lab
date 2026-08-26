@@ -1,0 +1,18 @@
+---
+- name: Skip letsencrypt role when disabled
+  # Set LETSENCRYPT_ENABLED=false in environments that use a different cert
+  # source — e.g. the corporate lab terminates TLS with an internally-issued cert
+  # (APPS_CONNECTIVITY_TLS_ISSUER_NAME=self-signed or a corporate ClusterIssuer),
+  # and Let's Encrypt issuance over the public ACME endpoint isn't reachable
+  # from the air-gapped network anyway.
+  ansible.builtin.meta: end_play
+  when: not (letsencrypt_enabled | bool)
+
+- name: Validate letsencrypt role action
+  ansible.builtin.assert:
+    that:
+      - (component_action | default(rhcl_action)) in ["install", "remove", "validate"]
+    fail_msg: "Requested letsencrypt action must be install, remove, or validate."
+
+- name: Run letsencrypt action
+  ansible.builtin.include_tasks: "{{ component_action | default(rhcl_action) }}.yml"

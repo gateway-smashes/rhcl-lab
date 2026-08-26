@@ -1,0 +1,62 @@
+# Echo backend for req051 — returns the full request (all headers, incl. the
+# x-forwarded-client-cert / XFCC injected by the gateway) as JSON, so you can
+# inspect exactly what reaches the backend. The req051 HTTPRoutes point here
+# instead of banking-api-v1.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: echo-server
+  namespace: req051-gateway
+  labels:
+    app: echo-server
+    app.kubernetes.io/part-of: rhcl-req051-mtls
+    rhcl-lab/requirement: req051-056-mtls
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: echo-server
+  template:
+    metadata:
+      labels:
+        app: echo-server
+    spec:
+      containers:
+        - name: echo
+          image: ealen/echo-server:0.9.2
+          env:
+            - name: PORT
+              value: "8080"
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: echo-server
+  namespace: req051-gateway
+  labels:
+    app: echo-server
+    app.kubernetes.io/part-of: rhcl-req051-mtls
+spec:
+  selector:
+    app: echo-server
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

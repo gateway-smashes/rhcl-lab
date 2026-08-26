@@ -1,0 +1,7 @@
+# Namespace for MCP Gateway operator, dedicated Gateway, and all req 59 CRs.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mcp-gateway
+  labels:
+    rhcl-lab/requirement: req059-mcp-operator

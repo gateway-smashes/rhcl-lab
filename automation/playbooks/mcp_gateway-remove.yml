@@ -1,0 +1,10 @@
+---
+- name: Remove MCP gateway
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  roles:
+    - role: mcp_gateway
+      vars:
+        rhcl_action: remove

@@ -1,0 +1,44 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Query the OpenShift Console configuration
+  kubernetes.core.k8s_info:
+    api_version: operator.openshift.io/v1
+    kind: Console
+    name: cluster
+  register: custom_console_console
+  changed_when: false
+
+- name: Disable the custom console plugin (remove from Console operator)
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: operator.openshift.io/v1
+      kind: Console
+      metadata:
+        name: cluster
+      spec:
+        plugins: >-
+          {{
+            custom_console_console.resources[0].spec.plugins | default([])
+            | reject('equalto', custom_console_plugin_name) | list
+          }}
+  when: custom_console_console.resources | default([]) | length == 1
+
+- name: Remove the ConsolePlugin
+  kubernetes.core.k8s:
+    api_version: console.openshift.io/v1
+    kind: ConsolePlugin
+    name: "{{ custom_console_plugin_name }}"
+    state: absent
+
+- name: Remove the custom console namespace (Deployment + Service)
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ custom_console_namespace }}"
+    state: absent
+  when: custom_console_remove_namespace | bool

@@ -1,0 +1,9 @@
+---
+- name: Validate rhcl role action
+  ansible.builtin.assert:
+    that:
+      - (component_action | default(rhcl_action)) in ["install", "remove", "validate"]
+    fail_msg: "Requested rhcl action must be install, remove, or validate."
+
+- name: Run rhcl action
+  ansible.builtin.include_tasks: "{{ component_action | default(rhcl_action) }}.yml"

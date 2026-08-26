@@ -1,0 +1,93 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dynamic-plugins-rhdh
+  namespace: {{ developer_hub_namespace }}
+data:
+  dynamic-plugins.yaml: |
+    includes:
+      - dynamic-plugins.default.yaml
+    plugins:
+      - package: "{{ developer_hub_plugin_backend }}@{{ developer_hub_plugin_version }}"
+        disabled: false
+        integrity: {{ developer_hub_backend_integrity }}
+      - package: "{{ developer_hub_plugin_frontend }}@{{ developer_hub_plugin_version }}"
+        disabled: false
+        integrity: {{ developer_hub_frontend_integrity }}
+        pluginConfig:
+          dynamicPlugins:
+            frontend:
+              # This key MUST equal the installed package's own scalprum.name,
+              # or nothing registers and every /kuadrant page 404s. It is not
+              # stable across releases — 0.3.0 used internal.plugin-kuadrant,
+              # 0.4.0-dev3 used kuadrant.kuadrant-backstage-plugin-frontend,
+              # and 0.4.0 went back to internal.plugin-kuadrant. So it is read
+              # from the package metadata rather than written down here.
+              {{ developer_hub_frontend_scalprum_name }}:
+                apiFactories:
+                  - importName: kuadrantApiFactory
+                appIcons:
+                  - name: kuadrantIcon
+                    importName: KuadrantIcon
+                  - name: apiIcon
+                    importName: ApiIcon
+                  - name: keyIcon
+                    importName: KeyIcon
+                  - name: approvalIcon
+                    importName: ApprovalIcon
+                menuItems:
+                  kuadrant.api-products:
+                    parent: kuadrant
+                  kuadrant.my-api-keys:
+                    parent: kuadrant
+                  kuadrant.api-key-approval:
+                    parent: kuadrant
+                dynamicRoutes:
+                  - path: /kuadrant
+                    importName: KuadrantPage
+                    menuItem:
+                      icon: kuadrantIcon
+                      text: Kuadrant
+                  - path: /kuadrant/api-products
+                    importName: ApiProductsPage
+                    menuItem:
+                      icon: apiIcon
+                      text: API Products
+                  - path: /kuadrant/my-api-keys
+                    importName: MyApiKeysPage
+                    menuItem:
+                      icon: keyIcon
+                      text: My API Keys
+                  - path: /kuadrant/api-key-approval
+                    importName: ApiKeyApprovalPage
+                    menuItem:
+                      icon: approvalIcon
+                      text: API Key Approval
+                  - path: /kuadrant/api-products/:namespace/:name
+                    importName: ApiProductDetailPage
+                  - path: /kuadrant/api-keys/:namespace/:name
+                    importName: ApiKeyDetailPage
+                entityTabs:
+                  - mountPoint: entity.page.api-keys
+                    path: /api-keys
+                    title: API Keys
+                  - mountPoint: entity.page.api-product-info
+                    path: /api-product-info
+                    title: API Product Info
+                mountPoints:
+                  - mountPoint: entity.page.api-keys/cards
+                    importName: EntityKuadrantApiKeyManagementTab
+                    config:
+                      layout:
+                        gridColumn: "1 / -1"
+                      if:
+                        allOf:
+                          - isKind: api
+                  - mountPoint: entity.page.api-product-info/cards
+                    importName: EntityKuadrantApiProductInfoContent
+                    config:
+                      layout:
+                        gridColumn: "1 / -1"
+                      if:
+                        allOf:
+                          - isKind: api

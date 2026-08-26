@@ -1,0 +1,9 @@
+apiVersion: operator.openshift.io/v1
+kind: LeaderWorkerSetOperator
+metadata:
+  name: cluster
+  namespace: {{ ocp_ai_lws_namespace }}
+spec:
+  logLevel: Normal
+  managementState: Managed
+  operatorLogLevel: Normal

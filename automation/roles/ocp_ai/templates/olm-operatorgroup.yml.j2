@@ -1,0 +1,13 @@
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: {{ olm_operatorgroup_name }}
+  namespace: {{ olm_namespace }}
+spec:
+  upgradeStrategy: Default
+{% if olm_target_namespaces is defined and (olm_target_namespaces | length > 0) %}
+  targetNamespaces:
+{% for ns in olm_target_namespaces %}
+    - {{ ns }}
+{% endfor %}
+{% endif %}

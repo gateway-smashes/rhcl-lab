@@ -1,0 +1,26 @@
+apiVersion: nvidia.com/v1
+kind: ClusterPolicy
+metadata:
+  name: {{ ocp_ai_gpu_clusterpolicy_name }}
+spec:
+  operator:
+    defaultRuntime: crio
+    use_ocp_driver_toolkit: true
+  driver:
+    enabled: true
+  toolkit:
+    enabled: true
+  devicePlugin:
+    enabled: true
+  dcgm:
+    enabled: true
+  dcgmExporter:
+    enabled: true
+  gfd:
+    enabled: true
+  nodeStatusExporter:
+    enabled: true
+  daemonsets:
+    updateStrategy: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: "1"

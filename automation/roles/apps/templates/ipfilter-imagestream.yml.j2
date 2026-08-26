@@ -1,0 +1,17 @@
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: {{ apps_ipfilter_image_name }}
+  namespace: {{ apps_namespace }}
+{% if apps_image_source == 'quay' %}
+spec:
+  tags:
+    - name: latest
+      from:
+        kind: DockerImage
+        name: {{ apps_ipfilter_image_quay }}
+      referencePolicy:
+        type: Source
+      importPolicy:
+        scheduled: false
+{% endif %}

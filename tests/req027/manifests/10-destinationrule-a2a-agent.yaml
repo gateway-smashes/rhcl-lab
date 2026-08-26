@@ -1,0 +1,24 @@
+# REQ 027 — TLS origination to the external A2A agent.
+#
+# Envoy originates a new TLS 1.2/1.3 connection to the external host on :443.
+# mode: SIMPLE = standard server-auth TLS (no client cert). Switch to
+# MUTUAL and add a clientCertificate/privateKey/caCertificates if the external
+# product requires mTLS.
+#
+# Apply:
+#   export A2A_AGENT_HOST=my-agent.example.azurewebsites.net
+#   envsubst < tests/req027/manifests/10-destinationrule-a2a-agent.yaml | oc apply -f -
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: a2a-external-agent
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-a2a-poc
+    rhcl.poc/item: "27"
+spec:
+  host: "${A2A_AGENT_HOST}"
+  trafficPolicy:
+    tls:
+      mode: SIMPLE
+      sni: "${A2A_AGENT_HOST}"

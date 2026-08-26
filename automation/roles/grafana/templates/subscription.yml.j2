@@ -1,0 +1,11 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: {{ grafana_subscription_name }}
+  namespace: {{ grafana_operator_namespace }}
+spec:
+  channel: {{ grafana_channel }}
+  installPlanApproval: Automatic
+  name: {{ grafana_operator_name }}
+  source: {{ grafana_source }}
+  sourceNamespace: {{ grafana_source_namespace }}

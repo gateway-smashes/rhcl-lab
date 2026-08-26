@@ -1,0 +1,16 @@
+apiVersion: kuadrant.io/v1
+kind: TLSPolicy
+metadata:
+  name: demo-tls-policy
+  namespace: item-15-gateway
+  labels:
+    app.kubernetes.io/part-of: connectivity-link-rbac-demo
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: demo-gateway
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: self-signed

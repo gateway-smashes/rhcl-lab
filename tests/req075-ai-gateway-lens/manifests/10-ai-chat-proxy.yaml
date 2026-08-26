@@ -1,0 +1,75 @@
+# TLS front so the console plugin proxy can reach the AI chat endpoint through
+# the RHCL gateway (auth + TokenRateLimitPolicy apply). nginx terminates TLS
+# with an OpenShift serving cert (the console proxy requires HTTPS), and
+# forwards to the gateway's HTTP listener with the banking-api-connectivity
+# Host header so the HTTPRoute matches.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-chat-tls-nginx
+  namespace: rhcl-apps
+data:
+  nginx.conf: |
+    worker_processes 1;
+    error_log /dev/stderr warn;
+    pid /tmp/nginx.pid;
+    events { worker_connections 1024; }
+    http {
+      client_body_temp_path /tmp/cb; proxy_temp_path /tmp/px;
+      fastcgi_temp_path /tmp/fc; uwsgi_temp_path /tmp/uw; scgi_temp_path /tmp/sc;
+      server {
+        listen 8443 ssl;
+        ssl_certificate     /etc/tls/tls.crt;
+        ssl_certificate_key /etc/tls/tls.key;
+        location / {
+          proxy_pass http://rhcl-apps-gateway-istio.openshift-ingress.svc.cluster.local:80;
+          proxy_set_header Host AI_ROUTE_HOST_CHANGE_ME;
+          proxy_http_version 1.1;
+          proxy_set_header Connection "";
+          proxy_read_timeout 120s;
+        }
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-chat-tls
+  namespace: rhcl-apps
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: ai-chat-tls-cert
+  labels: { app: ai-chat-tls }
+spec:
+  selector: { app: ai-chat-tls }
+  ports:
+    - name: https
+      port: 8443
+      targetPort: 8443
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-chat-tls
+  namespace: rhcl-apps
+  labels: { app: ai-chat-tls }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: ai-chat-tls } }
+  template:
+    metadata:
+      labels: { app: ai-chat-tls }
+    spec:
+      containers:
+        - name: nginx
+          image: nginxinc/nginx-unprivileged:stable-alpine
+          ports: [{ containerPort: 8443 }]
+          volumeMounts:
+            - { name: nginx-conf, mountPath: /etc/nginx/nginx.conf, subPath: nginx.conf }
+            - { name: tls, mountPath: /etc/tls, readOnly: true }
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { cpu: 100m, memory: 128Mi }
+      volumes:
+        - { name: nginx-conf, configMap: { name: ai-chat-tls-nginx } }
+        - { name: tls, secret: { secretName: ai-chat-tls-cert } }

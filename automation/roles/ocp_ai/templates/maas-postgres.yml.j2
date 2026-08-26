@@ -1,0 +1,101 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ ocp_ai_maas_db_secret_name }}
+  namespace: {{ ocp_ai_applications_namespace }}
+  labels:
+    app.kubernetes.io/name: {{ ocp_ai_maas_db_deployment_name }}
+    app.kubernetes.io/part-of: rhcl-ocp-ai
+type: Opaque
+stringData:
+  username: {{ ocp_ai_maas_db_username }}
+  password: {{ ocp_ai_maas_db_password }}
+  database: {{ ocp_ai_maas_db_name }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ ocp_ai_maas_db_deployment_name }}
+  namespace: {{ ocp_ai_applications_namespace }}
+  labels:
+    app.kubernetes.io/name: {{ ocp_ai_maas_db_deployment_name }}
+    app.kubernetes.io/part-of: rhcl-ocp-ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ ocp_ai_maas_db_deployment_name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ ocp_ai_maas_db_deployment_name }}
+        app.kubernetes.io/part-of: rhcl-ocp-ai
+    spec:
+      containers:
+        - name: postgres
+          image: {{ ocp_ai_maas_db_image }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POSTGRESQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ ocp_ai_maas_db_secret_name }}
+                  key: username
+            - name: POSTGRESQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ ocp_ai_maas_db_secret_name }}
+                  key: password
+            - name: POSTGRESQL_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ ocp_ai_maas_db_secret_name }}
+                  key: database
+          ports:
+            - containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -h 127.0.0.1 -p 5432"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/pgsql/data
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ ocp_ai_maas_db_service_name }}
+  namespace: {{ ocp_ai_applications_namespace }}
+  labels:
+    app.kubernetes.io/name: {{ ocp_ai_maas_db_deployment_name }}
+    app.kubernetes.io/part-of: rhcl-ocp-ai
+spec:
+  selector:
+    app.kubernetes.io/name: {{ ocp_ai_maas_db_deployment_name }}
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ ocp_ai_maas_db_config_secret_name }}
+  namespace: {{ ocp_ai_applications_namespace }}
+  labels:
+    app.kubernetes.io/name: maas
+    app.kubernetes.io/part-of: rhcl-ocp-ai
+type: Opaque
+stringData:
+  DB_CONNECTION_URL: {{ ocp_ai_maas_db_connection_url | to_json }}

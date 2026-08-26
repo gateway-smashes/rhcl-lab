@@ -1,0 +1,219 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: rhcl-api-consumers
+  namespace: rhcl-grafana
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+    rhcl.redhat.com/requirement: req041
+spec:
+  resyncPeriod: 5m
+  instanceSelector:
+    matchLabels:
+      dashboards: rhcl
+  json: >
+    {
+      "id": null,
+      "uid": "rhcl-api-consumers",
+      "title": "RHCL API Consumers",
+      "description": "Req 41 — per-consumer API traffic, latency, and status code breakdown. Consumer identity from x-consumer-id header.",
+      "tags": ["rhcl", "kuadrant", "api", "req041", "consumers"],
+      "timezone": "browser",
+      "editable": true,
+      "graphTooltip": 1,
+      "refresh": "30s",
+      "time": { "from": "now-1h", "to": "now" },
+      "schemaVersion": 38,
+      "version": 1,
+      "templating": {
+        "list": [
+          {
+            "current": {},
+            "hide": 0,
+            "includeAll": false,
+            "multi": false,
+            "name": "datasource",
+            "options": [],
+            "query": "prometheus",
+            "refresh": 1,
+            "type": "datasource"
+          },
+          {
+            "current": {},
+            "datasource": { "type": "prometheus", "uid": "${datasource}" },
+            "definition": "label_values(istio_requests_total, source_workload)",
+            "hide": 0,
+            "includeAll": true,
+            "multi": true,
+            "name": "gateway",
+            "label": "Gateway",
+            "query": { "query": "label_values(istio_requests_total, source_workload)", "refId": "gateway" },
+            "refresh": 2,
+            "sort": 1,
+            "type": "query"
+          },
+          {
+            "current": {},
+            "datasource": { "type": "prometheus", "uid": "${datasource}" },
+            "definition": "label_values(istio_requests_total{source_workload=~\"$gateway\"}, route_name)",
+            "hide": 0,
+            "includeAll": true,
+            "allValue": ".*",
+            "multi": false,
+            "name": "httproute",
+            "label": "HTTPRoute",
+            "query": { "query": "label_values(istio_requests_total{source_workload=~\"$gateway\"}, route_name)", "refId": "httproute" },
+            "refresh": 2,
+            "regex": "/(.+)\\.[0-9]+/",
+            "sort": 1,
+            "type": "query"
+          },
+          {
+            "current": {},
+            "datasource": { "type": "prometheus", "uid": "${datasource}" },
+            "definition": "label_values(istio_requests_total{source_workload=~\"$gateway\"}, request_headers_x_consumer_id)",
+            "hide": 0,
+            "includeAll": true,
+            "multi": true,
+            "name": "consumer",
+            "label": "Consumer",
+            "query": { "query": "label_values(istio_requests_total{source_workload=~\"$gateway\"}, request_headers_x_consumer_id)", "refId": "consumer" },
+            "refresh": 2,
+            "sort": 1,
+            "type": "query"
+          }
+        ]
+      },
+      "panels": [
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+          "id": 200,
+          "title": "Consumer Traffic",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 15, "showPoints": "never" }, "unit": "reqps" }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+          "id": 10,
+          "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max", "lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "title": "Traffic by Consumer",
+          "type": "timeseries",
+          "targets": [
+            { "expr": "sum by (request_headers_x_consumer_id)(rate(istio_requests_total{source_workload=~\"$gateway\", route_name=~\"$httproute..+\", request_headers_x_consumer_id=~\"$consumer\", request_headers_x_consumer_id!=\"\"}[5m]))", "legendFormat": "{{request_headers_x_consumer_id}}", "refId": "A" }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }, "unit": "ms" }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+          "id": 11,
+          "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max", "lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "title": "Latency P95 by Consumer",
+          "type": "timeseries",
+          "targets": [
+            { "expr": "histogram_quantile(0.95, sum by (le, request_headers_x_consumer_id)(rate(istio_request_duration_milliseconds_bucket{source_workload=~\"$gateway\", route_name=~\"$httproute..+\", request_headers_x_consumer_id=~\"$consumer\", request_headers_x_consumer_id!=\"\"}[5m])))", "legendFormat": "{{request_headers_x_consumer_id}}", "refId": "A" }
+          ]
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+          "id": 201,
+          "title": "Consumer Status Codes",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 25, "stacking": { "mode": "normal" }, "showPoints": "never" }, "unit": "reqps" }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+          "id": 12,
+          "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "title": "Status Codes by Consumer",
+          "type": "timeseries",
+          "targets": [
+            { "expr": "sum by (request_headers_x_consumer_id, response_code)(rate(istio_requests_total{source_workload=~\"$gateway\", route_name=~\"$httproute..+\", request_headers_x_consumer_id=~\"$consumer\", request_headers_x_consumer_id!=\"\"}[5m]))", "legendFormat": "{{request_headers_x_consumer_id}} — {{response_code}}", "refId": "A" }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              { "matcher": { "id": "byName", "options": "Consumer" }, "properties": [{ "id": "custom.width", "value": 250 }] },
+              { "matcher": { "id": "byName", "options": "Total Requests" }, "properties": [{ "id": "unit", "value": "short" }, { "id": "decimals", "value": 0 }] },
+              { "matcher": { "id": "byName", "options": "Req/s (avg)" }, "properties": [{ "id": "unit", "value": "reqps" }, { "id": "decimals", "value": 2 }] },
+              { "matcher": { "id": "byName", "options": "P95 Latency (ms)" }, "properties": [{ "id": "unit", "value": "ms" }, { "id": "decimals", "value": 1 }] },
+              { "matcher": { "id": "byName", "options": "Error %" }, "properties": [{ "id": "unit", "value": "percent" }, { "id": "decimals", "value": 2 }] }
+            ]
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+          "id": 13,
+          "options": { "showHeader": true, "sortBy": [{ "displayName": "Total Requests", "desc": true }] },
+          "title": "Top Consumers",
+          "type": "table",
+          "transformations": [
+            { "id": "merge" },
+            { "id": "organize", "options": { "renameByName": { "request_headers_x_consumer_id": "Consumer", "Value #A": "Total Requests", "Value #B": "Req/s (avg)", "Value #C": "P95 Latency (ms)", "Value #D": "Error %" } } }
+          ],
+          "targets": [
+            { "expr": "topk(20, sum by (request_headers_x_consumer_id)(increase(istio_requests_total{source_workload=~\"$gateway\", route_name=~\"$httproute..+\", request_headers_x_consumer_id!=\"\"}[$__range])))", "refId": "A", "instant": true, "format": "table" },
+            { "expr": "sum by (request_headers_x_consumer_id)(rate(istio_requests_total{source_workload=~\"$gateway\", route_name=~\"$httproute..+\", request_headers_x_consumer_id!=\"\"}[5m]))", "refId": "B", "instant": true, "format": "table" },
+            { "expr": "histogram_quantile(0.95, sum by (le, request_headers_x_consumer_id)(rate(istio_request_duration_milliseconds_bucket{source_workload=~\"$gateway\", route_name=~\"$httproute..+\", request_headers_x_consumer_id!=\"\"}[5m])))", "refId": "C", "instant": true, "format": "table" },
+            { "expr": "100 * sum by (request_headers_x_consumer_id)(rate(istio_requests_total{source_workload=~\"$gateway\", route_name=~\"$httproute..+\", request_headers_x_consumer_id!=\"\", response_code=~\"5..\"}[5m])) / sum by (request_headers_x_consumer_id)(rate(istio_requests_total{source_workload=~\"$gateway\", route_name=~\"$httproute..+\", request_headers_x_consumer_id!=\"\"}[5m]))", "refId": "D", "instant": true, "format": "table" }
+          ]
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+          "id": 202,
+          "title": "Consumer × HTTPRoute",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 15, "showPoints": "never" }, "unit": "reqps" }
+          },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 19 },
+          "id": 14,
+          "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max", "lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "title": "Traffic by Consumer × HTTPRoute",
+          "type": "timeseries",
+          "targets": [
+            { "expr": "sum by (request_headers_x_consumer_id, httproute)(label_replace(rate(istio_requests_total{source_workload=~\"$gateway\", route_name=~\"$httproute..+\", request_headers_x_consumer_id=~\"$consumer\", request_headers_x_consumer_id!=\"\", route_name!=\"\"}[5m]), \"httproute\", \"$1\", \"route_name\", \"(.+).[0-9]+\"))", "legendFormat": "{{request_headers_x_consumer_id}} → {{httproute}}", "refId": "A" }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              { "matcher": { "id": "byName", "options": "Consumer" }, "properties": [{ "id": "custom.width", "value": 200 }] },
+              { "matcher": { "id": "byName", "options": "HTTPRoute" }, "properties": [{ "id": "custom.width", "value": 350 }] },
+              { "matcher": { "id": "byName", "options": "Req/s" }, "properties": [{ "id": "unit", "value": "reqps" }, { "id": "decimals", "value": 2 }] },
+              { "matcher": { "id": "byName", "options": "P95 Latency (ms)" }, "properties": [{ "id": "unit", "value": "ms" }, { "id": "decimals", "value": 1 }] }
+            ]
+          },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 27 },
+          "id": 15,
+          "options": { "showHeader": true, "sortBy": [{ "displayName": "Req/s", "desc": true }] },
+          "title": "Consumer × HTTPRoute Table",
+          "type": "table",
+          "transformations": [
+            { "id": "merge" },
+            { "id": "organize", "options": { "renameByName": { "request_headers_x_consumer_id": "Consumer", "httproute": "HTTPRoute", "Value #A": "Req/s", "Value #B": "P95 Latency (ms)" } } }
+          ],
+          "targets": [
+            { "expr": "sum by (request_headers_x_consumer_id, httproute)(label_replace(rate(istio_requests_total{source_workload=~\"$gateway\", route_name=~\"$httproute..+\", request_headers_x_consumer_id=~\"$consumer\", request_headers_x_consumer_id!=\"\", route_name!=\"\"}[5m]), \"httproute\", \"$1\", \"route_name\", \"(.+).[0-9]+\"))", "refId": "A", "instant": true, "format": "table" },
+            { "expr": "histogram_quantile(0.95, sum by (le, request_headers_x_consumer_id, httproute)(label_replace(rate(istio_request_duration_milliseconds_bucket{source_workload=~\"$gateway\", route_name=~\"$httproute..+\", request_headers_x_consumer_id=~\"$consumer\", request_headers_x_consumer_id!=\"\", route_name!=\"\"}[5m]), \"httproute\", \"$1\", \"route_name\", \"(.+).[0-9]+\")))", "refId": "B", "instant": true, "format": "table" }
+          ]
+        }
+      ]
+    }

@@ -1,0 +1,32 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: banking-api-route
+  namespace: req057
+  labels:
+    app.kubernetes.io/part-of: req057-http-versions
+spec:
+  parentRefs:
+  - name: rhcl-apps-gateway
+    namespace: openshift-ingress
+    sectionName: req057-http
+  - name: rhcl-apps-gateway
+    namespace: openshift-ingress
+    sectionName: req057-https
+  hostnames:
+  - "banking-api.<CLUSTER_DOMAIN>"
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    filters:
+    - type: ResponseHeaderModifier
+      responseHeaderModifier:
+        set:
+        - name: alt-svc
+          value: 'h3=":443"; ma=86400'
+    backendRefs:
+    - name: banking-api-v1
+      namespace: rhcl-apps
+      port: 8080

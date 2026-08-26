@@ -1,0 +1,20 @@
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: {{ mcp_gateway_server_route_auth_policy_name }}
+  namespace: {{ mcp_gateway_namespace }}
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: {{ mcp_gateway_server_registration_route_name }}
+  defaults:
+    strategy: atomic
+    rules:
+      authorization:
+        # Same rule name as connectivity-gateway-deny-all (`allow-mcp-discovery` would merge as an
+        # additional authorization rule; Authorino requires every rule to allow → deny-all still blocked broker POSTs).
+        deny-all:
+          opa:
+            rego: |
+              allow = true

@@ -1,0 +1,29 @@
+# AuthorizationPolicy — CUSTOM ext_authz for the extauthz listener only.
+#
+# Envoy calls request-interceptor (via meshConfig.extensionProviders) before
+# forwarding to hello-world. The mirror listener is NOT covered here.
+#
+# Usage:
+#   export RHCL_ZONE_ROOT_DOMAIN=sandbox2314.opentlc.com
+#   envsubst < tests/req030/manifests/36-authorizationpolicy.yaml | oc apply -f -
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: req030-ext-authz
+  namespace: req030-gateway
+  labels:
+    app.kubernetes.io/part-of: rhcl-req030-interceptor
+    rhcl-lab/requirement: req030
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: req030-interceptor-gateway
+  action: CUSTOM
+  provider:
+    name: req030-request-interceptor
+  rules:
+    - to:
+        - operation:
+            hosts:
+              - "req030-extauthz.${RHCL_ZONE_ROOT_DOMAIN}"

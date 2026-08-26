@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - 01-grafana-namespace.yaml
+  - 01-grafana-operator-subscription.yaml
+  - 02-keycloak-realm-grafana.yaml
+  - 02-grafana-httproute.yaml
+  - 02-grafana-authpolicy.yaml
+  - 02-grafana-instance.yaml
+  - 03-grafana-sa-clusterrole.yaml
+  - 05-grafana-datasource-thanos.yaml
+  - 06-grafana-dashboard-api-overview.yaml
+  - 07-grafana-dashboard-api-consumers.yaml
+  - 08-grafana-dashboard-authorino.yaml
+  - 09-grafana-dashboard-limitador.yaml
+  - 10-gateway-api-state-metrics.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: rhcl-poc
+  rhcl.redhat.com/requirement: req041

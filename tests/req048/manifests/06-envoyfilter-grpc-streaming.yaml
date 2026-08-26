@@ -1,0 +1,58 @@
+# EnvoyFilter para o req048 — desabilita o buffer de request nos vhosts gRPC.
+#
+# Contexto: o req026 (upload de arquivos) instala o EnvoyFilter
+# files-upload-max-body, que insere envoy.filters.http.buffer em TODOS os
+# listeners do gateway compartilhado. O buffer aguarda o corpo completo da
+# requisição antes de encaminhá-la — o que quebra RPCs gRPC com request de
+# streaming (ex.: reflexão do grpcurl, RPCs bidirecionais como EchoStream),
+# cujo corpo nunca "completa". Chamadas unary não são afetadas.
+#
+# Este filtro desabilita o buffer apenas nos virtual hosts do req048
+# (HTTPRoute e GRPCRoute), usando o mesmo mecanismo BufferPerRoute que o
+# req026 usa para excluir a própria rota. Os demais hosts do gateway
+# continuam com o comportamento do req026. Sem o req026 aplicado, este
+# filtro é inócuo.
+#
+# Placeholders substituídos pelos scripts apply*.sh via sed:
+#   {{ gateway_name }}       → nome do gateway detectado
+#   {{ hostname }}           → req048-grpc.<CLUSTER_DOMAIN>
+#   {{ hostname_grpcroute }} → req048-grpcroute.<CLUSTER_DOMAIN>
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: req048-grpc-streaming-no-buffer
+  namespace: openshift-ingress
+  labels:
+    app.kubernetes.io/part-of: req048-grpc-backend
+    rhcl.poc/item: "48"
+spec:
+  workloadSelector:
+    labels:
+      gateway.networking.k8s.io/gateway-name: {{ gateway_name }}
+  configPatches:
+  - applyTo: VIRTUAL_HOST
+    match:
+      context: GATEWAY
+      routeConfiguration:
+        vhost:
+          name: "{{ hostname }}:80"
+    patch:
+      operation: MERGE
+      value:
+        typed_per_filter_config:
+          envoy.filters.http.buffer:
+            '@type': type.googleapis.com/envoy.extensions.filters.http.buffer.v3.BufferPerRoute
+            disabled: true
+  - applyTo: VIRTUAL_HOST
+    match:
+      context: GATEWAY
+      routeConfiguration:
+        vhost:
+          name: "{{ hostname_grpcroute }}:80"
+    patch:
+      operation: MERGE
+      value:
+        typed_per_filter_config:
+          envoy.filters.http.buffer:
+            '@type': type.googleapis.com/envoy.extensions.filters.http.buffer.v3.BufferPerRoute
+            disabled: true

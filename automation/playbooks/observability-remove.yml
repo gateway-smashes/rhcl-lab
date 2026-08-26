@@ -1,0 +1,10 @@
+---
+- name: Remove Observability stack (Tempo + OpenTelemetry + REQ038)
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  roles:
+    - role: observability
+      vars:
+        rhcl_action: remove

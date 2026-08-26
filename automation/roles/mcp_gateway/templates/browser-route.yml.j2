@@ -1,0 +1,12 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ mcp_gateway_browser_route_name }}
+  namespace: {{ mcp_gateway_gateway_namespace }}
+spec:
+  host: {{ mcp_gateway_hostname_resolved }}
+  to:
+    kind: Service
+    name: {{ mcp_gateway_gateway_service_name }}
+  port:
+    targetPort: {{ mcp_gateway_port }}

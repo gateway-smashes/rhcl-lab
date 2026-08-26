@@ -1,0 +1,23 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: Grafana
+metadata:
+  name: {{ grafana_instance_name }}
+  namespace: {{ grafana_namespace }}
+  labels:
+    dashboards: {{ grafana_instance_label }}
+    app.kubernetes.io/part-of: rhcl-poc
+spec:
+  config:
+    log:
+      mode: console
+    security:
+      admin_user: {{ grafana_admin_user }}
+      admin_password: {{ grafana_admin_password }}
+    auth.anonymous:
+      enabled: "true"
+      org_role: "Viewer"
+  route:
+    spec:
+      tls:
+        termination: edge
+        insecureEdgeTerminationPolicy: Redirect

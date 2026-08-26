@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ tests_catalog_name }}
+  namespace: {{ tests_catalog_namespace }}
+  labels:
+    app: {{ tests_catalog_name }}
+    app.kubernetes.io/part-of: rhcl-tests-catalog
+{% if tests_catalog_image_source == 'build' %}
+  annotations:
+    image.openshift.io/triggers: |-
+      [{"from":{"kind":"ImageStreamTag","name":"{{ tests_catalog_name }}:latest","namespace":"{{ tests_catalog_namespace }}"},"fieldPath":"spec.template.spec.containers[?(@.name==\"{{ tests_catalog_name }}\")].image"}]
+{% endif %}
+spec:
+  replicas: {{ tests_catalog_replicas }}
+  selector:
+    matchLabels:
+      app: {{ tests_catalog_name }}
+  template:
+    metadata:
+      labels:
+        app: {{ tests_catalog_name }}
+    spec:
+      containers:
+        - name: {{ tests_catalog_name }}
+{% if tests_catalog_image_source == 'build' %}
+          # Patched pelo image trigger pra digest do ImageStream {{ tests_catalog_name }}:latest.
+          image: image-registry.openshift-image-registry.svc:5000/{{ tests_catalog_namespace }}/{{ tests_catalog_name }}:latest
+{% else %}
+          image: {{ tests_catalog_image }}
+          imagePullPolicy: {{ tests_catalog_image_pull_policy }}
+{% endif %}
+          ports:
+            - containerPort: {{ tests_catalog_container_port }}
+              protocol: TCP
+{# Forward APPS_CONNECTIVITY_ROUTE_HOSTNAME to the container so
+   generate-env.sh exposes it as apiHost in env.json — the interactive
+   test pages then pre-fill their "Gateway host" field with the real
+   banking-api hostname for whichever cluster the catalog is running on.
+#}
+{% if apps_connectivity_route_hostname is defined and apps_connectivity_route_hostname | length > 0 %}
+          env:
+            - name: APPS_CONNECTIVITY_ROUTE_HOSTNAME
+              value: {{ apps_connectivity_route_hostname | quote }}
+{% endif %}
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+{% if tests_catalog_image_source != 'build' and tests_catalog_image_pull_secret | length > 0 %}
+      imagePullSecrets:
+        - name: {{ tests_catalog_image_pull_secret }}
+{% endif %}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ tests_catalog_name }}
+  namespace: {{ tests_catalog_namespace }}
+  labels:
+    app: {{ tests_catalog_name }}
+    app.kubernetes.io/part-of: rhcl-tests-catalog
+spec:
+  selector:
+    app: {{ tests_catalog_name }}
+  ports:
+    - name: 8080-tcp
+      port: {{ tests_catalog_container_port }}
+      targetPort: {{ tests_catalog_container_port }}
+      protocol: TCP

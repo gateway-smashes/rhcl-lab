@@ -1,0 +1,10 @@
+---
+- name: Install OpenShift AI (model serving + llm-d prerequisites)
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  roles:
+    - role: ocp_ai
+      vars:
+        rhcl_action: install

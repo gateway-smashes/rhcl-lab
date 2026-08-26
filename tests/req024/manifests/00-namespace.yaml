@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: external-models
+  labels:
+    app.kubernetes.io/part-of: rhcl-req024-external-model
+    opendatahub.io/dashboard: "true"

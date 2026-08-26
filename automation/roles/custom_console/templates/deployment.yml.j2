@@ -1,0 +1,72 @@
+# Custom RHCL Console — OpenShift Console dynamic plugin (nginx serving the
+# webpack bundle over HTTPS). github.com/redhat-rhcl-poc/custom-rhcl-console
+#
+# TLS: the Service carries the OpenShift serving-cert annotation, so the platform
+# mints `{{ custom_console_cert_secret_name }}` (signed by the service serving CA);
+# the pod mounts it at /var/serving-cert and nginx terminates TLS on the plugin
+# port. The Console proxies to the plugin over this trusted in-cluster cert — no
+# Route is needed (and thus no environment-specific Route annotations, incl. corporate).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ custom_console_name }}
+  namespace: {{ custom_console_namespace }}
+  labels:
+    app: {{ custom_console_name }}
+    app.kubernetes.io/part-of: rhcl-custom-console
+spec:
+  replicas: {{ custom_console_replicas }}
+  selector:
+    matchLabels:
+      app: {{ custom_console_name }}
+  template:
+    metadata:
+      labels:
+        app: {{ custom_console_name }}
+    spec:
+      containers:
+        - name: {{ custom_console_name }}
+          image: {{ custom_console_image }}
+          imagePullPolicy: {{ custom_console_image_pull_policy }}
+          ports:
+            - containerPort: {{ custom_console_container_port }}
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: serving-cert
+              mountPath: /var/serving-cert
+              readOnly: true
+{% if custom_console_image_pull_secret | length > 0 %}
+      imagePullSecrets:
+        - name: {{ custom_console_image_pull_secret }}
+{% endif %}
+      volumes:
+        - name: serving-cert
+          secret:
+            secretName: {{ custom_console_cert_secret_name }}
+            defaultMode: 420
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ custom_console_name }}
+  namespace: {{ custom_console_namespace }}
+  labels:
+    app: {{ custom_console_name }}
+    app.kubernetes.io/part-of: rhcl-custom-console
+  annotations:
+    # Platform mints a TLS serving cert into this secret (mounted by the pod).
+    service.beta.openshift.io/serving-cert-secret-name: {{ custom_console_cert_secret_name }}
+spec:
+  selector:
+    app: {{ custom_console_name }}
+  ports:
+    - port: {{ custom_console_service_port }}
+      targetPort: {{ custom_console_container_port }}
+      protocol: TCP

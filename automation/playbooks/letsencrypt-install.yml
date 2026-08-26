@@ -1,0 +1,10 @@
+---
+- name: Install Let's Encrypt ClusterIssuers
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  roles:
+    - role: letsencrypt
+      vars:
+        rhcl_action: install

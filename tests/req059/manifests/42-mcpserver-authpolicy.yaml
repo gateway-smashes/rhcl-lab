@@ -1,0 +1,21 @@
+# Overrides gateway-wide deny-all for the private MCP server HTTPRoute.
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: banking-api-mcp-server-allow-mcp-discovery
+  namespace: mcp-gateway
+  labels:
+    rhcl-lab/requirement: req059-mcp-operator
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: banking-api-mcp-server
+  defaults:
+    strategy: atomic
+    rules:
+      authorization:
+        deny-all:
+          opa:
+            rego: |
+              allow = true

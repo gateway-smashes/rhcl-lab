@@ -1,0 +1,19 @@
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: rhcl-limitador-tokens
+  namespace: kuadrant-system
+spec:
+  namespaceSelector:
+    matchNames:
+      - kuadrant-system
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: limitador
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scheme: http
+      honorLabels: true

@@ -1,0 +1,225 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Read OpenShift cluster version
+  kubernetes.core.k8s_info:
+    api_version: config.openshift.io/v1
+    kind: ClusterVersion
+    name: version
+  register: ocp_ai_cluster_version
+  changed_when: false
+
+- name: Assert OpenShift version is supported for OpenShift AI 3.4
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_cluster_version.resources | length == 1
+      - ocp_ai_cluster_version.resources[0].status.desired.version is defined
+    fail_msg: >-
+      Could not read ClusterVersion. OpenShift AI 3.4 requires OpenShift 4.19+.
+
+- name: Warn when OpenShift version is outside the documented 3.4 range
+  ansible.builtin.debug:
+    msg: >-
+      OpenShift AI 3.4 installation docs list OpenShift 4.19 to 4.20.
+      Cluster desired version is
+      {{ ocp_ai_cluster_version.resources[0].status.desired.version }}.
+      Continuing because the installed Operator catalog supports this cluster,
+      but verify supportability before using this outside the lab.
+  when: not (ocp_ai_cluster_version.resources[0].status.desired.version is match('^4\\.(19|20)\\.'))
+
+- name: Warn when llm-d is enabled on OpenShift older than 4.20
+  ansible.builtin.debug:
+    msg: >-
+      Distributed Inference with llm-d is documented for OpenShift 4.20+.
+      Cluster desired version is
+      {{ ocp_ai_cluster_version.resources[0].status.desired.version }}.
+      Proceeding, but llm-d may not be fully supported.
+  when:
+    - ocp_ai_llmd_enabled | bool
+    - not (ocp_ai_cluster_version.resources[0].status.desired.version is match('^4\\.(2[0-9]|[3-9][0-9])'))
+
+- name: Query rhods-operator PackageManifest channels
+  kubernetes.core.k8s_info:
+    api_version: packages.operators.coreos.com/v1
+    kind: PackageManifest
+    name: rhods-operator
+    namespace: openshift-marketplace
+  register: ocp_ai_rhods_packagemanifest
+  changed_when: false
+  failed_when: false
+
+- name: Resolve available rhods-operator channel names
+  ansible.builtin.set_fact:
+    ocp_ai_rhods_available_channels: >-
+      {{
+        ocp_ai_rhods_packagemanifest.resources[0].status.channels
+        | default([])
+        | map(attribute='name')
+        | list
+      }}
+  when: ocp_ai_rhods_packagemanifest.resources | length == 1
+
+- name: Assert rhods-operator channel exists in the OperatorHub catalog
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_rhods_packagemanifest.resources | length == 1
+      - ocp_ai_channel in ocp_ai_rhods_available_channels
+    fail_msg: >-
+      Channel {{ ocp_ai_channel }} is not available for rhods-operator.
+      Set OCP_AI_CHANNEL to one of:
+      {{ ocp_ai_rhods_available_channels | join(', ') }}.
+      For OpenShift AI 3.4 use stable-3.4 (not fast-3.4).
+  when: ocp_ai_rhods_packagemanifest.resources | length == 1
+
+- name: Assert Kueue DataScienceCluster state is supported
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_kueue_state in ["Unmanaged", "Removed"]
+    fail_msg: >-
+      DataScienceCluster kueue.managementState must be Unmanaged or Removed.
+      The OpenShift AI 3.4 CRD rejects Managed at runtime; install the Red Hat
+      build of Kueue Operator separately and use Unmanaged for distributed workloads.
+
+- name: Query StorageClasses
+  kubernetes.core.k8s_info:
+    api_version: storage.k8s.io/v1
+    kind: StorageClass
+  register: ocp_ai_storageclasses
+  changed_when: false
+
+- name: Resolve default StorageClass names
+  ansible.builtin.set_fact:
+    ocp_ai_default_storageclass_names: >-
+      {{
+        ocp_ai_default_storageclass_names | default([])
+        + [item.metadata.name]
+      }}
+  loop: "{{ ocp_ai_storageclasses.resources }}"
+  when:
+    - item.metadata.annotations is defined
+    - item.metadata.annotations.get('storageclass.kubernetes.io/is-default-class', '') == 'true'
+
+- name: Assert a default StorageClass exists
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_default_storageclass_names | length > 0
+    fail_msg: >-
+      No default StorageClass found. OpenShift AI requires dynamic provisioning.
+      Annotate one StorageClass with
+      storageclass.kubernetes.io/is-default-class: "true".
+
+- name: Query cert-manager Subscription
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ cert_manager_namespace }}"
+    name: "{{ cert_manager_subscription_name }}"
+  register: ocp_ai_cert_manager_sub
+  changed_when: false
+  failed_when: false
+
+- name: Assert cert-manager Operator is installed (required for kserve and llm-d)
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_cert_manager_sub.resources | length == 1
+      - ocp_ai_cert_manager_sub.resources[0].status.currentCSV is defined
+    fail_msg: >-
+      cert-manager Operator not found in {{ cert_manager_namespace }}.
+      Run cert_manager-install.yml before ocp_ai-install.yml.
+
+- name: Query RHCL Kuadrant instance
+  kubernetes.core.k8s_info:
+    api_version: kuadrant.io/v1beta1
+    kind: Kuadrant
+    namespace: "{{ rhcl_namespace }}"
+    name: kuadrant
+  register: ocp_ai_kuadrant
+  changed_when: false
+  failed_when: false
+  when: ocp_ai_require_rhcl | bool
+
+- name: Assert RHCL (Kuadrant) is installed when required
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_kuadrant.resources | length == 1
+    fail_msg: >-
+      Kuadrant instance not found in {{ rhcl_namespace }}.
+      Run rhcl-install.yml before ocp_ai-install.yml (llm-d + RHCL auth).
+  when: ocp_ai_require_rhcl | bool
+
+- name: Query GatewayClass for Gateway API
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: GatewayClass
+    name: "{{ gateway_api_gatewayclass_name }}"
+  register: ocp_ai_gatewayclass
+  changed_when: false
+  failed_when: false
+  when: ocp_ai_require_gateway_api | bool
+
+- name: Assert Gateway API GatewayClass exists when required
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_gatewayclass.resources | length == 1
+    fail_msg: >-
+      GatewayClass {{ gateway_api_gatewayclass_name }} not found.
+      Run gateway_api-install.yml before ocp_ai-install.yml.
+  when: ocp_ai_require_gateway_api | bool
+
+- name: Query nodes advertising NVIDIA GPUs
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Node
+  register: ocp_ai_nodes
+  changed_when: false
+  when: ocp_ai_gpu_enabled | bool
+
+- name: Initialize GPU-capable worker node list
+  ansible.builtin.set_fact:
+    ocp_ai_gpu_node_names: []
+  when: ocp_ai_gpu_enabled | bool
+
+- name: Resolve GPU-capable worker nodes
+  ansible.builtin.set_fact:
+    ocp_ai_gpu_node_names: "{{ ocp_ai_gpu_node_names + [item.metadata.name] }}"
+  loop: "{{ ocp_ai_nodes.resources }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  when:
+    - ocp_ai_gpu_enabled | bool
+    - ((item.status.allocatable | default({})).get('nvidia.com/gpu', '0') | int) > 0
+
+- name: Count GPU-capable worker nodes
+  ansible.builtin.set_fact:
+    ocp_ai_gpu_node_count: "{{ ocp_ai_gpu_node_names | length }}"
+  when: ocp_ai_gpu_enabled | bool
+
+- name: Warn when no GPU capacity is visible yet
+  ansible.builtin.debug:
+    msg: >-
+      No nodes currently advertise nvidia.com/gpu. GPU Operator install will
+      continue; verify GPU nodes and drivers after ClusterPolicy reconciles.
+  when:
+    - ocp_ai_gpu_enabled | bool
+    - (ocp_ai_gpu_node_count | default(0) | int) == 0
+
+- name: Query Service Mesh control plane (llm-d incompatibility check)
+  kubernetes.core.k8s_info:
+    api_version: maistra.io/v1
+    kind: ServiceMeshControlPlane
+  register: ocp_ai_service_mesh
+  changed_when: false
+  failed_when: false
+  when: ocp_ai_llmd_enabled | bool
+
+- name: Warn when OpenShift Service Mesh v2 is present
+  ansible.builtin.debug:
+    msg: >-
+      ServiceMeshControlPlane resources were found. OpenShift AI llm-d docs
+      state Service Mesh v2 must not be installed on the cluster.
+  when:
+    - ocp_ai_llmd_enabled | bool
+    - ocp_ai_service_mesh.resources | length > 0

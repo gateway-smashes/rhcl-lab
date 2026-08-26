@@ -1,0 +1,42 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ apps_req054_route_name }}
+  namespace: {{ apps_namespace }}
+  labels:
+    app.kubernetes.io/part-of: req054-http-versions
+    rhcl.poc/item: "54"
+spec:
+  parentRefs:
+  - name: {{ apps_connectivity_gateway_name }}
+    namespace: {{ apps_connectivity_gateway_namespace }}
+    sectionName: {{ apps_req054_http_listener_name }}
+  hostnames:
+  - {{ apps_req054_route_hostname_resolved | to_json }}
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /http11
+    filters:
+    - type: URLRewrite
+      urlRewrite:
+        path:
+          type: ReplacePrefixMatch
+          replacePrefixMatch: /
+    backendRefs:
+    - name: {{ apps_req054_service_http11_name }}
+      port: 8080
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /h2
+    filters:
+    - type: URLRewrite
+      urlRewrite:
+        path:
+          type: ReplacePrefixMatch
+          replacePrefixMatch: /
+    backendRefs:
+    - name: {{ apps_req054_service_h2c_name }}
+      port: 8080

@@ -1,0 +1,65 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Confirm the Grafana deployment is available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ grafana_namespace }}"
+    name: "{{ grafana_instance_name }}-deployment"
+  register: grafana_validate_deploy
+  failed_when:
+    - grafana_validate_deploy.resources | length == 0
+      or (grafana_validate_deploy.resources[0].status.availableReplicas | default(0)) < 1
+
+- name: Confirm the Thanos datasource is synchronized
+  kubernetes.core.k8s_info:
+    api_version: grafana.integreatly.org/v1beta1
+    kind: GrafanaDatasource
+    namespace: "{{ grafana_namespace }}"
+    name: "{{ grafana_thanos_datasource_name }}"
+  register: grafana_validate_ds
+  failed_when:
+    - grafana_validate_ds.resources | length == 0
+      or (
+        grafana_validate_ds.resources[0].status.conditions | default([])
+        | selectattr('type', 'equalto', 'DatasourceSynchronized')
+        | selectattr('reason', 'equalto', 'ApplySuccessful')
+        | list | length
+      ) == 0
+
+- name: Confirm the four dashboards exist
+  kubernetes.core.k8s_info:
+    api_version: grafana.integreatly.org/v1beta1
+    kind: GrafanaDashboard
+    namespace: "{{ grafana_namespace }}"
+    name: "{{ item }}"
+  register: grafana_validate_dash
+  failed_when: grafana_validate_dash.resources | length == 0
+  loop:
+    - rhcl-api-overview
+    - rhcl-api-consumers
+    - rhcl-authorino
+    - rhcl-limitador
+
+- name: Confirm the Telemetry CR exists
+  kubernetes.core.k8s_info:
+    api_version: telemetry.istio.io/v1
+    kind: Telemetry
+    namespace: "{{ grafana_telemetry_namespace }}"
+    name: "{{ grafana_telemetry_name }}"
+  register: grafana_validate_telemetry
+  failed_when: grafana_validate_telemetry.resources | length == 0
+
+- name: Validation summary
+  ansible.builtin.debug:
+    msg: |
+      Grafana validation OK:
+        deployment : {{ grafana_instance_name }}-deployment
+        datasource : {{ grafana_thanos_datasource_name }} (ApplySuccessful)
+        dashboards : rhcl-api-overview, rhcl-api-consumers,
+                     rhcl-authorino, rhcl-limitador
+        telemetry  : {{ grafana_telemetry_name }} in {{ grafana_telemetry_namespace }}

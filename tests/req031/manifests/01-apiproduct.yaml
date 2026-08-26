@@ -1,0 +1,29 @@
+# PIX API — APIProduct (CR do developer portal). Metadados do produto + targetRef
+# pra HTTPRoute. publishStatus=Published faz aparecer na console/portal. O custom
+# console + dev portal listam isso filtrado por spec.targetRef.
+apiVersion: devportal.kuadrant.io/v1alpha1
+kind: APIProduct
+metadata:
+  name: pix-api
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-req31-admin-api
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: pix-api-connectivity
+  displayName: "PIX API"
+  description: >-
+    Demo do Item 31 — produto de API criado integralmente via API administrativa
+    (Kubernetes API). Path /pix/v1/* reescrito p/ /api/echo no backend banking-api-v1.
+  version: "v1"
+  approvalMode: manual
+  publishStatus: Published
+  tags:
+    - demo
+    - req031
+    - pix
+  contact:
+    team: "RHCL PoC"
+    email: "rhcl-poc@example.com"

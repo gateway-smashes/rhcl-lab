@@ -1,0 +1,46 @@
+# req018 — ConfigMap com a tabela de preços consumida pelo plugin.
+#
+# Este manifest é APENAS um exemplo/patch dos campos costCurrency + costPricing.
+# Se o plugin já foi instalado pelo playbook do RHCL (role `custom_console`),
+# esta ConfigMap JÁ EXISTE — este manifest sobrescreve APENAS os dois campos
+# via apply (server-side merge). O resto dos campos da ConfigMap
+# (defaultNamespace, prometheusUrl, hostname, etc.) NÃO é tocado.
+#
+# ATENÇÃO — os valores abaixo são de DEMO. Ajuste antes de aplicar em cliente.
+#
+# CHAVES (tiers): devem bater com o `spec.plan` da APIProduct/APIKey.
+#   O plugin lê o `secret.kuadrant.io/plan-id` da anotação do Secret
+#   pra decidir qual tier aplicar em cada consumer.
+#   `anonymous` = fallback pra requests sem consumer_id (endpoints com
+#   `anonymous: {}` no AuthPolicy — no PoC, os endpoints de IA).
+#
+# VALORES:
+#   - calls_per_1k  = preço em `costCurrency` por 1 000 chamadas HTTP
+#   - tokens_per_1k = preço em `costCurrency` por 1 000 tokens IA
+#                     (prompt + completion somados)
+#
+# FÓRMULA (o plugin aplica):
+#   cost = calls × pricing[tier].calls_per_1k / 1000
+#        + tokens × pricing[tier].tokens_per_1k / 1000
+#
+# RUNTIME:
+#   Editar essa ConfigMap propaga pro plugin em <60s (useK8sWatchResource).
+#   Não precisa restartar o plugin nem o Console do OpenShift.
+#
+# CURRENCY:
+#   `costCurrency` é só rótulo (símbolo mostrado na UI). Não faz conversão
+#   automática — mudar `BRL → USD` só troca o `R$` por `$` na tela.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: custom-rhcl-console-config
+  namespace: custom-rhcl-console
+data:
+  costCurrency: "BRL"
+  costPricing: |
+    {
+      "gold":      { "tokens_per_1k": 0.10, "calls_per_1k": 0.05 },
+      "silver":    { "tokens_per_1k": 0.20, "calls_per_1k": 0.10 },
+      "bronze":    { "tokens_per_1k": 0.40, "calls_per_1k": 0.20 },
+      "anonymous": { "tokens_per_1k": 0.50, "calls_per_1k": 0.25 }
+    }

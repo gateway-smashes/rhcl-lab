@@ -1,0 +1,10 @@
+---
+- name: Validate the CoreDNS DNS provider configuration
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  roles:
+    - role: coredns_dns
+      vars:
+        rhcl_action: validate

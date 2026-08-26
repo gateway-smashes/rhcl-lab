@@ -1,0 +1,7 @@
+# Ignore generated cert material — regenerate with ./generate-certs.sh
+*.crt
+*.key
+*.srl
+*.csr
+*.ext
+!.gitignore

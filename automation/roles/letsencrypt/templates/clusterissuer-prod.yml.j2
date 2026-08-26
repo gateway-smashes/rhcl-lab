@@ -1,0 +1,44 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ letsencrypt_prod_name }}
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: {{ letsencrypt_email | quote }}
+    privateKeySecretRef:
+      name: {{ letsencrypt_prod_name }}-account-key
+    solvers:
+{% if letsencrypt_dns_provider == "aws" %}
+      - dns01:
+          route53:
+            region: {{ rhcl_dns_aws_region | quote }}
+            accessKeyID: {{ rhcl_dns_aws_access_key_id | quote }}
+            secretAccessKeySecretRef:
+              name: {{ letsencrypt_secret_name }}
+              key: secret-access-key
+{% if letsencrypt_aws_hosted_zone_id_resolved | length > 0 %}
+            hostedZoneID: {{ letsencrypt_aws_hosted_zone_id_resolved | quote }}
+{% endif %}
+{% elif letsencrypt_dns_provider == "azure" %}
+{% set _azure_blob = (rhcl_dns_azure_json if (rhcl_dns_azure_json | length > 0) else lookup('file', rhcl_dns_azure_json_file)) %}
+{% set _azure = _azure_blob | from_json %}
+      - dns01:
+          azureDNS:
+            clientID: {{ _azure.aadClientId | quote }}
+            clientSecretSecretRef:
+              name: {{ letsencrypt_secret_name }}
+              key: client-secret
+            subscriptionID: {{ _azure.subscriptionId | quote }}
+            tenantID: {{ _azure.tenantId | quote }}
+            resourceGroupName: {{ _azure.resourceGroup | quote }}
+            hostedZoneName: {{ letsencrypt_azure_hosted_zone_name | quote }}
+            environment: AzurePublicCloud
+{% elif letsencrypt_dns_provider == "gcp" %}
+      - dns01:
+          cloudDNS:
+            project: {{ rhcl_dns_gcp_project_id | quote }}
+            serviceAccountSecretRef:
+              name: {{ letsencrypt_secret_name }}
+              key: service-account.json
+{% endif %}

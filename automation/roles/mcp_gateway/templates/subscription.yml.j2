@@ -1,0 +1,11 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: {{ mcp_gateway_subscription_name }}
+  namespace: {{ mcp_gateway_namespace }}
+spec:
+  channel: {{ mcp_gateway_operator_channel }}
+  installPlanApproval: Automatic
+  name: {{ mcp_gateway_operator_name }}
+  source: {{ mcp_gateway_operator_source }}
+  sourceNamespace: {{ mcp_gateway_operator_source_namespace }}

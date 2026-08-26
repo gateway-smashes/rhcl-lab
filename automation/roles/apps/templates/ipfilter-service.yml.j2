@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ apps_ipfilter_name }}
+  namespace: {{ apps_namespace }}
+spec:
+  selector:
+    app: {{ apps_ipfilter_name }}
+  ports:
+    - name: http
+      port: {{ apps_ipfilter_service_port }}
+      protocol: TCP
+      targetPort: 8080

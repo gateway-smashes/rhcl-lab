@@ -1,0 +1,10 @@
+---
+- name: Install Grafana Operator + RHCL Rate Limits dashboards
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  roles:
+    - role: grafana
+      vars:
+        rhcl_action: install

@@ -1,0 +1,32 @@
+---
+# ServiceAccount + ClusterRoleBinding giving Grafana read access to the
+# OpenShift Thanos Querier. The SA itself is auto-created by the Grafana
+# Operator (named `<instance>-sa`); we just bind it to cluster-monitoring-view.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ grafana_thanos_clusterrolebinding_name }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-monitoring-view
+subjects:
+  - kind: ServiceAccount
+    name: {{ grafana_thanos_sa_name }}
+    namespace: {{ grafana_namespace }}
+---
+# Long-lived SA token Secret. K8s 1.24+ no longer auto-mints SA tokens; this
+# explicit Secret of type kubernetes.io/service-account-token triggers the
+# token controller to populate `data.token` once the SA exists.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ grafana_thanos_sa_token_secret }}
+  namespace: {{ grafana_namespace }}
+  annotations:
+    kubernetes.io/service-account.name: {{ grafana_thanos_sa_name }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+type: kubernetes.io/service-account-token

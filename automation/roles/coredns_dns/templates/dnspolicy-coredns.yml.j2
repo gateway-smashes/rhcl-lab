@@ -1,0 +1,24 @@
+apiVersion: kuadrant.io/v1
+kind: DNSPolicy
+metadata:
+  name: {{ coredns_dns_policy_name }}
+  namespace: {{ coredns_dns_policy_target_gateway_namespace }}
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: {{ coredns_dns_policy_target_gateway_name }}
+{% if coredns_dns_policy_delegate %}
+  delegate: true
+{% else %}
+  providerRefs:
+    - name: {{ coredns_dns_secret_name }}
+{% endif %}
+{% if coredns_dns_policy_load_balancing_enabled %}
+  loadBalancing:
+    defaultGeo: {{ coredns_dns_policy_default_geo | bool | string | lower }}
+{% if coredns_dns_policy_geo | default('') | length > 0 %}
+    geo: {{ coredns_dns_policy_geo }}
+{% endif %}
+    weight: {{ coredns_dns_policy_weight | int }}
+{% endif %}

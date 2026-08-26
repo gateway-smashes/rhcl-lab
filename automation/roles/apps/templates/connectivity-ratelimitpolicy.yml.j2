@@ -1,0 +1,15 @@
+apiVersion: kuadrant.io/v1
+kind: RateLimitPolicy
+metadata:
+  name: {{ apps_connectivity_ratelimit_policy_name }}
+  namespace: {{ apps_namespace }}
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: {{ apps_connectivity_route_name }}
+  limits:
+    global:
+      rates:
+        - limit: {{ apps_connectivity_ratelimit_limit }}
+          window: {{ apps_connectivity_ratelimit_window | quote }}

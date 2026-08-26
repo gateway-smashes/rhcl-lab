@@ -1,0 +1,9 @@
+---
+- name: Validate gateway_api role action
+  ansible.builtin.assert:
+    that:
+      - (component_action | default(rhcl_action)) in ["install", "remove", "validate"]
+    fail_msg: "Requested gateway_api action must be install, remove, or validate."
+
+- name: Run gateway_api action
+  ansible.builtin.include_tasks: "{{ component_action | default(rhcl_action) }}.yml"

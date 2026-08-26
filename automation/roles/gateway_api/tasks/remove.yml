@@ -1,0 +1,12 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Remove the native Gateway API GatewayClass
+  kubernetes.core.k8s:
+    api_version: gateway.networking.k8s.io/v1
+    kind: GatewayClass
+    name: "{{ gateway_api_gatewayclass_name }}"
+    state: absent

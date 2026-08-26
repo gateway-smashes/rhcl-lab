@@ -1,0 +1,293 @@
+# Mock API deployment for REQ 67 — Token Introspection
+# Deploys a simple backend and a mock introspection endpoint into rhcl-apps
+# so the AuthPolicy can protect a real route.
+#
+# Usage:
+#   export ITEM_67_HOSTNAME=api.example.com
+#   export ITEM_67_PATH=/my/api/v1
+#   export ITEM_67_INTROSPECTION_URL=https://oauth.example.com/oauth/introspect
+#   export ITEM_67_INTROSPECTION_BASIC=$(echo -n 'client_id:client_secret' | base64)
+#   envsubst < req067-bundle.yaml | oc apply -f -
+#
+# To use the in-cluster mock introspection instead of an external OAuth server:
+#   export ITEM_67_INTROSPECTION_URL=http://item-67-mock-introspection.rhcl-apps.svc.cluster.local/oauth/introspect
+#   export ITEM_67_INTROSPECTION_BASIC=$(echo -n 'mock-client:mock-secret' | base64)
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: item-67-mock-api-config
+  namespace: rhcl-apps
+data:
+  PORT: "8080"
+  HTTP_STATUS: "200"
+  CONTENT_TYPE: "application/json"
+  RESPONSE_BODY: '{"status":"ok","version":"1.0.0"}'
+  DELAY_MS: "0"
+  CORS_ENABLED: "false"
+  LOG_LEVEL: "info"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: item-67-mock-api
+  namespace: rhcl-apps
+  labels:
+    app: item-67-mock-api
+    app.kubernetes.io/part-of: rhcl-req67-introspection
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: item-67-mock-api
+  template:
+    metadata:
+      labels:
+        app: item-67-mock-api
+    spec:
+      containers:
+        - name: mock-api
+          image: quay.io/jsimas/mock-api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: item-67-mock-api-config
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "32Mi"
+            limits:
+              memory: "128Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: item-67-mock-api
+  namespace: rhcl-apps
+  labels:
+    app: item-67-mock-api
+    app.kubernetes.io/part-of: rhcl-req67-introspection
+spec:
+  selector:
+    app: item-67-mock-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: item-67-mock-introspection-config
+  namespace: rhcl-apps
+  labels:
+    app: item-67-mock-introspection
+    app.kubernetes.io/part-of: rhcl-req67-introspection
+data:
+  PORT: "8080"
+  HTTP_STATUS: "200"
+  CONTENT_TYPE: "application/json"
+  RESPONSE_BODY: '{"active":true,"scope":"my-scope","client_id":"mock-client","token_type":"Bearer","exp":9999999999}'
+  DELAY_MS: "0"
+  LOG_LEVEL: "info"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: item-67-mock-introspection
+  namespace: rhcl-apps
+  labels:
+    app: item-67-mock-introspection
+    app.kubernetes.io/part-of: rhcl-req67-introspection
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: item-67-mock-introspection
+  template:
+    metadata:
+      labels:
+        app: item-67-mock-introspection
+    spec:
+      containers:
+        - name: mock-api
+          image: quay.io/jsimas/mock-api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: item-67-mock-introspection-config
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+          resources:
+            requests:
+              memory: "32Mi"
+            limits:
+              memory: "128Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: item-67-mock-introspection
+  namespace: rhcl-apps
+  labels:
+    app: item-67-mock-introspection
+    app.kubernetes.io/part-of: rhcl-req67-introspection
+spec:
+  selector:
+    app: item-67-mock-introspection
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+  type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: item-67-route
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-req67-introspection
+spec:
+  parentRefs:
+    - name: rhcl-apps-gateway
+      namespace: openshift-ingress
+  hostnames:
+    - "${ITEM_67_HOSTNAME}"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: "${ITEM_67_PATH}"
+      backendRefs:
+        - name: item-67-mock-api
+          port: 80
+---
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: item-67-token-introspection
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-req67-introspection
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: item-67-route
+  rules:
+    authentication:
+      bearer-token:
+        credentials:
+          authorizationHeader:
+            prefix: Bearer
+        plain:
+          expression: 'request.headers["authorization"].replace("Bearer ", "")'
+        metrics: false
+        priority: 0
+    authorization:
+      introspection-valid:
+        metrics: false
+        patternMatching:
+          patterns:
+            - predicate: 'has(auth.metadata.introspection.active)'
+        priority: 0
+      introspection-check:
+        metrics: true
+        patternMatching:
+          patterns:
+            - operator: eq
+              selector: auth.metadata.introspection.active
+              value: 'true'
+            - predicate: 'auth.metadata.introspection.scope.split('' '').filter(s, s == ''my-scope'').size() > 0'
+        priority: 1
+    metadata:
+      introspection:
+        cache:
+          key:
+            expression: 'request.headers[''authorization'']'
+          ttl: 60
+        http:
+          bodyParameters:
+            token:
+              expression: 'request.headers[''authorization''].replace(''Bearer '', '''')'
+            token_type_hint:
+              value: access_token
+          contentType: application/x-www-form-urlencoded
+          headers:
+            Authorization:
+              value: Basic ${ITEM_67_INTROSPECTION_BASIC}
+            x-request-id:
+              expression: request.id
+          method: POST
+          url: '${ITEM_67_INTROSPECTION_URL}'
+        metrics: true
+        priority: 0
+    response:
+      unauthenticated:
+        body:
+          value: '{"statusCode":401,"error":"Unauthorized","message":"Bad Credentials","attributes":{"error":"Bad Credentials"}}'
+        code: 401
+        headers:
+          Content-Type:
+            value: application/json
+          x-auth-error:
+            value: '{"statusCode":401,"error":"Unauthorized","message":"Bad Credentials","attributes":{"error":"Bad Credentials"}}'
+      unauthorized:
+        body:
+          expression: >-
+            has(auth.metadata.introspection)
+            ? (has(auth.metadata.introspection.active)
+              ? '{"statusCode":401,"error":"Unauthorized","message":"Bad Credentials","attributes":{"error":"Bad Credentials"}}'
+              : auth.metadata.introspection)
+            : '{"statusCode":401,"error":"Unauthorized","message":"Bad Credentials","attributes":{"error":"Bad Credentials"}}'
+        code: 401
+        headers:
+          Content-Type:
+            value: application/json
+          x-auth-error:
+            expression: >-
+              has(auth.metadata.introspection)
+              ? (has(auth.metadata.introspection.active)
+                ? '{"statusCode":401,"error":"Unauthorized","message":"Bad Credentials","attributes":{"error":"Bad Credentials"}}'
+                : '{"error":"IntrospectionError","message":"Introspection endpoint returned an error"}')
+              : '{"statusCode":401,"error":"Unauthorized","message":"Bad Credentials","attributes":{"error":"Bad Credentials"}}'
+  when:
+    - predicate: request.path != '/health'
+    - predicate: request.path != '/ready'
+    - predicate: '!request.path.startsWith(''/public'')'
+    - predicate: '!request.path.startsWith(''/static'')'
+    - predicate: '!request.path.matches(''^/my/path/[^/]+/like/this$'')'

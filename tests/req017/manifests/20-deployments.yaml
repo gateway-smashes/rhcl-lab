@@ -1,0 +1,141 @@
+# Deployments for the three RHCL lab MCP servers (Streamable HTTP on /mcp).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rhcl-lab-info-mcp
+  namespace: rhcl-mcp-lab
+  labels:
+    app: rhcl-lab-info-mcp
+    rhcl-lab/requirement: req017-mcp-catalog
+  annotations:
+    image.openshift.io/triggers: >-
+      [{"from":{"kind":"ImageStreamTag","name":"rhcl-lab-info-mcp:latest","namespace":"rhcl-mcp-lab"},"fieldPath":"spec.template.spec.containers[?(@.name==\"mcp\")].image"}]
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rhcl-lab-info-mcp
+  template:
+    metadata:
+      labels:
+        app: rhcl-lab-info-mcp
+        rhcl-lab/requirement: req017-mcp-catalog
+      annotations:
+        openshift.io/container.mcp.image: >-
+          image-registry.openshift-image-registry.svc:5000/rhcl-mcp-lab/rhcl-lab-info-mcp:latest
+    spec:
+      containers:
+        - name: mcp
+          image: image-registry.openshift-image-registry.svc:5000/rhcl-mcp-lab/rhcl-lab-info-mcp:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rhcl-text-tools-mcp
+  namespace: rhcl-mcp-lab
+  labels:
+    app: rhcl-text-tools-mcp
+    rhcl-lab/requirement: req017-mcp-catalog
+  annotations:
+    image.openshift.io/triggers: >-
+      [{"from":{"kind":"ImageStreamTag","name":"rhcl-text-tools-mcp:latest","namespace":"rhcl-mcp-lab"},"fieldPath":"spec.template.spec.containers[?(@.name==\"mcp\")].image"}]
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rhcl-text-tools-mcp
+  template:
+    metadata:
+      labels:
+        app: rhcl-text-tools-mcp
+        rhcl-lab/requirement: req017-mcp-catalog
+      annotations:
+        openshift.io/container.mcp.image: >-
+          image-registry.openshift-image-registry.svc:5000/rhcl-mcp-lab/rhcl-text-tools-mcp:latest
+    spec:
+      containers:
+        - name: mcp
+          image: image-registry.openshift-image-registry.svc:5000/rhcl-mcp-lab/rhcl-text-tools-mcp:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rhcl-time-tools-mcp
+  namespace: rhcl-mcp-lab
+  labels:
+    app: rhcl-time-tools-mcp
+    rhcl-lab/requirement: req017-mcp-catalog
+  annotations:
+    image.openshift.io/triggers: >-
+      [{"from":{"kind":"ImageStreamTag","name":"rhcl-time-tools-mcp:latest","namespace":"rhcl-mcp-lab"},"fieldPath":"spec.template.spec.containers[?(@.name==\"mcp\")].image"}]
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rhcl-time-tools-mcp
+  template:
+    metadata:
+      labels:
+        app: rhcl-time-tools-mcp
+        rhcl-lab/requirement: req017-mcp-catalog
+      annotations:
+        openshift.io/container.mcp.image: >-
+          image-registry.openshift-image-registry.svc:5000/rhcl-mcp-lab/rhcl-time-tools-mcp:latest
+    spec:
+      containers:
+        - name: mcp
+          image: image-registry.openshift-image-registry.svc:5000/rhcl-mcp-lab/rhcl-time-tools-mcp:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

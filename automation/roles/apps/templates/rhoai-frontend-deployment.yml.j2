@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ apps_rhoai_frontend_name }}
+  namespace: {{ apps_namespace }}
+  labels:
+    app: {{ apps_rhoai_frontend_name }}
+    rhcl-lab/component: rhoai-assistant
+  annotations:
+    image.openshift.io/triggers: |-
+      [{"from":{"kind":"ImageStreamTag","name":"{{ apps_rhoai_frontend_image_name }}:latest","namespace":"{{ apps_namespace }}"},"fieldPath":"spec.template.spec.containers[?(@.name==\"{{ apps_rhoai_frontend_name }}\")].image"}]
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: {{ apps_rhoai_frontend_name }}
+  template:
+    metadata:
+      labels:
+        app: {{ apps_rhoai_frontend_name }}
+    spec:
+      containers:
+        - name: {{ apps_rhoai_frontend_name }}
+          image: image-registry.openshift-image-registry.svc:5000/{{ apps_namespace }}/{{ apps_rhoai_frontend_image_name }}:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              protocol: TCP

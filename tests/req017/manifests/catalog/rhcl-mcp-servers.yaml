@@ -1,0 +1,177 @@
+source: RHCL Lab MCP
+mcp_servers:
+  - name: rhcl-lab-info
+    provider: RHCL Lab
+    license: apache-2.0
+    license_link: https://www.apache.org/licenses/LICENSE-2.0
+    description: >-
+      Read-only metadata about the RHCL PoC lab: name, multicloud target zones,
+      and a simple ping/echo tool for connectivity checks.
+    readme: |-
+      # RHCL Lab Info MCP Server
+
+      Lightweight MCP server for the RHCL PoC lab. Exposes three read-only tools
+      that describe the lab without touching cluster APIs.
+
+      ## Tools
+      - `get_lab_name` — returns the official lab name
+      - `list_target_zones` — CCT1, CCT2, Azure, Google Cloud
+      - `ping` — echo helper for smoke tests
+    version: "0.1.0"
+    transports:
+      - http
+    logo: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzOCIgaGVpZ2h0PSIzOCIgdmlld0JveD0iMCAwIDM4IDM4Ij4KICA8cmVjdCBmaWxsPSIjZmZmIiBzdHJva2U9IiNlMGUwZTAiIHg9IjEiIHk9IjEiIHdpZHRoPSIzNiIgaGVpZ2h0PSIzNiIgcng9IjMiLz4KICA8Y2lyY2xlIGZpbGw9IiMwMDY2Y2MiIGN4PSIxOSIgY3k9IjE5IiByPSI1Ii8+CiAgPGNpcmNsZSBmaWxsPSIjMDA2NmNjIiBjeD0iMTkiIGN5PSI3IiByPSIyLjUiLz4KICA8Y2lyY2xlIGZpbGw9IiMwMDY2Y2MiIGN4PSIyOSIgY3k9IjEzIiByPSIyLjUiLz4KICA8Y2lyY2xlIGZpbGw9IiMwMDY2Y2MiIGN4PSIyOSIgY3k9IjI1IiByPSIyLjUiLz4KICA8Y2lyY2xlIGZpbGw9IiMwMDY2Y2MiIGN4PSIxOSIgY3k9IjMxIiByPSIyLjUiLz4KICA8Y2lyY2xlIGZpbGw9IiMwMDY2Y2MiIGN4PSI5IiBjeT0iMjUiIHI9IjIuNSIvPgogIDxjaXJjbGUgZmlsbD0iIzAwNjZjYyIgY3g9IjkiIGN5PSIxMyIgcj0iMi41Ii8+Cjwvc3ZnPgo=
+    repositoryUrl: https://github.com/redhat-connectivity/rhcl-lab
+    sourceCode: tests/req017/servers/lab-info
+    publishedDate: "2026-06-22T00:00:00Z"
+    tools:
+      - name: get_lab_name
+        description: Return the official RHCL PoC lab name
+        accessType: read_only
+        parameters: []
+      - name: list_target_zones
+        description: List multicloud zones referenced by the PoC plan
+        accessType: read_only
+        parameters: []
+      - name: ping
+        description: Echo a message and identify this MCP server
+        accessType: read_only
+        parameters:
+          - name: message
+            type: string
+            description: Message to echo (defaults to hello)
+            required: false
+    artifacts:
+      - uri: oci://image-registry.openshift-image-registry.svc:5000/rhcl-mcp-lab/rhcl-lab-info-mcp:latest
+        createTimeSinceEpoch: "1750550400000"
+        lastUpdateTimeSinceEpoch: "1750550400000"
+    runtimeMetadata:
+      defaultPort: 8080
+      mcpPath: /mcp
+    securityIndicators:
+      verifiedSource: true
+      secureEndpoint: true
+      sast: false
+      readOnlyTools: true
+    createTimeSinceEpoch: "1750550400000"
+    lastUpdateTimeSinceEpoch: "1750550400000"
+
+  - name: rhcl-text-tools
+    provider: RHCL Lab
+    license: apache-2.0
+    license_link: https://www.apache.org/licenses/LICENSE-2.0
+    description: >-
+      Small string utilities (uppercase, word count, reverse) for Gen AI
+      playground tool-calling demos.
+    readme: |-
+      # RHCL Text Tools MCP Server
+
+      Demonstrates basic tool calling with deterministic string helpers.
+
+      ## Tools
+      - `uppercase`
+      - `word_count`
+      - `reverse_text`
+    version: "0.1.0"
+    transports:
+      - http
+    logo: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzOCIgaGVpZ2h0PSIzOCIgdmlld0JveD0iMCAwIDM4IDM4Ij4KICA8cmVjdCBmaWxsPSIjZmZmIiBzdHJva2U9IiNlMGUwZTAiIHg9IjEiIHk9IjEiIHdpZHRoPSIzNiIgaGVpZ2h0PSIzNiIgcng9IjMiLz4KICA8Y2lyY2xlIGZpbGw9IiMwMDY2Y2MiIGN4PSIxOSIgY3k9IjE5IiByPSI1Ii8+CiAgPGNpcmNsZSBmaWxsPSIjMDA2NmNjIiBjeD0iMTkiIGN5PSI3IiByPSIyLjUiLz4KICA8Y2lyY2xlIGZpbGw9IiMwMDY2Y2MiIGN4PSIyOSIgY3k9IjEzIiByPSIyLjUiLz4KICA8Y2lyY2xlIGZpbGw9IiMwMDY2Y2MiIGN4PSIyOSIgY3k9IjI1IiByPSIyLjUiLz4KICA8Y2lyY2xlIGZpbGw9IiMwMDY2Y2MiIGN4PSIxOSIgY3k9IjMxIiByPSIyLjUiLz4KICA8Y2lyY2xlIGZpbGw9IiMwMDY2Y2MiIGN4PSI5IiBjeT0iMjUiIHI9IjIuNSIvPgogIDxjaXJjbGUgZmlsbD0iIzAwNjZjYyIgY3g9IjkiIGN5PSIxMyIgcj0iMi41Ii8+Cjwvc3ZnPgo=
+    repositoryUrl: https://github.com/redhat-connectivity/rhcl-lab
+    sourceCode: tests/req017/servers/text-tools
+    publishedDate: "2026-06-22T00:00:00Z"
+    tools:
+      - name: uppercase
+        description: Convert input text to upper case
+        accessType: read_only
+        parameters:
+          - name: text
+            type: string
+            description: Input text
+            required: true
+      - name: word_count
+        description: Count words and characters in the input text
+        accessType: read_only
+        parameters:
+          - name: text
+            type: string
+            description: Input text
+            required: true
+      - name: reverse_text
+        description: Reverse the input text character by character
+        accessType: read_only
+        parameters:
+          - name: text
+            type: string
+            description: Input text
+            required: true
+    artifacts:
+      - uri: oci://image-registry.openshift-image-registry.svc:5000/rhcl-mcp-lab/rhcl-text-tools-mcp:latest
+        createTimeSinceEpoch: "1750550400000"
+        lastUpdateTimeSinceEpoch: "1750550400000"
+    runtimeMetadata:
+      defaultPort: 8080
+      mcpPath: /mcp
+    securityIndicators:
+      verifiedSource: true
+      secureEndpoint: true
+      sast: false
+      readOnlyTools: true
+    createTimeSinceEpoch: "1750550400000"
+    lastUpdateTimeSinceEpoch: "1750550400000"
+
+  - name: rhcl-time-tools
+    provider: RHCL Lab
+    license: apache-2.0
+    license_link: https://www.apache.org/licenses/LICENSE-2.0
+    description: >-
+      UTC clock helpers (now, format Unix epoch, add minutes) for scheduling
+      demos in the Gen AI playground.
+    readme: |-
+      # RHCL Time Tools MCP Server
+
+      ## Tools
+      - `now_utc`
+      - `format_timestamp`
+      - `add_minutes`
+    version: "0.1.0"
+    transports:
+      - http
+    logo: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzOCIgaGVpZ2h0PSIzOCIgdmlld0JveD0iMCAwIDM4IDM4Ij4KICA8cmVjdCBmaWxsPSIjZmZmIiBzdHJva2U9IiNlMGUwZTAiIHg9IjEiIHk9IjEiIHdpZHRoPSIzNiIgaGVpZ2h0PSIzNiIgcng9IjMiLz4KICA8Y2lyY2xlIGZpbGw9IiMwMDY2Y2MiIGN4PSIxOSIgY3k9IjE5IiByPSI1Ii8+CiAgPGNpcmNsZSBmaWxsPSIjMDA2NmNjIiBjeD0iMTkiIGN5PSI3IiByPSIyLjUiLz4KICA8Y2lyY2xlIGZpbGw9IiMwMDY2Y2MiIGN4PSIyOSIgY3k9IjEzIiByPSIyLjUiLz4KICA8Y2lyY2xlIGZpbGw9IiMwMDY2Y2MiIGN4PSIyOSIgY3k9IjI1IiByPSIyLjUiLz4KICA8Y2lyY2xlIGZpbGw9IiMwMDY2Y2MiIGN4PSIxOSIgY3k9IjMxIiByPSIyLjUiLz4KICA8Y2lyY2xlIGZpbGw9IiMwMDY2Y2MiIGN4PSI5IiBjeT0iMjUiIHI9IjIuNSIvPgogIDxjaXJjbGUgZmlsbD0iIzAwNjZjYyIgY3g9IjkiIGN5PSIxMyIgcj0iMi41Ii8+Cjwvc3ZnPgo=
+    repositoryUrl: https://github.com/redhat-connectivity/rhcl-lab
+    sourceCode: tests/req017/servers/time-tools
+    publishedDate: "2026-06-22T00:00:00Z"
+    tools:
+      - name: now_utc
+        description: Return the current UTC timestamp in ISO-8601 format
+        accessType: read_only
+        parameters: []
+      - name: format_timestamp
+        description: Format a Unix epoch (seconds) as ISO-8601 UTC
+        accessType: read_only
+        parameters:
+          - name: unix_seconds
+            type: integer
+            description: Unix epoch in seconds
+            required: true
+      - name: add_minutes
+        description: Return UTC now and the same instant shifted forward by N minutes
+        accessType: read_only
+        parameters:
+          - name: minutes
+            type: integer
+            description: Minutes to add
+            required: true
+    artifacts:
+      - uri: oci://image-registry.openshift-image-registry.svc:5000/rhcl-mcp-lab/rhcl-time-tools-mcp:latest
+        createTimeSinceEpoch: "1750550400000"
+        lastUpdateTimeSinceEpoch: "1750550400000"
+    runtimeMetadata:
+      defaultPort: 8080
+      mcpPath: /mcp
+    securityIndicators:
+      verifiedSource: true
+      secureEndpoint: true
+      sast: false
+      readOnlyTools: true
+    createTimeSinceEpoch: "1750550400000"
+    lastUpdateTimeSinceEpoch: "1750550400000"

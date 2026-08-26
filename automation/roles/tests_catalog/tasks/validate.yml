@@ -1,0 +1,34 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Assert the tests catalog deployment is available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ tests_catalog_namespace }}"
+    name: "{{ tests_catalog_name }}"
+  register: tests_catalog_deploy
+  changed_when: false
+
+- name: Assert the tests catalog Route exists
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    namespace: "{{ tests_catalog_namespace }}"
+    name: "{{ tests_catalog_name }}"
+  register: tests_catalog_route
+  changed_when: false
+
+- name: Fail when the tests catalog is not ready
+  ansible.builtin.assert:
+    that:
+      - tests_catalog_deploy.resources | length == 1
+      - (tests_catalog_deploy.resources[0].status.availableReplicas | default(0)) >= 1
+      - tests_catalog_route.resources | length == 1
+    fail_msg: "Tests catalog not ready — check the Deployment availability and the Route."
+    success_msg: >-
+      Tests catalog is up at
+      https://{{ tests_catalog_route.resources[0].spec.host }}

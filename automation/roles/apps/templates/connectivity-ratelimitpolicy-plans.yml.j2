@@ -1,0 +1,57 @@
+---
+# Per-API-key rate limit for the API Product, written as a plain
+# RateLimitPolicy (not a PlanPolicy).
+#
+# === Two upstream gaps we work around here ===
+#
+# (1) #2047 — PlanPolicy emits one shared Limitador counter PER TIER, so
+#     every subscriber on the same plan competes for the same bucket. To
+#     give each subscriber an independent quota we have to write the RLP
+#     by hand and add `counters: [request.headers['x-consumer-id']]`.
+#     https://github.com/Kuadrant/kuadrant-operator/issues/2047
+#
+# (2) WASM rate-limit `when:` predicates see neither `auth.identity`
+#     (resolves to null — UnsupportedIndex) nor authorino-injected
+#     request headers (NoSuchKey on x-plan-id, x-consumer-id etc). So we
+#     can't gate distinct rates per tier from inside this RLP — only the
+#     COUNTER expression can read the injected header, not the predicate.
+#     Result: ONE bucket size for everyone, scoped per consumer.
+#
+# Effect for the lab: every API key gets its own quota — the gold/silver/
+# bronze tier distinction is COSMETIC at this layer (the dev portal still
+# labels keys per tier; the gateway throttles them all at the same rate).
+# The first {limit, window} from `apps_connectivity_plans` is used for
+# everyone; explicit `unlimited: true` tiers are skipped when picking it.
+# Switch back to a PlanPolicy once both gaps land upstream.
+apiVersion: kuadrant.io/v1
+kind: RateLimitPolicy
+metadata:
+  name: {{ apps_connectivity_planpolicy_name }}
+  namespace: {{ apps_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-banking-poc
+    rhcl.redhat.com/replaces: PlanPolicy
+    rhcl.redhat.com/upstream-issue: kuadrant-operator-2047
+spec:
+{% set rated = (apps_connectivity_plans | rejectattr('unlimited', 'defined') | list) + (apps_connectivity_plans | selectattr('unlimited', 'defined') | rejectattr('unlimited') | list) %}
+{% set chosen = rated[0] if rated else apps_connectivity_plans[0] %}
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: {{ apps_connectivity_route_name }}
+  limits:
+    per-consumer:
+      when:
+        # `has(auth.identity)` is the safe form — `auth.identity` itself
+        # would null-deref. Empty placeholder is treated as "no identity"
+        # so anonymous requests (e.g. health probes) bypass the limit.
+        - predicate: has(auth.identity)
+      rates:
+        - limit: {{ chosen.limit }}
+          window: {{ chosen.window | string | to_json }}
+      counters:
+        # The AuthPolicy injects `x-consumer-id` as the Secret name. Single
+        # quotes inside the bracket key because double quotes mid-CEL leak
+        # through the operator's stringification and Limitador's YAML
+        # parser rejects nested-double-quote forms.
+        - expression: request.headers['x-consumer-id']

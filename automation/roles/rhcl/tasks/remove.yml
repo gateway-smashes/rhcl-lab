@@ -1,0 +1,59 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Query the OpenShift Console configuration
+  kubernetes.core.k8s_info:
+    api_version: operator.openshift.io/v1
+    kind: Console
+    name: cluster
+  register: rhcl_console
+  changed_when: false
+  when: rhcl_console_plugin_enabled
+
+- name: Resolve OpenShift Console plugins without RHCL
+  ansible.builtin.set_fact:
+    rhcl_console_plugins_resolved: >-
+      {{
+        rhcl_console.resources[0].spec.plugins | default([])
+        | difference([rhcl_console_plugin_name])
+      }}
+  when:
+    - rhcl_console_plugin_enabled
+    - rhcl_console.resources | length == 1
+
+- name: Disable the RHCL console plugin
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: operator.openshift.io/v1
+      kind: Console
+      metadata:
+        name: cluster
+      spec:
+        plugins: "{{ rhcl_console_plugins_resolved }}"
+  when:
+    - rhcl_console_plugin_enabled
+    - rhcl_console.resources | length == 1
+
+- name: Remove the Kuadrant instance
+  kubernetes.core.k8s:
+    api_version: kuadrant.io/v1beta1
+    kind: Kuadrant
+    namespace: "{{ rhcl_namespace }}"
+    name: "{{ rhcl_instance_name }}"
+    state: absent
+    wait: true
+    wait_timeout: 600
+  ignore_errors: true
+
+- name: Remove the RHCL namespace and all operator resources inside it
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ rhcl_namespace }}"
+    state: absent
+    wait: true
+    wait_timeout: 600

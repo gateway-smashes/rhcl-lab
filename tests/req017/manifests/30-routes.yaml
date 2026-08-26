@@ -1,0 +1,57 @@
+# OpenShift Routes for external MCP clients and the OpenShift AI catalog.
+#
+#   export RHCL_ZONE_ROOT_DOMAIN=sandbox2314.opentlc.com
+#   envsubst < tests/req017/manifests/30-routes.yaml | oc apply -f -
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: rhcl-lab-info-mcp
+  namespace: rhcl-mcp-lab
+  labels:
+    rhcl-lab/requirement: req017-mcp-catalog
+spec:
+  to:
+    kind: Service
+    name: rhcl-lab-info-mcp
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  host: rhcl-lab-info-mcp.${RHCL_ZONE_ROOT_DOMAIN}
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: rhcl-text-tools-mcp
+  namespace: rhcl-mcp-lab
+  labels:
+    rhcl-lab/requirement: req017-mcp-catalog
+spec:
+  to:
+    kind: Service
+    name: rhcl-text-tools-mcp
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  host: rhcl-text-tools-mcp.${RHCL_ZONE_ROOT_DOMAIN}
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: rhcl-time-tools-mcp
+  namespace: rhcl-mcp-lab
+  labels:
+    rhcl-lab/requirement: req017-mcp-catalog
+spec:
+  to:
+    kind: Service
+    name: rhcl-time-tools-mcp
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  host: rhcl-time-tools-mcp.${RHCL_ZONE_ROOT_DOMAIN}

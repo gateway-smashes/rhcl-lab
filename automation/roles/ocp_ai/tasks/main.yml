@@ -1,0 +1,15 @@
+---
+- name: Skip OpenShift AI install/remove when disabled
+  ansible.builtin.meta: end_play
+  when:
+    - not (ocp_ai_enabled | bool)
+    - (component_action | default(rhcl_action)) in ["install", "remove"]
+
+- name: Validate ocp_ai role action
+  ansible.builtin.assert:
+    that:
+      - (component_action | default(rhcl_action)) in ["install", "remove", "validate"]
+    fail_msg: "Requested ocp_ai action must be install, remove, or validate."
+
+- name: Run ocp_ai action
+  ansible.builtin.include_tasks: "{{ component_action | default(rhcl_action) }}.yml"

@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ apps_rhoai_backend_name }}
+  namespace: {{ apps_namespace }}
+  labels:
+    app: {{ apps_rhoai_backend_name }}
+    rhcl-lab/component: rhoai-assistant
+  annotations:
+    image.openshift.io/triggers: |-
+      [{"from":{"kind":"ImageStreamTag","name":"{{ apps_rhoai_backend_image_name }}:latest","namespace":"{{ apps_namespace }}"},"fieldPath":"spec.template.spec.containers[?(@.name==\"{{ apps_rhoai_backend_name }}\")].image"}]
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: {{ apps_rhoai_backend_name }}
+  template:
+    metadata:
+      labels:
+        app: {{ apps_rhoai_backend_name }}
+    spec:
+      serviceAccountName: {{ apps_rhoai_backend_name }}
+      volumes:
+        - name: openshift-service-ca
+          configMap:
+            name: openshift-service-ca.crt
+            optional: true
+      containers:
+        - name: {{ apps_rhoai_backend_name }}
+          image: image-registry.openshift-image-registry.svc:5000/{{ apps_namespace }}/{{ apps_rhoai_backend_image_name }}:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          volumeMounts:
+            - name: openshift-service-ca
+              mountPath: /var/run/secrets/openshift/service-ca
+              readOnly: true
+          env:
+            - name: MAAS_BASE_URL
+              value: "{{ apps_rhoai_maas_base_url }}"
+            - name: MAAS_MODEL
+              value: "{{ apps_rhoai_maas_model }}"
+            - name: MAAS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ apps_rhoai_backend_name }}-maas
+                  key: api-key
+            - name: CHAT_HISTORY_MAX_MESSAGES
+              value: "{{ apps_rhoai_history_max_messages | string }}"
+            - name: RHOAI_CATALOG_SOURCE
+              value: "{{ apps_rhoai_catalog_source }}"
+            - name: EXTERNAL_MODELS_NAMESPACE
+              value: "{{ apps_rhoai_external_models_namespace }}"
+            - name: MAAS_TRUST_STORE_PATH
+              value: "/var/run/secrets/openshift/service-ca/service-ca.crt"
+            - name: MAAS_INSECURE_SKIP_VERIFY
+              value: "{{ apps_rhoai_maas_insecure_skip_verify | string | lower }}"
+            - name: MAAS_PREFER_SA_TOKEN
+              value: "{{ apps_rhoai_maas_prefer_sa_token | string | lower }}"
+            readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 20

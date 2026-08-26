@@ -1,0 +1,21 @@
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: {{ apps_req054_auth_policy_name }}
+  namespace: {{ apps_namespace }}
+  labels:
+    app.kubernetes.io/part-of: req054-http-versions
+    rhcl.poc/item: "54"
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: {{ apps_req054_route_name }}
+  defaults:
+    strategy: atomic
+    rules:
+      authorization:
+        allow-all:
+          opa:
+            rego: |
+              allow = true

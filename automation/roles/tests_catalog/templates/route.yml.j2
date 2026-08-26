@@ -1,0 +1,25 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ tests_catalog_name }}
+  namespace: {{ tests_catalog_namespace }}
+  labels:
+    app: {{ tests_catalog_name }}
+    app.kubernetes.io/part-of: rhcl-tests-catalog
+{% if tests_catalog_openshift_route_bb_enabled and apps_openshift_route_ingress_class_label_key %}
+    {{ apps_openshift_route_ingress_class_label_key }}: {{ apps_openshift_route_ingress_class_label_value }}
+{% endif %}
+spec:
+{% if tests_catalog_hostname | length > 0 %}
+  host: {{ tests_catalog_hostname }}
+{% endif %}
+  to:
+    kind: Service
+    name: {{ tests_catalog_name }}
+    weight: 100
+  port:
+    targetPort: {{ tests_catalog_container_port }}
+  tls:
+    termination: {{ tests_catalog_route_tls_termination }}
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None

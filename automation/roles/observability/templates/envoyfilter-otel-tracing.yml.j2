@@ -1,0 +1,34 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: otel-tracing
+  namespace: {{ observability_envoyfilter_namespace }}
+spec:
+  workloadSelector:
+    labels:
+      gateway.networking.k8s.io/gateway-name: {{ observability_envoyfilter_gateway_name }}
+  configPatches:
+    - applyTo: NETWORK_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+      patch:
+        operation: MERGE
+        value:
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+            tracing:
+              provider:
+                name: envoy.tracers.opentelemetry
+                typed_config:
+                  "@type": type.googleapis.com/envoy.config.trace.v3.OpenTelemetryConfig
+                  grpc_service:
+                    envoy_grpc:
+                      cluster_name: outbound|4317||{{ observability_collector_name }}-collector.{{ observability_collector_namespace }}.svc.cluster.local
+                    timeout: 0.250s
+                  service_name: {{ observability_envoyfilter_service_name }}
+              random_sampling:
+                value: {{ observability_envoyfilter_sampling }}

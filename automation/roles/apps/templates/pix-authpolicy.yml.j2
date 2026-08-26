@@ -1,0 +1,57 @@
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: {{ apps_pix_auth_policy_name }}
+  namespace: {{ apps_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-banking-poc
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: {{ apps_pix_route_name }}
+  rules:
+    authentication:
+      public-qrcode:
+        # /pix/v1/qrcode stays anonymous — useful for the demo to show
+        # *some* traffic with no consumer attached on the dashboards
+        # (the "anonymous" bucket on Top Consumers / Auth panels).
+        when:
+          - predicate: "request.path.startsWith('/pix/v1/qrcode')"
+        anonymous: {}
+      api-key-header:
+        credentials:
+          customHeader:
+            name: api-key
+        apiKey:
+          # Authorino runs in `kuadrant-system`; without allNamespaces
+          # it only sees Secrets in its own namespace and every request
+          # comes back as "API Key provided is invalid".
+          allNamespaces: true
+          selector:
+            matchLabels:
+              app: {{ apps_pix_apikey_secret_name }}
+        when:
+          - predicate: "!request.path.startsWith('/pix/v1/qrcode')"
+    response:
+      success:
+        filters:
+          identity:
+            json:
+              properties:
+                userid: { selector: auth.identity.metadata.name }
+          plan:
+            json:
+              properties:
+                planid: { selector: auth.identity.metadata.annotations.secret\.kuadrant\.io/plan-id }
+        headers:
+          # Authorino schema: `plain` itself takes a `selector` (or `value`),
+          # NOT a nested `value: { selector: ... }`. The extra wrapper makes
+          # Authorino emit the literal Go-formatted struct dump
+          # (`{[bytes] <nil>}`) into the request header — which then leaks
+          # into the `request_headers_x_consumer_id` Prometheus label and
+          # breaks the req018 cost report. banking-api's AuthPolicy uses
+          # the right shape; this is the same.
+          x-consumer-id:
+            plain:
+              selector: auth.identity.metadata.name

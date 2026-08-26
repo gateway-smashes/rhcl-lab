@@ -1,0 +1,20 @@
+# Long-lived token for the Grafana ServiceAccount.
+# K8s 1.24+ no longer auto-mints SA tokens; this explicit Secret of type
+# `kubernetes.io/service-account-token` triggers the token controller to
+# populate `data.token` once the SA exists.
+#
+# The token is consumed by 05-grafana-datasource-thanos.yaml — see the
+# inline-substitution note at the top of that file (the Grafana Operator's
+# `valuesFrom` integration is broken on v5.24.0, so the bearer is stamped
+# directly into the datasource CR instead of referenced from a Secret).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rhcl-grafana-sa-token
+  namespace: rhcl-grafana
+  annotations:
+    kubernetes.io/service-account.name: rhcl-grafana-sa
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+    rhcl.redhat.com/requirement: req041
+type: kubernetes.io/service-account-token

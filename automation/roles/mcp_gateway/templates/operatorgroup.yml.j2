@@ -1,0 +1,8 @@
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: {{ mcp_gateway_operatorgroup_name }}
+  namespace: {{ mcp_gateway_namespace }}
+spec:
+  targetNamespaces:
+    - {{ mcp_gateway_namespace }}

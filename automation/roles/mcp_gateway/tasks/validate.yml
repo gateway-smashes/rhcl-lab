@@ -1,0 +1,296 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Query the MCP gateway namespace
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Namespace
+    name: "{{ mcp_gateway_namespace }}"
+  register: mcp_gateway_namespace_info
+  changed_when: false
+
+- name: Assert that the MCP gateway namespace exists
+  ansible.builtin.assert:
+    that:
+      - mcp_gateway_namespace_info.resources | length == 1
+    fail_msg: "Namespace {{ mcp_gateway_namespace }} does not exist."
+
+- name: Query the dedicated MCP Gateway namespace
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Namespace
+    name: "{{ mcp_gateway_gateway_namespace }}"
+  register: mcp_gateway_dedicated_ns
+  changed_when: false
+  when: mcp_gateway_manage_gateway | bool
+
+- name: Assert that the dedicated MCP Gateway namespace exists
+  ansible.builtin.assert:
+    that:
+      - mcp_gateway_dedicated_ns.resources | length == 1
+    fail_msg: "Dedicated gateway namespace {{ mcp_gateway_gateway_namespace }} does not exist."
+  when: mcp_gateway_manage_gateway | bool
+
+- name: Query the MCP Gateway Subscription
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_subscription_name }}"
+  register: mcp_gateway_subscription
+  changed_when: false
+
+- name: Assert that the MCP Gateway Subscription is reconciled
+  ansible.builtin.assert:
+    that:
+      - mcp_gateway_subscription.resources | length == 1
+      - mcp_gateway_subscription.resources[0].spec.name == mcp_gateway_operator_name
+      - mcp_gateway_subscription.resources[0].status.currentCSV is defined
+    fail_msg: "MCP Gateway Subscription is missing or not reconciled."
+
+- name: Query the MCP Gateway CSV
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_subscription.resources[0].status.currentCSV }}"
+  register: mcp_gateway_csv
+  changed_when: false
+
+- name: Assert that the MCP Gateway CSV succeeded
+  ansible.builtin.assert:
+    that:
+      - mcp_gateway_csv.resources | length == 1
+      - mcp_gateway_csv.resources[0].status.phase == "Succeeded"
+    fail_msg: "MCP Gateway CSV did not reach Succeeded."
+
+- name: Query the MCP Gateway object
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: Gateway
+    namespace: "{{ mcp_gateway_gateway_namespace }}"
+    name: "{{ mcp_gateway_gateway_name }}"
+  register: mcp_gateway_gateway
+  changed_when: false
+
+- name: Assert that the MCP Gateway listener exists
+  ansible.builtin.assert:
+    that:
+      - mcp_gateway_gateway.resources | length == 1
+      - >-
+        (mcp_gateway_gateway.resources[0].spec.listeners | default([])
+        | selectattr('name', 'equalto', mcp_gateway_listener_name)
+        | list | length) == 1
+      - >-
+        (mcp_gateway_gateway.resources[0].spec.listeners | default([])
+        | selectattr('name', 'equalto', mcp_gateway_listener_name)
+        | map(attribute='protocol') | first) == mcp_gateway_protocol
+      - >-
+        (mcp_gateway_gateway.resources[0].spec.listeners | default([])
+        | selectattr('name', 'equalto', mcp_gateway_listener_name)
+        | map(attribute='port') | first | int) == (mcp_gateway_port | int)
+    fail_msg: "Gateway {{ mcp_gateway_gateway_namespace }}/{{ mcp_gateway_gateway_name }} is missing the MCP listener."
+
+- name: Assert that the backend MCP server listener exists
+  ansible.builtin.assert:
+    that:
+      - >-
+        (mcp_gateway_gateway.resources[0].spec.listeners | default([])
+        | selectattr('name', 'equalto', mcp_gateway_server_listener_name)
+        | list | length) == 1
+      - >-
+        (mcp_gateway_gateway.resources[0].spec.listeners | default([])
+        | selectattr('name', 'equalto', mcp_gateway_server_listener_name)
+        | map(attribute='protocol') | first) == mcp_gateway_server_listener_protocol
+      - >-
+        (mcp_gateway_gateway.resources[0].spec.listeners | default([])
+        | selectattr('name', 'equalto', mcp_gateway_server_listener_name)
+        | map(attribute='port') | first | int) == (mcp_gateway_port | int)
+    fail_msg: "Gateway {{ mcp_gateway_gateway_namespace }}/{{ mcp_gateway_gateway_name }} is missing the backend MCP server listener."
+
+- name: Query MCP gateway deny-all auth policy
+  kubernetes.core.k8s_info:
+    api_version: kuadrant.io/v1
+    kind: AuthPolicy
+    namespace: "{{ mcp_gateway_gateway_namespace }}"
+    name: "{{ mcp_gateway_gateway_deny_all_policy_name }}"
+  register: mcp_gateway_gateway_deny_all_policy
+  changed_when: false
+  when: mcp_gateway_gateway_deny_all_enabled
+
+- name: Assert that MCP gateway deny-all auth policy exists in the gateway namespace
+  ansible.builtin.assert:
+    that:
+      - mcp_gateway_gateway_deny_all_policy.resources | length == 1
+      - mcp_gateway_gateway_deny_all_policy.resources[0].spec.targetRef.kind == "Gateway"
+      - mcp_gateway_gateway_deny_all_policy.resources[0].spec.targetRef.name == mcp_gateway_gateway_name
+    fail_msg: >-
+      MCP gateway deny-all AuthPolicy is missing from {{ mcp_gateway_gateway_namespace }}.
+      Kuadrant AuthPolicies must target Gateway and HTTPRoute resources in the same namespace.
+  when: mcp_gateway_gateway_deny_all_enabled
+
+- name: Query the MCPGatewayExtension
+  kubernetes.core.k8s_info:
+    api_version: mcp.kuadrant.io/v1alpha1
+    kind: MCPGatewayExtension
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_extension_name }}"
+  register: mcp_gateway_extension
+  changed_when: false
+
+- name: Assert that MCPGatewayExtension is Ready
+  ansible.builtin.assert:
+    that:
+      - mcp_gateway_extension.resources | length == 1
+      - mcp_gateway_extension.resources[0].spec.privateHost == mcp_gateway_private_host
+      - >-
+        (mcp_gateway_extension.resources[0].status.conditions | default([])
+        | selectattr('type', 'equalto', 'Ready')
+        | selectattr('status', 'equalto', 'True')
+        | list | length) >= 1
+    fail_msg: "MCPGatewayExtension {{ mcp_gateway_namespace }}/{{ mcp_gateway_extension_name }} is missing, not Ready, or privateHost != {{ mcp_gateway_private_host }}."
+
+- name: Query the backend MCP server registration
+  kubernetes.core.k8s_info:
+    api_version: mcp.kuadrant.io/v1alpha1
+    kind: MCPServerRegistration
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_server_registration_name }}"
+  register: mcp_gateway_server_registration
+  changed_when: false
+
+- name: Query the backend MCP server HTTPRoute
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_server_registration_route_name }}"
+  register: mcp_gateway_server_route
+  changed_when: false
+
+- name: Assert that the backend MCP server HTTPRoute uses the configured backend
+  ansible.builtin.assert:
+    that:
+      - mcp_gateway_server_route.resources | length == 1
+      - mcp_gateway_server_route.resources[0].metadata.labels['mcp-server'] | default('') == 'true'
+      - >-
+        (mcp_gateway_server_route.resources[0].spec.parentRefs | default([])
+        | selectattr('sectionName', 'equalto', mcp_gateway_server_listener_name)
+        | list | length) >= 1
+      - >-
+        (mcp_gateway_server_route.resources[0].spec.rules | default([])
+        | map(attribute='backendRefs') | flatten
+        | selectattr('kind', 'equalto', 'Service')
+        | selectattr('name', 'equalto', mcp_gateway_server_backend_service_name)
+        | selectattr('namespace', 'equalto', mcp_gateway_server_backend_service_namespace)
+        | selectattr('port', 'equalto', mcp_gateway_server_backend_service_port | int)
+        | list | length) >= 1
+    fail_msg: >-
+      HTTPRoute {{ mcp_gateway_namespace }}/{{ mcp_gateway_server_registration_route_name }}
+      is not routing to {{ mcp_gateway_server_backend_service_namespace }}/{{ mcp_gateway_server_backend_service_name }}
+      on port {{ mcp_gateway_server_backend_service_port }}.
+
+- name: Query the backend MCP server route AuthPolicy
+  kubernetes.core.k8s_info:
+    api_version: kuadrant.io/v1
+    kind: AuthPolicy
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_server_route_auth_policy_name }}"
+  register: mcp_gateway_server_route_auth_policy
+  changed_when: false
+  when: mcp_gateway_server_route_auth_policy_enabled
+
+- name: Assert that the backend MCP server route AuthPolicy is accepted
+  ansible.builtin.assert:
+    that:
+      - mcp_gateway_server_route_auth_policy.resources | length == 1
+      - >-
+        (mcp_gateway_server_route_auth_policy.resources[0].status.conditions | default([])
+        | selectattr('type', 'equalto', 'Accepted')
+        | selectattr('status', 'equalto', 'True')
+        | list | length) >= 1
+    fail_msg: >-
+      AuthPolicy {{ mcp_gateway_namespace }}/{{ mcp_gateway_server_route_auth_policy_name }}
+      is missing or not Accepted. (Enforced is not asserted: Kuadrant may report Enforced=False while the HTTPRoute is valid.)
+  when: mcp_gateway_server_route_auth_policy_enabled
+
+- name: Assert that MCPServerRegistration is Ready
+  ansible.builtin.assert:
+    that:
+      - mcp_gateway_server_registration.resources | length == 1
+      - mcp_gateway_server_registration.resources[0].spec.prefix == mcp_gateway_server_registration_tool_prefix
+      - mcp_gateway_server_registration.resources[0].spec.targetRef.name == mcp_gateway_server_registration_route_name
+      - mcp_gateway_server_registration.resources[0].spec.targetRef.namespace == mcp_gateway_namespace
+      - >-
+        (mcp_gateway_server_registration.resources[0].status.conditions | default([])
+        | selectattr('type', 'equalto', 'Ready')
+        | selectattr('status', 'equalto', 'True')
+        | list | length) >= 1
+    fail_msg: "MCPServerRegistration {{ mcp_gateway_namespace }}/{{ mcp_gateway_server_registration_name }} is missing or not Ready."
+
+- name: Query the MCP HTTPRoute
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_custom_route_name if mcp_gateway_custom_route_enabled else mcp_gateway_auto_route_name }}"
+  register: mcp_gateway_route
+  changed_when: false
+
+- name: Assert that the MCP HTTPRoute exists
+  ansible.builtin.assert:
+    that:
+      - mcp_gateway_route.resources | length == 1
+      - >-
+        (mcp_gateway_route.resources[0].spec.parentRefs | default([])
+        | selectattr('sectionName', 'equalto', mcp_gateway_listener_name)
+        | list | length) >= 1
+      - >-
+        (mcp_gateway_route.resources[0].spec.rules | default([])
+        | map(attribute='backendRefs') | flatten
+        | selectattr('name', 'equalto', mcp_gateway_operator_name)
+        | selectattr('port', 'equalto', 8080)
+        | list | length) >= 1
+    fail_msg: "MCP HTTPRoute is missing from namespace {{ mcp_gateway_namespace }}."
+
+- name: Assert that the CORS EnvoyFilter exists
+  kubernetes.core.k8s_info:
+    api_version: networking.istio.io/v1alpha3
+    kind: EnvoyFilter
+    namespace: "{{ mcp_gateway_gateway_namespace }}"
+    name: "{{ mcp_gateway_cors_envoyfilter_name }}"
+  register: mcp_gateway_cors_ef
+  when: mcp_gateway_cors_envoyfilter_enabled
+
+- name: Assert that the CORS EnvoyFilter is present
+  ansible.builtin.assert:
+    that:
+      - mcp_gateway_cors_ef.resources | length == 1
+    fail_msg: "CORS EnvoyFilter {{ mcp_gateway_cors_envoyfilter_name }} is missing."
+  when: mcp_gateway_cors_envoyfilter_enabled
+
+- name: Validate the MCP endpoint initialize call
+  ansible.builtin.uri:
+    url: "{{ mcp_gateway_validate_url }}"
+    method: POST
+    headers:
+      Content-Type: application/json
+    body_format: json
+    body:
+      jsonrpc: "2.0"
+      id: 1
+      method: initialize
+    status_code: 200
+    return_content: true
+  register: mcp_gateway_endpoint_check
+  when: mcp_gateway_validate_endpoint
+
+- name: Assert that the MCP endpoint responded
+  ansible.builtin.assert:
+    that:
+      - mcp_gateway_endpoint_check.json.result.serverInfo.name is defined
+    fail_msg: "MCP endpoint did not return an initialize response."
+  when: mcp_gateway_validate_endpoint

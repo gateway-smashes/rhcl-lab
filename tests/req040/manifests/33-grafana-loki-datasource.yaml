@@ -1,0 +1,23 @@
+# GrafanaDatasource — Loki holding RHCL gateway access logs (per-consumer).
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: rhcl-loki
+  namespace: rhcl-grafana
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+    rhcl.redhat.com/requirement: req040
+spec:
+  uid: rhcl-loki
+  instanceSelector:
+    matchLabels:
+      dashboards: rhcl
+  datasource:
+    name: Loki (RHCL Gateway)
+    type: loki
+    access: proxy
+    url: http://loki.rhcl-logging.svc.cluster.local:3100
+    isDefault: false
+    editable: true
+    jsonData:
+      maxLines: 1000

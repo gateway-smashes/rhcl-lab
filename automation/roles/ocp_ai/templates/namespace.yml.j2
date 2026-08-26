@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ ocp_ai_ns_name }}
+{% if ocp_ai_ns_labels is defined and (ocp_ai_ns_labels | length > 0) %}
+  labels:
+{% for key, value in ocp_ai_ns_labels.items() %}
+    {{ key }}: "{{ value }}"
+{% endfor %}
+{% endif %}

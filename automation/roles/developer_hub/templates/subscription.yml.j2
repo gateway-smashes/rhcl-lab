@@ -1,0 +1,11 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: rhdh
+  namespace: {{ developer_hub_operator_namespace }}
+spec:
+  channel: {{ developer_hub_operator_channel }}
+  installPlanApproval: Automatic
+  name: rhdh
+  source: {{ developer_hub_operator_source }}
+  sourceNamespace: {{ developer_hub_operator_source_namespace }}

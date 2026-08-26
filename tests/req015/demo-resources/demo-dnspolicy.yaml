@@ -1,0 +1,22 @@
+apiVersion: kuadrant.io/v1
+kind: DNSPolicy
+metadata:
+  name: demo-dns-policy
+  namespace: item-15-gateway
+  labels:
+    app.kubernetes.io/part-of: connectivity-link-rbac-demo
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: demo-gateway
+  healthCheck:
+    failureThreshold: 3
+    interval: 1m
+    path: /health
+  loadBalancing:
+    defaultGeo: true
+    geo: GEO-NA
+    weight: 100
+  providerRefs:
+  - name: dns-credentials

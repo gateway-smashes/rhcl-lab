@@ -1,0 +1,60 @@
+# DNSPolicy for On-Premise CoreDNS
+#
+# Prerequisites:
+# 1. CoreDNS deployed in OpenShift or Kubernetes cluster
+# 2. CoreDNS configured to serve the zone (e.g., apps.local)
+# 3. Kuadrant DNS controller has access to CoreDNS namespace
+#
+# CoreDNS is typically deployed in:
+#   - kube-system namespace (native Kubernetes)
+#   - openshift-dns namespace (OpenShift)
+#
+# Installation:
+#   oc apply -f dnspolicy-onprem-coredns.yaml
+#
+# After applying:
+#   oc describe dnspolicy rhcl-apps-gateway-dns -n openshift-ingress
+#   oc logs -n kuadrant-system -l app=kuadrant-operator | grep dns
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rhcl-dns-credentials
+  namespace: openshift-ingress
+type: Opaque
+stringData:
+  # CoreDNS requires in-cluster kubeconfig access
+  # No external credentials needed — the operator uses its service account
+  # to communicate with CoreDNS API
+  COREDNS_ZONE: "apps.local"
+  COREDNS_NAMESPACE: "openshift-dns"
+
+---
+apiVersion: kuadrant.io/v1
+kind: DNSPolicy
+metadata:
+  name: rhcl-apps-gateway-dns
+  namespace: openshift-ingress
+  labels:
+    app: rhcl
+spec:
+  # Target the main RHCL Gateway
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: rhcl-apps-gateway
+
+  # Reference the CoreDNS configuration
+  providerRefs:
+    - name: rhcl-dns-credentials
+
+  # Load balancing configuration
+  # CoreDNS on-premise typically uses weight-based distribution
+  loadBalancing:
+    # This cluster's share of traffic
+    weight: 100  # Single cluster: 100
+    # For multiple on-premise clusters:
+    # Cluster A: weight: 70
+    # Cluster B: weight: 30
+    defaultGeo: true

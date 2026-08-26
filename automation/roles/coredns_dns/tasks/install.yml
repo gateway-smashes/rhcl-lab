@@ -1,0 +1,298 @@
+---
+- name: Skip CoreDNS DNS provider when disabled
+  ansible.builtin.meta: end_play
+  when: not coredns_dns_enabled
+
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Validate CoreDNS DNS provider inputs
+  ansible.builtin.assert:
+    that:
+      - coredns_dns_zone | length > 0
+      - coredns_dns_namespace | length > 0
+      - coredns_dns_secret_name | length > 0
+      - coredns_dns_source_namespace | length > 0
+      - coredns_dns_source_service | length > 0
+      - coredns_dns_service_type in ["LoadBalancer", "NodePort", "ClusterIP"]
+    fail_msg: >-
+      coredns_dns_zone, coredns_dns_namespace, coredns_dns_secret_name,
+      coredns_dns_source_namespace, coredns_dns_source_service must be set,
+      and coredns_dns_service_type must be LoadBalancer, NodePort, or ClusterIP.
+
+- name: Assert namespace alignment for the DNSPolicy
+  ansible.builtin.assert:
+    that:
+      - coredns_dns_namespace == coredns_dns_policy_target_gateway_namespace
+    fail_msg: >-
+      DNSPolicy creation requires the CoreDNS provider Secret and the target
+      Gateway to share the same namespace (Kuadrant policy targetRef and
+      providerRefs are local-namespace). Got
+      coredns_dns_namespace='{{ coredns_dns_namespace }}' and
+      coredns_dns_policy_target_gateway_namespace='{{ coredns_dns_policy_target_gateway_namespace }}'.
+  when: coredns_dns_policy_enabled
+
+- name: Assert default-provider label is enabled when delegate is true
+  ansible.builtin.assert:
+    that:
+      - coredns_dns_secret_default_provider_label | bool
+    fail_msg: >-
+      DNSPolicy.delegate=true requires the CoreDNS provider Secret to carry the
+      kuadrant.io/default-provider=true label, since delegate and providerRefs
+      are mutually exclusive. Either keep COREDNS_DNS_SECRET_DEFAULT_PROVIDER_LABEL
+      enabled (default), or disable delegate with COREDNS_DNS_POLICY_DELEGATE=false.
+  when:
+    - coredns_dns_policy_enabled
+    - coredns_dns_policy_delegate | bool
+
+- name: Ensure the kuadrant-coredns Service exists
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Service
+    namespace: "{{ coredns_dns_source_namespace }}"
+    name: "{{ coredns_dns_source_service }}"
+  register: coredns_dns_service_pre
+  changed_when: false
+
+- name: Assert the kuadrant-coredns Service was provisioned by coredns-install
+  ansible.builtin.assert:
+    that:
+      - coredns_dns_service_pre.resources | length == 1
+    fail_msg: >-
+      Service {{ coredns_dns_source_namespace }}/{{ coredns_dns_source_service }}
+      not found. Run playbooks/coredns-install.yml first.
+
+- name: Revert kuadrant-coredns Service to ClusterIP when previously patched to LoadBalancer
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: "{{ coredns_dns_source_service }}"
+        namespace: "{{ coredns_dns_source_namespace }}"
+        annotations:
+          service.beta.kubernetes.io/aws-load-balancer-type: null
+      spec:
+        type: ClusterIP
+  when:
+    - coredns_dns_service_pre.resources[0].spec.type | default('ClusterIP') == 'LoadBalancer'
+
+- name: Compute external Service annotations (merge AWS NLB defaults when enabled)
+  ansible.builtin.set_fact:
+    coredns_dns_external_annotations_effective: >-
+      {{ (coredns_dns_aws_nlb_compat | bool)
+         | ternary({'service.beta.kubernetes.io/aws-load-balancer-type': 'nlb'}, {})
+         | combine(coredns_dns_service_annotations | default({}, true)) }}
+
+- name: Resolve pod selector from the upstream kuadrant-coredns Service
+  ansible.builtin.set_fact:
+    coredns_dns_source_selector: "{{ coredns_dns_service_pre.resources[0].spec.selector }}"
+
+- name: Build external Service port list
+  ansible.builtin.set_fact:
+    coredns_dns_external_ports: "{{ udp_ports + tcp_ports }}"
+  vars:
+    upper_protos: "{{ coredns_dns_external_protocols | map('upper') | list }}"
+    udp_ports: "{{ ('UDP' in upper_protos) | ternary([{'name': 'udp-53', 'port': 53, 'protocol': 'UDP', 'targetPort': 53}], []) }}"
+    tcp_ports: "{{ ('TCP' in upper_protos) | ternary([{'name': 'tcp-53', 'port': 53, 'protocol': 'TCP', 'targetPort': 53}], []) }}"
+
+- name: Create the external kuadrant-coredns LoadBalancer Service
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: "{{ coredns_dns_external_service_name }}"
+        namespace: "{{ coredns_dns_source_namespace }}"
+        annotations: "{{ coredns_dns_external_annotations_effective }}"
+        labels:
+          app.kubernetes.io/name: coredns
+          app.kubernetes.io/instance: kuadrant
+          app.kubernetes.io/component: external-dns-entrypoint
+      spec:
+        type: LoadBalancer
+        selector: "{{ coredns_dns_source_selector }}"
+        ports: "{{ coredns_dns_external_ports }}"
+  when: coredns_dns_service_type == "LoadBalancer"
+
+- name: Wait for the external kuadrant-coredns LoadBalancer endpoint
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Service
+    namespace: "{{ coredns_dns_source_namespace }}"
+    name: "{{ coredns_dns_external_service_name }}"
+  register: coredns_dns_service
+  changed_when: false
+  until:
+    - coredns_dns_service.resources | length == 1
+    - (coredns_dns_service.resources[0].status.loadBalancer.ingress | default([])) | length > 0
+  retries: "{{ (coredns_dns_lb_wait_timeout | int) // 10 }}"
+  delay: 10
+  ignore_errors: true
+  when: coredns_dns_service_type == "LoadBalancer"
+
+- name: Detect LoadBalancer provisioning failure
+  ansible.builtin.set_fact:
+    coredns_dns_lb_missing: >-
+      {{ coredns_dns_service_type == 'LoadBalancer'
+         and ((coredns_dns_service.resources[0].status.loadBalancer.ingress | default([])) | length == 0) }}
+
+- name: Collect Service Events for diagnostics
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Event
+    namespace: "{{ coredns_dns_source_namespace }}"
+  register: coredns_dns_events
+  changed_when: false
+  when: coredns_dns_lb_missing
+
+- name: Show diagnostics when the LoadBalancer was not provisioned
+  ansible.builtin.debug:
+    msg:
+      - "LoadBalancer for {{ coredns_dns_source_namespace }}/{{ coredns_dns_external_service_name }} was NOT provisioned within {{ coredns_dns_lb_wait_timeout }}s."
+      - "Most recent Events in namespace '{{ coredns_dns_source_namespace }}' related to the Service:"
+      - "{{ (coredns_dns_events.resources | default([]))
+            | selectattr('involvedObject.name', 'equalto', coredns_dns_external_service_name)
+            | selectattr('involvedObject.kind', 'equalto', 'Service')
+            | map(attribute='message') | list }}"
+      - "Investigate: 'oc -n {{ coredns_dns_source_namespace }} describe svc {{ coredns_dns_external_service_name }}' and the cloud-controller logs."
+      - "Common AWS causes: VPC subnets missing kubernetes.io/role/elb tag, IAM/quota issues, AWS Load Balancer Controller intercepting the Service, or mixed UDP+TCP protocols (in-tree CCM rejects them — keep COREDNS_DNS_EXTERNAL_PROTOCOLS=UDP)."
+  when: coredns_dns_lb_missing
+
+- name: Fail when the LoadBalancer was not provisioned
+  ansible.builtin.fail:
+    msg: "kuadrant-coredns external LoadBalancer endpoint did not appear. See diagnostics above."
+  when: coredns_dns_lb_missing
+
+- name: Fetch the kuadrant-coredns ConfigMap (Corefile)
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: ConfigMap
+    namespace: "{{ coredns_dns_source_namespace }}"
+    name: "{{ coredns_dns_source_configmap }}"
+  register: coredns_dns_configmap
+  changed_when: false
+
+- name: Assert the kuadrant-coredns ConfigMap exists
+  ansible.builtin.assert:
+    that:
+      - coredns_dns_configmap.resources | length == 1
+      - "'Corefile' in coredns_dns_configmap.resources[0].data"
+    fail_msg: >-
+      ConfigMap {{ coredns_dns_source_namespace }}/{{ coredns_dns_source_configmap }}
+      is missing or has no Corefile entry.
+
+- name: Compute the patched Corefile (replace upstream zone with target zone)
+  ansible.builtin.set_fact:
+    coredns_dns_corefile_patched: >-
+      {{ coredns_dns_configmap.resources[0].data.Corefile
+         | replace(coredns_dns_upstream_zone, coredns_dns_zone) }}
+
+- name: Apply the patched Corefile
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: "{{ coredns_dns_source_configmap }}"
+        namespace: "{{ coredns_dns_source_namespace }}"
+      data:
+        Corefile: "{{ coredns_dns_corefile_patched }}"
+  register: coredns_dns_configmap_apply
+
+- name: Restart the kuadrant-coredns Deployment when the Corefile changed
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: "{{ coredns_dns_source_deployment }}"
+        namespace: "{{ coredns_dns_source_namespace }}"
+      spec:
+        template:
+          metadata:
+            annotations:
+              rhcl.redhat.com/corefile-revision: "{{ coredns_dns_corefile_patched | hash('sha1') }}"
+  when: coredns_dns_configmap_apply is changed
+
+- name: Wait for the kuadrant-coredns Deployment to be available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ coredns_dns_source_namespace }}"
+    name: "{{ coredns_dns_source_deployment }}"
+  register: coredns_dns_deployment
+  changed_when: false
+  failed_when: false
+  until:
+    - coredns_dns_deployment.resources | length == 1
+    - (coredns_dns_deployment.resources[0].status.availableReplicas | default(0)) | int >= 1
+  retries: 30
+  delay: 10
+
+- name: Ensure the DNSPolicy/Secret namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ coredns_dns_namespace }}"
+    state: present
+
+- name: Create or update the CoreDNS provider Secret
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'secret-coredns.yml.j2') | from_yaml }}"
+
+- name: Label the CoreDNS Secret as default provider
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ coredns_dns_secret_name }}"
+        namespace: "{{ coredns_dns_namespace }}"
+        labels:
+          kuadrant.io/default-provider: "true"
+  when: coredns_dns_secret_default_provider_label
+
+- name: Create or update the CoreDNS DNSPolicy
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'dnspolicy-coredns.yml.j2') | from_yaml }}"
+  when: coredns_dns_policy_enabled
+
+- name: Collect external endpoints of the kuadrant-coredns Service
+  ansible.builtin.set_fact:
+    coredns_dns_lb_endpoints: >-
+      {{ (coredns_dns_service.resources[0].status.loadBalancer.ingress | default([]))
+         | map(attribute='ip', default='')
+         | reject('equalto', '')
+         | list
+         + (coredns_dns_service.resources[0].status.loadBalancer.ingress | default([]))
+           | map(attribute='hostname', default='')
+           | reject('equalto', '')
+           | list }}
+  when: coredns_dns_service_type == "LoadBalancer"
+
+- name: Show the parent-zone delegation block to configure on the public DNS
+  ansible.builtin.debug:
+    msg:
+      - "CoreDNS authoritative endpoints for zone '{{ coredns_dns_zone }}':"
+      - "{{ coredns_dns_lb_endpoints | default([]) }}"
+      - ""
+      - "Add the following records to the parent zone on Cloudflare:"
+      - "  ; Glue A records (one per CoreDNS endpoint)"
+      - "{% for ep in coredns_dns_lb_endpoints | default([]) %}  {{ coredns_dns_glue_record_prefix }}{{ loop.index }}.{{ coredns_dns_zone }}. A {{ ep }}{% if not loop.last %}\n{% endif %}{% endfor %}"
+      - "  ; NS delegation"
+      - "{% for ep in coredns_dns_lb_endpoints | default([]) %}  {{ coredns_dns_zone }}. NS {{ coredns_dns_glue_record_prefix }}{{ loop.index }}.{{ coredns_dns_zone }}.{% if not loop.last %}\n{% endif %}{% endfor %}"
+      - ""
+      - "When you bring additional clusters online, re-run this playbook on each"
+      - "cluster and append the new ns*-{{ coredns_dns_zone }} records (glue + NS)"
+      - "to the parent zone alongside the existing ones."
+  when: coredns_dns_service_type == "LoadBalancer"

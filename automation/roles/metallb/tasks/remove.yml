@@ -1,0 +1,40 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Remove the L2Advertisement
+  kubernetes.core.k8s:
+    api_version: metallb.io/v1beta1
+    kind: L2Advertisement
+    namespace: "{{ metallb_namespace }}"
+    name: "{{ metallb_l2advertisement_name }}"
+    state: absent
+
+- name: Remove the IPAddressPool
+  kubernetes.core.k8s:
+    api_version: metallb.io/v1beta1
+    kind: IPAddressPool
+    namespace: "{{ metallb_namespace }}"
+    name: "{{ metallb_ipaddresspool_name }}"
+    state: absent
+
+- name: Remove the MetalLB CR (waits for the operator to drain speakers/controller)
+  kubernetes.core.k8s:
+    api_version: metallb.io/v1beta1
+    kind: MetalLB
+    namespace: "{{ metallb_namespace }}"
+    name: "{{ metallb_cr_name }}"
+    state: absent
+    wait: true
+    wait_timeout: 300
+
+- name: Remove the metallb-system namespace and all operator resources inside it
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ metallb_namespace }}"
+    state: absent
+    wait: true
+    wait_timeout: 600

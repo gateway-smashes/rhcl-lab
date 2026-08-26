@@ -1,0 +1,327 @@
+---
+# Opt-out gate (RHBK_ENABLED=false) is enforced by tasks/main.yml:
+#   include_tasks: install.yml  when: rhbk_enabled | bool
+# so install.yml is never sourced when disabled. No need to repeat the
+# gate here.
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Ensure the RHBK namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ rhbk_namespace }}"
+    state: present
+
+# ---------------------------------------------------------------------------
+# Operator (OLM) — gated by rhbk_install_operator
+# ---------------------------------------------------------------------------
+- name: Query existing OperatorGroups in the RHBK namespace
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    namespace: "{{ rhbk_namespace }}"
+  register: rhbk_existing_ogs
+  changed_when: false
+  when: rhbk_install_operator | bool
+
+- name: Remove pre-existing OperatorGroups with a different name
+  kubernetes.core.k8s:
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    namespace: "{{ rhbk_namespace }}"
+    name: "{{ item.metadata.name }}"
+    state: absent
+  loop: "{{ rhbk_existing_ogs.resources | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  when:
+    - rhbk_install_operator | bool
+    - item.metadata.name != rhbk_operatorgroup_name
+
+- name: Ensure the RHBK OperatorGroup exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'operatorgroup.yml.j2') | from_yaml }}"
+  when: rhbk_install_operator | bool
+
+- name: Ensure the RHBK Subscription exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'subscription.yml.j2') | from_yaml }}"
+  when: rhbk_install_operator | bool
+
+- name: Wait for the RHBK subscription to report a current CSV
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ rhbk_namespace }}"
+    name: "{{ rhbk_operator_subscription_name }}"
+  register: rhbk_subscription
+  changed_when: false
+  failed_when: false
+  until:
+    - rhbk_subscription.resources | length == 1
+    - rhbk_subscription.resources[0].status.currentCSV is defined
+  retries: 60
+  delay: 10
+  when: rhbk_install_operator | bool
+
+- name: Wait for the RHBK CSV to succeed
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ rhbk_namespace }}"
+    name: "{{ rhbk_subscription.resources[0].status.currentCSV }}"
+  register: rhbk_csv
+  changed_when: false
+  failed_when: false
+  until:
+    - rhbk_csv.resources | length == 1
+    - rhbk_csv.resources[0].status.phase == "Succeeded"
+  retries: 60
+  delay: 10
+  when: rhbk_install_operator | bool
+
+# Use `oc get crd` via the command module rather than kubernetes.core.k8s_info.
+# The Python kubernetes-client on the customer's controller node raises
+# `ResourceField.__init__() got multiple values for argument 'self'`
+# whether we pass `name=` or not. Drop the Python client entirely for
+# this check — `oc get crd <X> --ignore-not-found -o name` returns an
+# empty stdout when the CRD is missing.
+- name: Probe required Keycloak CRDs (RHBK_INSTALL_OPERATOR=false)
+  ansible.builtin.command:
+    cmd: "oc get crd {{ item }} --ignore-not-found -o name"
+  register: rhbk_crd_probe
+  changed_when: false
+  loop:
+    - keycloaks.k8s.keycloak.org
+    - keycloakrealmimports.k8s.keycloak.org
+  when: not (rhbk_install_operator | bool)
+
+- name: Verify required Keycloak CRDs are present
+  ansible.builtin.assert:
+    that:
+      - (item.stdout | default('') | length) > 0
+    fail_msg: >-
+      RHBK_INSTALL_OPERATOR=false but the required CRD '{{ item.item }}' is
+      missing on the cluster. Either install the RHBK operator manually
+      first, or set RHBK_INSTALL_OPERATOR=true.
+    quiet: true
+  loop: "{{ rhbk_crd_probe.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: not (rhbk_install_operator | bool)
+
+# ---------------------------------------------------------------------------
+# Database (PostgreSQL)
+# ---------------------------------------------------------------------------
+- name: Deploy the PostgreSQL backing database
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'postgres.yml.j2') | from_yaml_all | list }}"
+
+- name: Wait for PostgreSQL to be available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ rhbk_namespace }}"
+    name: postgres
+  register: rhbk_pg
+  changed_when: false
+  failed_when: false
+  until:
+    - rhbk_pg.resources | length == 1
+    - (rhbk_pg.resources[0].status.availableReplicas | default(0)) >= 1
+  retries: 30
+  delay: 10
+
+# ---------------------------------------------------------------------------
+# TLS (Let's Encrypt via cert-manager)
+# ---------------------------------------------------------------------------
+- name: Issue the Keycloak TLS certificate (trusted issuer)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'keycloak-certificate.yml.j2') | from_yaml }}"
+  when: rhbk_tls_create_certificate | bool
+
+- name: Wait for the Keycloak TLS certificate to be Ready
+  kubernetes.core.k8s_info:
+    api_version: cert-manager.io/v1
+    kind: Certificate
+    namespace: "{{ rhbk_namespace }}"
+    name: "{{ rhbk_tls_secret_name }}"
+  register: rhbk_cert
+  changed_when: false
+  failed_when: false
+  until:
+    - rhbk_cert.resources | length == 1
+    - >-
+      rhbk_cert.resources[0].status.conditions | default([])
+      | selectattr('type', 'equalto', 'Ready')
+      | selectattr('status', 'equalto', 'True') | list | length >= 1
+  retries: 30
+  delay: 10
+  when: rhbk_tls_create_certificate | bool
+
+# ---------------------------------------------------------------------------
+# DNS override (only when the zone wildcard points at the gateway, not router)
+# ---------------------------------------------------------------------------
+- name: Discover the router LoadBalancer Service
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Service
+    namespace: openshift-ingress
+    name: router-default
+  register: rhbk_router_svc
+  changed_when: false
+  when: rhbk_dns_override_enabled | bool
+
+- name: Resolve router LB hostname from Service status
+  ansible.builtin.set_fact:
+    rhbk_router_lb_hostname: >-
+      {{ (rhbk_router_svc.resources[0].status.loadBalancer.ingress | default([]))
+         | map(attribute='hostname', default='')
+         | reject('equalto', '')
+         | first | default('', true) }}
+  when:
+    - rhbk_dns_override_enabled | bool
+    - rhbk_router_svc.resources | default([]) | length > 0
+    - rhbk_router_lb_hostname | default('') | length == 0
+
+- name: Resolve router LB IP from Service status
+  ansible.builtin.set_fact:
+    rhbk_router_lb_ip: >-
+      {{ (rhbk_router_svc.resources[0].status.loadBalancer.ingress | default([]))
+         | map(attribute='ip', default='')
+         | reject('equalto', '')
+         | first | default('', true) }}
+  when:
+    - rhbk_dns_override_enabled | bool
+    - rhbk_router_svc.resources | default([]) | length > 0
+    - rhbk_router_lb_hostname | default('') | length == 0
+
+- name: Resolve router LB DNS record target
+  ansible.builtin.set_fact:
+    rhbk_router_lb_dns_target: >-
+      {{ rhbk_router_lb_hostname if (rhbk_router_lb_hostname | default('') | length > 0)
+         else (rhbk_router_lb_ip | default('', true)) }}
+  when: rhbk_dns_override_enabled | bool
+
+- name: Warn when router LB endpoint could not be resolved
+  ansible.builtin.debug:
+    msg: >-
+      router-default LoadBalancer has no usable hostname or IP in status.
+      Set RHBK_ROUTER_LB_HOSTNAME (hostname or IP) or disable DNS override with
+      RHBK_DNS_OVERRIDE_ENABLED=false. Ingress:
+      {{ rhbk_router_svc.resources[0].status.loadBalancer.ingress | default([]) }}
+  when:
+    - rhbk_dns_override_enabled | bool
+    - rhbk_router_svc.resources | default([]) | length > 0
+    - rhbk_router_lb_dns_target | default('') | length == 0
+
+- name: Create the Keycloak DNS override record
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'keycloak-dnsrecord.yml.j2') | from_yaml }}"
+  when:
+    - rhbk_dns_override_enabled | bool
+    - rhbk_router_lb_dns_target | default('') | length > 0
+
+# ---------------------------------------------------------------------------
+# Keycloak instance + realm
+# ---------------------------------------------------------------------------
+- name: Create the Keycloak bootstrap admin Secret (definitive admin user/password)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'bootstrap-admin-secret.yml.j2') | from_yaml }}"
+
+- name: Create the Keycloak instance
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'keycloak.yml.j2') | from_yaml }}"
+
+# Corporate profile — Route OpenShift própria (edge) consumida pelo NGINX interno.
+- name: Create the Keycloak OpenShift Route (corporate edge)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'keycloak-openshift-route.yml.j2') | from_yaml }}"
+  when: rhbk_openshift_route_enabled | bool
+
+- name: Wait for Keycloak to report Ready
+  kubernetes.core.k8s_info:
+    api_version: k8s.keycloak.org/v2alpha1
+    kind: Keycloak
+    namespace: "{{ rhbk_namespace }}"
+    name: "{{ rhbk_keycloak_name }}"
+  register: rhbk_keycloak
+  changed_when: false
+  failed_when: false
+  until:
+    - rhbk_keycloak.resources | length == 1
+    - >-
+      rhbk_keycloak.resources[0].status.conditions | default([])
+      | selectattr('type', 'equalto', 'Ready')
+      | selectattr('status', 'equalto', 'True') | list | length >= 1
+  retries: 40
+  delay: 15
+
+- name: Import the realm (client, roles, users)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'keycloak-realm-import.yml.j2') | from_yaml }}"
+
+- name: Wait for the realm import to finish
+  kubernetes.core.k8s_info:
+    api_version: k8s.keycloak.org/v2alpha1
+    kind: KeycloakRealmImport
+    namespace: "{{ rhbk_namespace }}"
+    name: "{{ rhbk_realm }}-realm"
+  register: rhbk_realm_import
+  changed_when: false
+  failed_when: false
+  until:
+    - rhbk_realm_import.resources | length == 1
+    - >-
+      rhbk_realm_import.resources[0].status.conditions | default([])
+      | selectattr('type', 'equalto', 'Done')
+      | selectattr('status', 'equalto', 'True') | list | length >= 1
+  retries: 30
+  delay: 10
+
+# Corporate profile — Authorino precisa confiar na CA interna corporativa (que assina o
+# cert do edge) pra buscar o JWKS do issuer. Cria o ConfigMap inject-trusted-
+# cabundle e monta no pod do Authorino. (No AWS/LE o cert já é confiável.)
+- name: Create the Authorino trusted-CA ConfigMap (OpenShift-injected bundle)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'authorino-trusted-ca-configmap.yml.j2') | from_yaml }}"
+  when: rhbk_authorino_trust_ca | bool
+
+- name: Mount the trusted-CA bundle into Authorino (spec.volumes)
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: operator.authorino.kuadrant.io/v1beta1
+      kind: Authorino
+      metadata:
+        name: "{{ rhbk_authorino_name }}"
+        namespace: "{{ rhbk_authorino_namespace }}"
+      spec:
+        volumes:
+          defaultMode: 420
+          items:
+            - name: trusted-ca
+              configMaps:
+                - "{{ rhbk_authorino_trust_ca_configmap }}"
+              mountPath: /etc/pki/ca-trust/extracted/pem
+              items:
+                - key: ca-bundle.crt
+                  path: tls-ca-bundle.pem
+  when: rhbk_authorino_trust_ca | bool
+
+- name: Report the OIDC issuer URL
+  ansible.builtin.debug:
+    msg: "RHBK ready — OIDC issuer: https://{{ rhbk_hostname }}/realms/{{ rhbk_realm }}"

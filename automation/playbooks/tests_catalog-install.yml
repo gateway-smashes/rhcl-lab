@@ -1,0 +1,10 @@
+---
+- name: Install the RHCL tests catalog (README viewer / reproducer)
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  roles:
+    - role: tests_catalog
+      vars:
+        tests_catalog_action: install

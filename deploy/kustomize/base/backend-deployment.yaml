@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: red-bank-backend
+  labels:
+    app: red-bank-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: red-bank-backend
+  template:
+    metadata:
+      labels:
+        app: red-bank-backend
+    spec:
+      containers:
+        - name: backend
+          image: quay.io/hodrigohamalho/red-bank-backend:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: APP_INSTANCE_NAME
+              value: banking-api-v1
+            - name: QUARKUS_HTTP_PORT
+              value: "8080"
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /api/v1/accounts/summary
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/accounts/summary
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20

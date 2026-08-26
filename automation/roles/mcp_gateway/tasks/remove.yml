@@ -1,0 +1,211 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Remove the CORS EnvoyFilter
+  kubernetes.core.k8s:
+    api_version: networking.istio.io/v1alpha3
+    kind: EnvoyFilter
+    namespace: "{{ mcp_gateway_gateway_namespace }}"
+    name: "{{ mcp_gateway_cors_envoyfilter_name }}"
+    state: absent
+  when: mcp_gateway_cors_envoyfilter_enabled
+
+- name: Remove the MCP gateway deny-all auth policy
+  kubernetes.core.k8s:
+    api_version: kuadrant.io/v1
+    kind: AuthPolicy
+    namespace: "{{ mcp_gateway_gateway_namespace }}"
+    name: "{{ mcp_gateway_gateway_deny_all_policy_name }}"
+    state: absent
+  when: mcp_gateway_gateway_deny_all_enabled
+
+- name: Remove the backend MCP server registration
+  kubernetes.core.k8s:
+    api_version: mcp.kuadrant.io/v1alpha1
+    kind: MCPServerRegistration
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_server_registration_name }}"
+    state: absent
+
+- name: Remove the backend MCP server route AuthPolicy
+  kubernetes.core.k8s:
+    api_version: kuadrant.io/v1
+    kind: AuthPolicy
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_server_route_auth_policy_name }}"
+    state: absent
+  when: mcp_gateway_server_route_auth_policy_enabled
+
+- name: Remove the custom MCP HTTPRoute
+  kubernetes.core.k8s:
+    api_version: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_custom_route_name }}"
+    state: absent
+  when: mcp_gateway_custom_route_enabled
+
+- name: Remove the custom MCP route AuthPolicy
+  kubernetes.core.k8s:
+    api_version: kuadrant.io/v1
+    kind: AuthPolicy
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_custom_route_auth_policy_name }}"
+    state: absent
+  when: mcp_gateway_custom_route_auth_policy_enabled
+
+- name: Remove the browser HTTP route to the MCP Gateway listener
+  kubernetes.core.k8s:
+    api_version: route.openshift.io/v1
+    kind: Route
+    namespace: "{{ mcp_gateway_gateway_namespace }}"
+    name: "{{ mcp_gateway_browser_route_name }}"
+    state: absent
+  when: mcp_gateway_browser_route_enabled
+
+- name: Remove the backend MCP server HTTPRoute
+  kubernetes.core.k8s:
+    api_version: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_server_registration_route_name }}"
+    state: absent
+
+- name: Remove the MCPGatewayExtension
+  kubernetes.core.k8s:
+    api_version: mcp.kuadrant.io/v1alpha1
+    kind: MCPGatewayExtension
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_extension_name }}"
+    state: absent
+    wait: true
+    wait_timeout: 300
+  ignore_errors: true
+
+- name: Remove the MCP Gateway object
+  kubernetes.core.k8s:
+    api_version: gateway.networking.k8s.io/v1
+    kind: Gateway
+    namespace: "{{ mcp_gateway_gateway_namespace }}"
+    name: "{{ mcp_gateway_gateway_name }}"
+    state: absent
+  when: mcp_gateway_manage_gateway
+
+- name: Remove the MCP Gateway compatibility Service
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Service
+    namespace: "{{ mcp_gateway_gateway_namespace }}"
+    name: "{{ mcp_gateway_compat_service_name }}"
+    state: absent
+
+- name: Query the target Gateway before listener cleanup
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: Gateway
+    namespace: "{{ mcp_gateway_gateway_namespace }}"
+    name: "{{ mcp_gateway_gateway_name }}"
+  register: mcp_gateway_target_gateway
+  changed_when: false
+  when:
+    - not mcp_gateway_manage_gateway
+    - mcp_gateway_remove_listener
+
+- name: Resolve the MCP listener index
+  ansible.builtin.set_fact:
+    mcp_gateway_listener_names: "{{ mcp_gateway_target_gateway.resources[0].spec.listeners | default([]) | map(attribute='name') | list }}"
+  when:
+    - not mcp_gateway_manage_gateway
+    - mcp_gateway_remove_listener
+    - mcp_gateway_target_gateway.resources | length == 1
+
+- name: Remove the backend MCP server listener from the reused Gateway
+  kubernetes.core.k8s_json_patch:
+    api_version: gateway.networking.k8s.io/v1
+    kind: Gateway
+    namespace: "{{ mcp_gateway_gateway_namespace }}"
+    name: "{{ mcp_gateway_gateway_name }}"
+    patch:
+      - op: remove
+        path: "/spec/listeners/{{ mcp_gateway_listener_names.index(mcp_gateway_server_listener_name) }}"
+  when:
+    - not mcp_gateway_manage_gateway
+    - mcp_gateway_remove_listener
+    - mcp_gateway_listener_names is defined
+    - mcp_gateway_server_listener_name in mcp_gateway_listener_names
+
+- name: Query the target Gateway after backend listener cleanup
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: Gateway
+    namespace: "{{ mcp_gateway_gateway_namespace }}"
+    name: "{{ mcp_gateway_gateway_name }}"
+  register: mcp_gateway_target_gateway_after_server_listener
+  changed_when: false
+  when:
+    - not mcp_gateway_manage_gateway
+    - mcp_gateway_remove_listener
+    - mcp_gateway_listener_names is defined
+    - mcp_gateway_server_listener_name in mcp_gateway_listener_names
+
+- name: Refresh the MCP listener index after backend listener cleanup
+  ansible.builtin.set_fact:
+    mcp_gateway_listener_names: "{{ mcp_gateway_target_gateway_after_server_listener.resources[0].spec.listeners | default([]) | map(attribute='name') | list }}"
+  when:
+    - not mcp_gateway_manage_gateway
+    - mcp_gateway_remove_listener
+    - mcp_gateway_target_gateway_after_server_listener is defined
+    - mcp_gateway_target_gateway_after_server_listener.resources | length == 1
+
+- name: Remove the MCP listener from the reused Gateway
+  kubernetes.core.k8s_json_patch:
+    api_version: gateway.networking.k8s.io/v1
+    kind: Gateway
+    namespace: "{{ mcp_gateway_gateway_namespace }}"
+    name: "{{ mcp_gateway_gateway_name }}"
+    patch:
+      - op: remove
+        path: "/spec/listeners/{{ mcp_gateway_listener_names.index(mcp_gateway_listener_name) }}"
+  when:
+    - not mcp_gateway_manage_gateway
+    - mcp_gateway_remove_listener
+    - mcp_gateway_listener_names is defined
+    - mcp_gateway_listener_name in mcp_gateway_listener_names
+
+- name: Remove the MCP gateway istio-proxy PodMonitor
+  kubernetes.core.k8s:
+    state: absent
+    api_version: monitoring.coreos.com/v1
+    kind: PodMonitor
+    namespace: "{{ mcp_gateway_gateway_namespace }}"
+    name: "{{ mcp_gateway_gateway_podmonitor_name }}"
+
+- name: Remove the MCP Gateway ReferenceGrant
+  kubernetes.core.k8s:
+    api_version: gateway.networking.k8s.io/v1beta1
+    kind: ReferenceGrant
+    namespace: "{{ mcp_gateway_gateway_namespace }}"
+    name: "{{ mcp_gateway_extension_name }}-to-gateway"
+    state: absent
+  when: mcp_gateway_namespace != mcp_gateway_gateway_namespace
+
+- name: Remove the MCP server route backend ReferenceGrant
+  kubernetes.core.k8s:
+    api_version: gateway.networking.k8s.io/v1beta1
+    kind: ReferenceGrant
+    namespace: "{{ mcp_gateway_server_backend_service_namespace }}"
+    name: "{{ mcp_gateway_server_registration_route_name }}-to-backend"
+    state: absent
+  when: mcp_gateway_namespace != mcp_gateway_server_backend_service_namespace
+
+- name: Remove the MCP gateway namespace and all operator resources inside it
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ mcp_gateway_namespace }}"
+    state: absent
+    wait: true
+    wait_timeout: 600

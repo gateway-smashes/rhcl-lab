@@ -1,0 +1,10 @@
+---
+- name: Remove Gateway API prerequisites
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  roles:
+    - role: gateway_api
+      vars:
+        rhcl_action: remove

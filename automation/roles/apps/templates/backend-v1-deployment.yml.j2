@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ apps_backend_primary_name }}
+  namespace: {{ apps_namespace }}
+  annotations:
+    image.openshift.io/triggers: |-
+      [{"from":{"kind":"ImageStreamTag","name":"{{ apps_backend_image_name }}:latest","namespace":"{{ apps_namespace }}"},"fieldPath":"spec.template.spec.containers[?(@.name==\"{{ apps_backend_primary_name }}\")].image"}]
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: {{ apps_backend_primary_name }}
+  template:
+    metadata:
+      labels:
+        app: {{ apps_backend_primary_name }}
+{% if apps_otel_instrumentation_enabled %}
+      # OpenTelemetry Operator picks this annotation up and injects an init
+      # container that copies the Java agent into /otel-auto-instrumentation
+      # — Quarkus then exports spans as a child of the gateway's traceparent.
+      # `container-names` pins the injection to the application container so
+      # build/side-car containers don't try to load the agent.
+      annotations:
+        instrumentation.opentelemetry.io/inject-java: "true"
+        instrumentation.opentelemetry.io/container-names: {{ apps_backend_primary_name }}
+{% endif %}
+    spec:
+      containers:
+        - name: {{ apps_backend_primary_name }}
+          image: image-registry.openshift-image-registry.svc:5000/{{ apps_namespace }}/{{ apps_backend_image_name }}:latest
+          imagePullPolicy: Always
+          env:
+            - name: APP_INSTANCE_NAME
+              value: {{ apps_backend_primary_name }}
+            - name: OPENAI_MODE
+              value: "{{ apps_openai_mode | default('mock') }}"
+{% if apps_ledger_enabled %}
+            # REQ 038 — destinos do microserviço ledger-api para /api/test/propagate.
+            # A propagação do `traceparent` nestas chamadas é feita pelo agente Java
+            # injetado (sem código); aqui só dizemos PARA ONDE chamar.
+            - name: LEDGER_DIRECT_URL
+              value: "http://{{ apps_ledger_name }}.{{ apps_namespace }}.svc.cluster.local:8080"
+{% if apps_connectivity_link_enabled %}
+            - name: LEDGER_GATEWAY_URL
+              value: "http://{{ apps_ledger_route_hostname_resolved }}"
+{% endif %}
+{% endif %}
+{% if rhcl_zone_root_domain | default('') | length > 0 %}
+            - name: RHCL_ZONE_ROOT_DOMAIN
+              value: "{{ rhcl_zone_root_domain }}"
+{% endif %}
+{% if apps_backend_cors_enabled %}
+            # Quarkus CORS desligado por design no application.properties — só o
+            # Gateway (HTTPRoute filter) injeta Access-Control-* na resposta.
+            # Esta env var só aparece quando APPS_BACKEND_CORS_ENABLED=true,
+            # reativando CORS no backend pra cenários de teste sem gateway
+            # (ex: `mvn quarkus:dev` chamado direto).
+            - name: QUARKUS_HTTP_CORS_ENABLED
+              value: "true"
+{% endif %}
+{% if apps_backend_tls_enabled %}
+            - name: QUARKUS_PROFILE
+              value: tls
+            - name: HTTPS_PORT
+              value: "{{ apps_backend_https_port }}"
+            - name: TLS_CERTIFICATE_FILE
+              value: {{ apps_backend_tls_mount_path }}/tls.crt
+            - name: TLS_CERTIFICATE_KEY_FILE
+              value: {{ apps_backend_tls_mount_path }}/tls.key
+            - name: TLS_CLIENT_AUTH
+              value: {{ apps_backend_tls_client_auth }}
+{% endif %}
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+{% if apps_backend_tls_enabled %}
+            - containerPort: {{ apps_backend_https_port }}
+              protocol: TCP
+{% endif %}
+{% if apps_backend_tls_enabled %}
+          volumeMounts:
+            - name: backend-tls
+              mountPath: {{ apps_backend_tls_mount_path }}
+              readOnly: true
+{% endif %}
+{% if apps_backend_tls_enabled %}
+      volumes:
+        - name: backend-tls
+          secret:
+            secretName: {{ apps_backend_primary_tls_secret_name }}
+{% endif %}

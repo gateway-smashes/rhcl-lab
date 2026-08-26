@@ -1,0 +1,25 @@
+apiVersion: kuadrant.io/v1
+kind: RateLimitPolicy
+metadata:
+  name: demo-ratelimit-policy
+  namespace: item-15-api
+  labels:
+    app.kubernetes.io/part-of: connectivity-link-rbac-demo
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: demo-api-route
+  limits:
+    global:
+      rates:
+      - limit: 100
+        window: 1m
+    per-user:
+      rates:
+      - limit: 10
+        window: 1m
+      counters:
+      - expression: auth.identity.userid
+      when:
+      - predicate: "auth.identity.userid != ''"

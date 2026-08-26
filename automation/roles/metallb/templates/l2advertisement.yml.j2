@@ -1,0 +1,19 @@
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: {{ metallb_l2advertisement_name }}
+  namespace: {{ metallb_namespace }}
+spec:
+  ipAddressPools:
+    - {{ metallb_ipaddresspool_name }}
+{% if metallb_l2advertisement_interfaces | length > 0 %}
+  interfaces:
+{% for iface in metallb_l2advertisement_interfaces %}
+    - {{ iface }}
+{% endfor %}
+{% endif %}
+{% if metallb_l2advertisement_node_selector_label | length > 0 %}
+  nodeSelectors:
+    - matchLabels:
+        {{ metallb_l2advertisement_node_selector_label }}: {{ metallb_l2advertisement_node_selector_value | quote }}
+{% endif %}

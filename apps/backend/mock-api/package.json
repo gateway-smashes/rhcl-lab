@@ -1,0 +1,13 @@
+{
+  "name": "mock-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Configurable HTTP mock for timeouts, CORS, headers, and status codes",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

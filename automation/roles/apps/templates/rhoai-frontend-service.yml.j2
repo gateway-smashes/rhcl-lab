@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ apps_rhoai_frontend_name }}
+  namespace: {{ apps_namespace }}
+  labels:
+    app: {{ apps_rhoai_frontend_name }}
+    rhcl-lab/component: rhoai-assistant
+spec:
+  selector:
+    app: {{ apps_rhoai_frontend_name }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP

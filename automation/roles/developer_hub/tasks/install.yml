@@ -1,0 +1,589 @@
+---
+# Red Hat Developer Hub (RHDH) + Kuadrant Backstage plugin — item 29.
+# Opt-in: short-circuit unless DEVELOPER_HUB_ENABLED=true so install-all runs
+# on clusters that don't need the IDP surface are a no-op.
+- name: Skip developer_hub role when disabled
+  ansible.builtin.meta: end_play
+  when: not (developer_hub_enabled | bool)
+
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Ensure RHDH namespaces exist
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ item }}"
+  loop:
+    - "{{ developer_hub_operator_namespace }}"
+    - "{{ developer_hub_namespace }}"
+
+# ---------------------------------------------------------------------------
+# 1. Operator
+# ---------------------------------------------------------------------------
+- name: Provision RHDH OperatorGroup + Subscription
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', item) | from_yaml }}"
+  loop:
+    - operatorgroup.yml.j2
+    - subscription.yml.j2
+  when: developer_hub_install_operator | bool
+
+- name: Wait for the RHDH operator CSV to be Succeeded
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ developer_hub_operator_namespace }}"
+  register: developer_hub_csvs
+  changed_when: false
+  until:
+    - developer_hub_csvs.resources
+      | selectattr('metadata.name', 'search', 'rhdh')
+      | selectattr('status.phase', 'defined')
+      | selectattr('status.phase', 'equalto', 'Succeeded')
+      | list | length > 0
+  retries: 60
+  delay: 10
+  when: developer_hub_install_operator | bool
+
+# ---------------------------------------------------------------------------
+# 2. Kuadrant plugin integrity hashes (npm registry API — no npm binary needed)
+# ---------------------------------------------------------------------------
+# These two calls reach registry.npmjs.org from the CONTROLLER, not the
+# cluster. On a restricted network they crawl or hang, and the default 30s
+# timeout with no retry gives no hint why. Pin the hashes to skip the lookup
+# entirely — they are fixed for a given plugin version, so resolving them on
+# every run buys nothing once known.
+- name: Resolve frontend plugin integrity hash
+  ansible.builtin.uri:
+    url: "{{ developer_hub_npm_registry }}/{{ developer_hub_plugin_frontend }}/{{ developer_hub_plugin_version | regex_replace('^v', '') }}"
+    return_content: true
+    timeout: "{{ developer_hub_npm_timeout | int }}"
+  register: developer_hub_fe_meta
+  changed_when: false
+  when: developer_hub_plugin_frontend_integrity | length == 0
+
+- name: Resolve backend plugin integrity hash
+  ansible.builtin.uri:
+    url: "{{ developer_hub_npm_registry }}/{{ developer_hub_plugin_backend }}/{{ developer_hub_plugin_version | regex_replace('^v', '') }}"
+    return_content: true
+    timeout: "{{ developer_hub_npm_timeout | int }}"
+  register: developer_hub_be_meta
+  changed_when: false
+  when: developer_hub_plugin_backend_integrity | length == 0
+
+- name: Set integrity facts
+  ansible.builtin.set_fact:
+    developer_hub_frontend_integrity: >-
+      {{ developer_hub_plugin_frontend_integrity
+         if (developer_hub_plugin_frontend_integrity | length > 0)
+         else (developer_hub_fe_meta.json.dist.integrity) }}
+    developer_hub_backend_integrity: >-
+      {{ developer_hub_plugin_backend_integrity
+         if (developer_hub_plugin_backend_integrity | length > 0)
+         else (developer_hub_be_meta.json.dist.integrity) }}
+
+# The frontend mount key has to equal the package's own scalprum.name, and that
+# name has changed direction between releases (0.3.0 internal.plugin-kuadrant →
+# 0.4.0-dev3 kuadrant.kuadrant-backstage-plugin-frontend → 0.4.0 back to
+# internal.plugin-kuadrant). Hardcoding it means a version bump silently
+# unmounts the plugin: the pages 404 and nothing in the install reports a
+# problem. Read it from the same metadata that supplies the integrity hash.
+- name: Resolve the frontend scalprum module name
+  ansible.builtin.set_fact:
+    developer_hub_frontend_scalprum_name: >-
+      {{ developer_hub_plugin_frontend_scalprum_name
+         if (developer_hub_plugin_frontend_scalprum_name | length > 0)
+         else ((developer_hub_fe_meta.json.scalprum.name) | default('', true)) }}
+
+- name: Assert the scalprum module name resolved
+  ansible.builtin.assert:
+    that:
+      - developer_hub_frontend_scalprum_name | length > 0
+    fail_msg: >-
+      Could not determine the frontend plugin's scalprum module name for
+      '{{ developer_hub_plugin_frontend }}@{{ developer_hub_plugin_version }}'.
+      Without it the mount key is empty and no /kuadrant route registers. Set
+      DEVELOPER_HUB_PLUGIN_FRONTEND_SCALPRUM_NAME, or allow the registry lookup
+      to run (it also supplies the integrity hash).
+
+# ---------------------------------------------------------------------------
+# 3. Keycloak OIDC client (in-cluster RHBK). Best-effort via kcadm exec — the
+#    same pattern rhbk/reapply_roles.yml uses. Skipped for an external IdP.
+# ---------------------------------------------------------------------------
+# Resolved OUTSIDE the kcadm block on purpose: the issuer is needed to write
+# the rhdh-oidc Secret even when the client is managed out of band.
+#
+# `developer_hub_oidc_issuer` defaults to `https://<rhbk_hostname>/realms/...`,
+# and `rhbk_hostname` itself falls back to `keycloak.<rhcl_zone_root_domain>`.
+# That variable is EMPTY unless RHCL_ZONE_ROOT_DOMAIN is exported, so the
+# default silently produced the literal host `keycloak.` — the backend then
+# crash-looped with `getaddrinfo ENOTFOUND keycloak.`. Fall back to the
+# Keycloak Route actually present in the cluster so a lab install needs no
+# extra env, while an explicit issuer (or RHBK_HOSTNAME, as the bank sets)
+# still wins.
+- name: Resolve the Keycloak Route host (OIDC issuer fallback + kcadm)
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    namespace: "{{ developer_hub_keycloak_namespace }}"
+  register: developer_hub_kc_routes
+  changed_when: false
+  failed_when: false
+
+- name: Set Keycloak host fact
+  ansible.builtin.set_fact:
+    developer_hub_kc_host: "{{ developer_hub_kc_routes.resources[0].spec.host }}"
+  when: developer_hub_kc_routes.resources | default([]) | length > 0
+
+# Keep the configured issuer when its host is a real FQDN; otherwise adopt the
+# in-cluster Keycloak Route.
+- name: Resolve the effective OIDC issuer
+  ansible.builtin.set_fact:
+    developer_hub_oidc_issuer_effective: >-
+      {{ developer_hub_oidc_issuer
+         if (developer_hub_oidc_issuer | regex_search('^https?://[^/]+\.[^./]+'))
+         else (('https://' ~ developer_hub_kc_host ~ '/realms/' ~ (rhbk_realm | default('rhcl')))
+               if (developer_hub_kc_host | default('') | length > 0)
+               else developer_hub_oidc_issuer) }}
+
+# Fail loudly instead of writing a Secret that crash-loops the backend on
+# every start — a broken issuer is invisible until the pod restarts, which is
+# exactly how it slipped through before.
+# kcadm must talk to the SAME Keycloak the issuer points at. It used to target
+# whatever the first Route in developer_hub_keycloak_namespace happened to be,
+# which is an entirely independent source: where a cluster runs more than one
+# Keycloak, the client got created in one while RHDH authenticated against the
+# other, and the login failed with "Client not found" while the play reported
+# success. Derive the admin endpoint from the issuer so there is one answer to
+# "which Keycloak".
+- name: Derive the kcadm server from the effective issuer
+  ansible.builtin.set_fact:
+    developer_hub_kc_server: "{{ developer_hub_oidc_issuer_effective | regex_replace('/realms/.*$', '') }}"
+
+- name: Warn when the Keycloak Route in the namespace is not the issuer's host
+  ansible.builtin.debug:
+    msg: >-
+      The Keycloak Route found in '{{ developer_hub_keycloak_namespace }}'
+      ({{ developer_hub_kc_host }}) is not the host the OIDC issuer points at
+      ({{ developer_hub_kc_server }}). kcadm follows the issuer, so the client
+      is created there. If that is not intended, fix RHBK_HOSTNAME or
+      DEVELOPER_HUB_OIDC_ISSUER — a client created in the wrong Keycloak fails
+      login with "Client not found".
+  when:
+    - developer_hub_kc_host is defined
+    - developer_hub_kc_host not in developer_hub_kc_server
+
+- name: Assert the OIDC issuer is a usable URL
+  ansible.builtin.assert:
+    that:
+      - developer_hub_oidc_issuer_effective | regex_search('^https?://[^/]+\.[^./]+')
+    fail_msg: >-
+      Could not resolve a usable OIDC issuer (got
+      '{{ developer_hub_oidc_issuer_effective }}'). No Keycloak Route was found
+      in namespace '{{ developer_hub_keycloak_namespace }}' to fall back to.
+      Set DEVELOPER_HUB_OIDC_ISSUER (or RHBK_HOSTNAME / RHCL_ZONE_ROOT_DOMAIN).
+
+- name: Create/refresh the RHDH OIDC client in Keycloak
+  when: developer_hub_manage_keycloak_client | bool
+  block:
+
+    # RHDH's `route.subdomain: <sub>` produces host `<sub>.<apps-domain>`
+    # (e.g. subdomain `rhdh` → `rhdh.apps.<cluster>`), NOT
+    # `backstage-<instance>-<sub>-<ns>.<domain>`. Registering the wrong
+    # redirect URI makes Keycloak reject the OIDC callback. The role
+    # re-syncs the client's redirect against the ACTUAL admitted Route
+    # host after the Backstage instance is up (see "Sync OIDC redirect"
+    # below) — this fact is the best-effort pre-creation guess.
+    # When `developer_hub_hostname` is pinned (corporate), this stops being a guess —
+    # the Route asks for exactly that host, so the first-pass redirect is
+    # already right and the re-sync below becomes a no-op.
+    - name: Redirect URIs for the client (pinned host, else subdomain guess)
+      ansible.builtin.set_fact:
+        developer_hub_redirect_uris: >-
+          [ "https://{{ developer_hub_hostname
+                        if (developer_hub_hostname | default('') | length > 0)
+                        else (developer_hub_route_subdomain ~ '.' ~ (apps_domain | default('apps.' ~ rhcl_zone_root_domain))) }}/*" ]
+
+    # `command` MUST be an argv list: k8s_exec naively splits a string
+    # command into argv, which shreds `bash -lc '<script>'` (the quoted
+    # script is not grouped, so kcadm loses its flags — that was the
+    # "Required option not specified: --realm" failure). The list form
+    # passes the whole heredoc as a single argv element.
+    - name: kcadm — ensure client exists (idempotent create-or-update)
+      kubernetes.core.k8s_exec:
+        namespace: "{{ developer_hub_keycloak_namespace }}"
+        pod: "{{ developer_hub_keycloak_pod }}"
+        # Passado em base64: o k8s_exec re-divide o comando com shlex, e o
+        # script tem aspas simples e duplas aninhadas — isso falhava com
+        # "No closing quotation" ANTES de rodar qualquer coisa. Um blob
+        # base64 nao tem nada que o shlex possa quebrar.
+        # String, nao lista: esta versao do k8s_exec serializa a lista como
+        # "[/bin/bash, -c, ...]" e tenta executar isso literalmente. Como o
+        # argumento e um blob base64 (so A-Za-z0-9+/=), o shlex divide certo.
+        command: '/bin/bash -c "echo {{ developer_hub_kcadm_script_0 | b64encode }} | base64 -d | /bin/bash"'
+      vars:
+        developer_hub_kcadm_script_0: |
+          set -e
+          KC=/opt/keycloak/bin/kcadm.sh
+          export HOME=/tmp/kc; mkdir -p /tmp/kc
+          $KC config credentials --server "{{ developer_hub_kc_server }}" \
+            --realm master --user "{{ developer_hub_keycloak_admin_user }}" \
+            --password "{{ developer_hub_keycloak_admin_password }}"
+          CID=$($KC get clients -r "{{ rhbk_realm | default('rhcl') }}" \
+            -q clientId="{{ developer_hub_oidc_client_id }}" \
+            --fields id --format csv --noquotes 2>/dev/null | head -1)
+          if [ -z "$CID" ]; then
+            $KC create clients -r "{{ rhbk_realm | default('rhcl') }}" \
+              -s clientId="{{ developer_hub_oidc_client_id }}" \
+              -s enabled=true -s protocol=openid-connect \
+              -s publicClient=false -s standardFlowEnabled=true \
+              -s secret="{{ developer_hub_oidc_client_secret }}" \
+              -s 'redirectUris={{ developer_hub_redirect_uris | to_json }}' \
+              -s 'webOrigins=["+"]'
+            echo CREATED
+          else
+            $KC update "clients/$CID" -r "{{ rhbk_realm | default('rhcl') }}" \
+              -s secret="{{ developer_hub_oidc_client_secret }}" \
+              -s 'redirectUris={{ developer_hub_redirect_uris | to_json }}' \
+              -s 'webOrigins=["+"]'
+            echo UPDATED
+          fi
+      register: developer_hub_kcadm
+      changed_when: "'CREATED' in (developer_hub_kcadm.stdout | default(''))"
+      # Judge by the marker the script prints, not by rc: k8s_exec does not
+      # reliably surface the inner command's exit code, so the previous
+      # `rc is defined and rc != 0` passed as ok while kcadm had failed and the
+      # client was never created — the login then died with "Client not found"
+      # and nothing in the run pointed at it.
+      failed_when: >-
+        ('CREATED' not in (developer_hub_kcadm.stdout | default('')))
+        and ('UPDATED' not in (developer_hub_kcadm.stdout | default('')))
+      when: developer_hub_kc_server | default('') | length > 0
+
+# ---------------------------------------------------------------------------
+# 4. Secrets + ConfigMaps + cluster RBAC
+# ---------------------------------------------------------------------------
+# Session secret for the OIDC OAuth flow (see app-config auth.session).
+# Generated once and preserved across re-runs: read the existing Secret
+# first so an idempotent re-apply doesn't rotate it (which would sign
+# every logged-in user out).
+- name: Look up any existing rhdh-oidc secret (to preserve the session key)
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    namespace: "{{ developer_hub_namespace }}"
+    name: rhdh-oidc
+  register: developer_hub_existing_oidc
+  changed_when: false
+
+- name: Compute the session secret (reuse existing, else generate)
+  ansible.builtin.set_fact:
+    developer_hub_session_secret: >-
+      {{ (developer_hub_existing_oidc.resources[0].data.AUTH_SESSION_SECRET | b64decode)
+         if (developer_hub_existing_oidc.resources | length > 0
+              and developer_hub_existing_oidc.resources[0].data.AUTH_SESSION_SECRET is defined)
+         else (lookup('community.general.random_string', length=48, special=false)) }}
+
+- name: OIDC secret consumed by the Backstage CR (extraEnvs)
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: rhdh-oidc
+        namespace: "{{ developer_hub_namespace }}"
+      type: Opaque
+      stringData:
+        OIDC_ISSUER: "{{ developer_hub_oidc_issuer_effective }}"
+        OIDC_CLIENT_ID: "{{ developer_hub_oidc_client_id }}"
+        OIDC_CLIENT_SECRET: "{{ developer_hub_oidc_client_secret }}"
+        AUTH_SESSION_SECRET: "{{ developer_hub_session_secret }}"
+
+# The Kuadrant backend plugin's KuadrantK8sClient reads
+# `kubernetes.clusterLocatorMethods[0].clusters[0].serviceAccountToken`
+# as a REQUIRED string — `authProvider: serviceAccount` alone makes it
+# crash-loop with "Missing required config value … serviceAccountToken".
+# So mint a long-lived token for the RHDH SA and hand it to the pod as
+# an env var the app-config references (${K8S_SA_TOKEN}).
+- name: Create SA token (1y) via the tokenrequest API
+  ansible.builtin.command:
+    argv:
+      - oc
+      - create
+      - token
+      - "{{ developer_hub_service_account }}"
+      - -n
+      - "{{ developer_hub_namespace }}"
+      - --duration=8760h
+  register: developer_hub_sa_token
+  changed_when: true
+
+- name: Secret with the SA token (env K8S_SA_TOKEN for the Kuadrant plugin)
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: rhdh-k8s-token
+        namespace: "{{ developer_hub_namespace }}"
+      type: Opaque
+      stringData:
+        K8S_SA_TOKEN: "{{ developer_hub_sa_token.stdout | trim }}"
+
+- name: Cluster RBAC — RHDH SA reaches Kuadrant CRs
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'rbac-cluster.yml.j2') | from_yaml_all | list }}"
+
+- name: Render + apply the RHDH ConfigMaps
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', item) | from_yaml }}"
+  loop:
+    - dynamic-plugins.yml.j2
+    - app-config.yml.j2
+    - rbac-policy.yml.j2
+
+# ---------------------------------------------------------------------------
+# 5. The Backstage instance + wait for it to serve
+# ---------------------------------------------------------------------------
+# The Backstage CRD ships several API versions and which ones exist depends on
+# the operator build. Hardcoding v1alpha3 failed against an older operator
+# installed out of band with "Failed to find exact match for
+# rhdh.redhat.com/v1alpha3.Backstage". Ask the cluster which version it stores
+# and use that, so the role follows whatever operator is actually installed.
+- name: Read the Backstage CRD to resolve its API version
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: backstages.rhdh.redhat.com
+  register: developer_hub_backstage_crd
+  changed_when: false
+  failed_when: false
+
+- name: Resolve the Backstage API version
+  ansible.builtin.set_fact:
+    developer_hub_backstage_api_version: >-
+      {{ developer_hub_backstage_api_version_override
+         if (developer_hub_backstage_api_version_override | default('') | length > 0)
+         else ((((developer_hub_backstage_crd.resources | default([])
+                  | map(attribute='spec.versions') | flatten
+                  | selectattr('served') | selectattr('storage')
+                  | map(attribute='name') | list) + ['']) | first) | default('', true)) }}
+
+- name: Assert the Backstage CRD provides a usable version
+  ansible.builtin.assert:
+    that:
+      - developer_hub_backstage_api_version | length > 0
+    fail_msg: >-
+      Could not determine the Backstage API version. The CRD
+      'backstages.rhdh.redhat.com' is missing, or none of its versions is
+      marked served+storage. Versions found:
+      {{ (developer_hub_backstage_crd.resources | default([])
+          | map(attribute='spec.versions') | flatten
+          | map(attribute='name') | list | join(', ')) | default('none', true) }}.
+      Install the RHDH operator first, or pin
+      DEVELOPER_HUB_BACKSTAGE_API_VERSION to the version your operator serves.
+
+# Created empty on purpose — the OpenShift Network Operator fills ca-bundle.crt
+# in response to the inject-trusted-cabundle label. Re-applying only the
+# metadata leaves the injected data alone; sending a data: block would wipe it.
+- name: Create the trusted-CA bundle ConfigMap
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'trusted-ca-configmap.yml.j2') | from_yaml }}"
+  when:
+    - developer_hub_trusted_ca_enabled | bool
+    - developer_hub_trusted_ca_create | bool
+
+# Must come BEFORE the CR: once the operator creates the StatefulSet, its
+# volumeClaimTemplate has already produced a classless PVC, and
+# volumeClaimTemplates are immutable — the only fix then is deleting the PVC.
+- name: Pre-create the PostgreSQL PVC with the requested StorageClass
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'psql-pvc.yml.j2') | from_yaml }}"
+  when: developer_hub_storage_class | length > 0
+
+- name: Apply the Backstage CR
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'backstage.yml.j2') | from_yaml }}"
+
+# RHDH 1.6 names the Route `backstage-{{ instance }}` and only populates
+# the assigned hostname in `.status.ingress[0].host` (not `.spec.host`)
+# after router admission — so wait on the STATUS host, by name, or the
+# fact-set below dereferences an empty host and fails.
+# A Pending PVC stalls the pod long before the Route is admitted, so the wait
+# below would time out with nothing to point at. Name the claims and the cause
+# instead — this is the failure mode on clusters where no StorageClass is
+# marked default and every classless claim hangs forever.
+# Pending alone does not mean broken: with volumeBindingMode
+# WaitForFirstConsumer — the default on AWS gp3-csi and on most CSI drivers —
+# a claim stays Pending by design until its pod is scheduled. Only a claim
+# with NO storageClassName at all can never bind, which is the case this
+# check exists for. Retry briefly so a claim that is merely waiting for its
+# consumer settles before we judge it.
+- name: Look for PersistentVolumeClaims stuck Pending
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: PersistentVolumeClaim
+    namespace: "{{ developer_hub_namespace }}"
+  register: developer_hub_pvcs
+  changed_when: false
+  failed_when: false
+  until: >-
+    (developer_hub_pvcs.resources | default([])
+     | selectattr('status.phase', 'defined')
+     | selectattr('status.phase', 'equalto', 'Pending')
+     | list | length) == 0
+  retries: 12
+  delay: 5
+
+- name: Report PVCs that cannot bind
+  ansible.builtin.fail:
+    msg: >-
+      These PersistentVolumeClaims are Pending, so the RHDH pods will never
+      start:
+      {{ (developer_hub_pvcs.resources | default([])
+          | selectattr('status.phase', 'defined')
+          | selectattr('status.phase', 'equalto', 'Pending')
+          | rejectattr('spec.storageClassName', 'defined')
+          | map(attribute='metadata.name') | list | join(', ')) }}.
+      Where no StorageClass is marked default, a claim without an explicit
+      class never binds ("no persistent volumes available for this claim and no
+      storage class is set"). Set DEVELOPER_HUB_STORAGE_CLASS to one of
+      `oc get storageclass`, delete the Pending claims, then re-run —
+      volumeClaimTemplates are immutable, so existing claims cannot be patched
+      in place.
+  # Only claims WITHOUT a storageClassName: those can never bind. A Pending
+  # claim that does name a class is just waiting for its consumer to schedule.
+  when: >-
+    (developer_hub_pvcs.resources | default([])
+     | selectattr('status.phase', 'defined')
+     | selectattr('status.phase', 'equalto', 'Pending')
+     | rejectattr('spec.storageClassName', 'defined')
+     | list | length) > 0
+
+- name: Wait for the RHDH Route to be admitted (host assigned)
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    namespace: "{{ developer_hub_namespace }}"
+    name: "backstage-{{ developer_hub_instance_name }}"
+  register: developer_hub_route
+  changed_when: false
+  until:
+    - developer_hub_route.resources | length > 0
+    - (developer_hub_route.resources[0].status.ingress | default([]))
+      | selectattr('host', 'defined') | list | length > 0
+  retries: 90
+  delay: 10
+
+- name: Set RHDH URL fact
+  ansible.builtin.set_fact:
+    developer_hub_url: "https://{{ developer_hub_route.resources[0].status.ingress[0].host }}"
+    developer_hub_route_host: "{{ developer_hub_route.resources[0].status.ingress[0].host }}"
+  when: developer_hub_route.resources | length > 0
+
+# An external ingress class only serves Routes carrying this label. The apps,
+# rhbk and tests_catalog roles set it in their own Route templates; here the
+# Route belongs to the RHDH operator and the Backstage CR exposes no way to
+# label it (spec.application.route only has enabled/host/subdomain/tls), so it
+# has to be applied afterwards.
+#
+# The operator does not manage labels it never set, so this survives
+# reconciliation — but if a future operator version prunes unknown labels, the
+# symptom is the host silently not answering again.
+- name: Label the RHDH Route for the ingress class
+  kubernetes.core.k8s:
+    state: patched
+    api_version: route.openshift.io/v1
+    kind: Route
+    name: "backstage-{{ developer_hub_instance_name }}"
+    namespace: "{{ developer_hub_namespace }}"
+    definition:
+      metadata:
+        # The whole map is built inside one Jinja expression on purpose. Written
+        # as a YAML key — "{{ var }}": value — Ansible leaves the key untemplated
+        # and the API rejects the literal "{{ ... }}" as an invalid label name.
+        labels: "{{ { developer_hub_route_ingress_class_label_key: developer_hub_route_ingress_class_label_value } }}"
+  when: developer_hub_route_ingress_class_label_key | length > 0
+
+# The pre-creation redirect URI is a guess; now that the Route host is
+# known for certain, re-sync the Keycloak client so the OIDC callback
+# (https://<host>/api/auth/oidc/handler/frame) is on the allow-list.
+# Without this the login bounces with an invalid_redirect_uri.
+- name: Sync OIDC redirect URI to the real Route host
+  kubernetes.core.k8s_exec:
+    namespace: "{{ developer_hub_keycloak_namespace }}"
+    pod: "{{ developer_hub_keycloak_pod }}"
+    # Passado em base64: o k8s_exec re-divide o comando com shlex, e o
+    # script tem aspas simples e duplas aninhadas — isso falhava com
+    # "No closing quotation" ANTES de rodar qualquer coisa. Um blob
+    # base64 nao tem nada que o shlex possa quebrar.
+    # String, nao lista: esta versao do k8s_exec serializa a lista como
+    # "[/bin/bash, -c, ...]" e tenta executar isso literalmente. Como o
+    # argumento e um blob base64 (so A-Za-z0-9+/=), o shlex divide certo.
+    command: '/bin/bash -c "echo {{ developer_hub_kcadm_script_1 | b64encode }} | base64 -d | /bin/bash"'
+  vars:
+    developer_hub_kcadm_script_1: |
+      set -e
+      KC=/opt/keycloak/bin/kcadm.sh
+      export HOME=/tmp/kc; mkdir -p /tmp/kc
+      $KC config credentials --server "{{ developer_hub_kc_server }}" \
+        --realm master --user "{{ developer_hub_keycloak_admin_user }}" \
+        --password "{{ developer_hub_keycloak_admin_password }}" >/dev/null 2>&1
+      CID=$($KC get clients -r "{{ rhbk_realm | default('rhcl') }}" \
+        -q clientId="{{ developer_hub_oidc_client_id }}" \
+        --fields id --format csv --noquotes 2>/dev/null | head -1)
+      [ -z "$CID" ] && { echo "client not found"; exit 1; }
+      $KC update "clients/$CID" -r "{{ rhbk_realm | default('rhcl') }}" \
+        -s 'redirectUris=["https://{{ developer_hub_route_host }}/*"]' \
+        -s 'webOrigins=["https://{{ developer_hub_route_host }}"]' \
+        -s baseUrl="https://{{ developer_hub_route_host }}"
+      echo SYNCED
+  register: developer_hub_redirect_sync
+  changed_when: "'SYNCED' in (developer_hub_redirect_sync.stdout | default(''))"
+  failed_when:
+    - developer_hub_redirect_sync.rc is defined
+    - developer_hub_redirect_sync.rc != 0
+  when:
+    - developer_hub_manage_keycloak_client | bool
+    - developer_hub_kc_host is defined
+    - developer_hub_route_host is defined
+
+# ---------------------------------------------------------------------------
+# 6. Wire the custom console's "Internal Developer Hub" link
+# ---------------------------------------------------------------------------
+- name: Set internalDeveloperHubUrl on the custom-rhcl-console ConfigMap
+  kubernetes.core.k8s:
+    state: patched
+    api_version: v1
+    kind: ConfigMap
+    name: "{{ developer_hub_console_config_name }}"
+    namespace: "{{ developer_hub_console_config_namespace }}"
+    definition:
+      data:
+        internalDeveloperHubUrl: "{{ developer_hub_url }}"
+  when:
+    - developer_hub_wire_console_link | bool
+    - developer_hub_url is defined
+  failed_when: false   # console not installed on every cluster — best-effort
+
+- name: Developer Hub install summary
+  ansible.builtin.debug:
+    msg:
+      - "RHDH URL:      {{ developer_hub_url | default('(Route not ready yet)') }}"
+      - "OIDC issuer:   {{ developer_hub_oidc_issuer_effective }}"
+      - "Kuadrant plug: {{ developer_hub_plugin_version }} (Backstage 1.42.5; runs on RHDH 1.6.5)"
+      - "Console link:  internalDeveloperHubUrl set on {{ developer_hub_console_config_name }} (if console present)"

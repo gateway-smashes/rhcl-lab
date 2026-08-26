@@ -1,0 +1,27 @@
+---
+- name: Remove sample applications
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  pre_tasks:
+    - name: Check OpenShift session with oc whoami
+      ansible.builtin.command: oc whoami
+      register: oc_whoami_result
+      changed_when: false
+      failed_when: false
+      run_once: true
+      delegate_to: localhost
+
+    - name: Fail when user is not logged in to cluster
+      ansible.builtin.fail:
+        msg: >-
+          No active OpenShift/Kubernetes login found.
+          Run 'oc login https://api.<your-cluster>:6443' and try again.
+      when: oc_whoami_result.rc != 0
+      run_once: true
+      delegate_to: localhost
+  roles:
+    - role: apps
+      vars:
+        rhcl_action: remove

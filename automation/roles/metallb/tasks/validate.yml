@@ -1,0 +1,138 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Query the metallb-system namespace
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Namespace
+    name: "{{ metallb_namespace }}"
+  register: metallb_namespace_info
+  changed_when: false
+
+- name: Assert that the metallb-system namespace exists
+  ansible.builtin.assert:
+    that:
+      - metallb_namespace_info.resources | length == 1
+    fail_msg: "Namespace {{ metallb_namespace }} does not exist."
+
+- name: Query the MetalLB Subscription
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ metallb_namespace }}"
+    name: "{{ metallb_subscription_name }}"
+  register: metallb_subscription
+  changed_when: false
+
+- name: Assert that the MetalLB Subscription exists
+  ansible.builtin.assert:
+    that:
+      - metallb_subscription.resources | length == 1
+      - metallb_subscription.resources[0].spec.name == metallb_operator_name
+      - metallb_subscription.resources[0].status.currentCSV is defined
+    fail_msg: "MetalLB Subscription is missing or not reconciled."
+
+- name: Query the MetalLB CSV
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ metallb_namespace }}"
+    name: "{{ metallb_subscription.resources[0].status.currentCSV }}"
+  register: metallb_csv
+  changed_when: false
+
+- name: Assert that the MetalLB CSV succeeded
+  ansible.builtin.assert:
+    that:
+      - metallb_csv.resources | length == 1
+      - metallb_csv.resources[0].status.phase == "Succeeded"
+    fail_msg: "MetalLB CSV did not reach Succeeded."
+
+- name: Query the MetalLB CR
+  kubernetes.core.k8s_info:
+    api_version: metallb.io/v1beta1
+    kind: MetalLB
+    namespace: "{{ metallb_namespace }}"
+    name: "{{ metallb_cr_name }}"
+  register: metallb_cr
+  changed_when: false
+
+- name: Assert that the MetalLB CR exists
+  ansible.builtin.assert:
+    that:
+      - metallb_cr.resources | length == 1
+    fail_msg: "MetalLB CR {{ metallb_namespace }}/{{ metallb_cr_name }} is missing."
+
+- name: Query MetalLB speaker DaemonSet
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: DaemonSet
+    namespace: "{{ metallb_namespace }}"
+    name: speaker
+  register: metallb_speaker_ds
+  changed_when: false
+
+- name: Assert that the speaker DaemonSet has all replicas ready
+  ansible.builtin.assert:
+    that:
+      - metallb_speaker_ds.resources | length == 1
+      - (metallb_speaker_ds.resources[0].status.numberReady | default(0)) | int >= 1
+      - (metallb_speaker_ds.resources[0].status.desiredNumberScheduled | default(0)) | int
+        == (metallb_speaker_ds.resources[0].status.numberReady | default(0)) | int
+    fail_msg: "MetalLB speaker DaemonSet has nodes not ready."
+
+- name: Query MetalLB controller Deployment
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ metallb_namespace }}"
+    name: controller
+  register: metallb_controller_deployment
+  changed_when: false
+
+- name: Assert that the controller Deployment is available
+  ansible.builtin.assert:
+    that:
+      - metallb_controller_deployment.resources | length == 1
+      - (metallb_controller_deployment.resources[0].status.availableReplicas | default(0)) | int >= 1
+    fail_msg: "MetalLB controller Deployment is not available."
+
+- name: Query the IPAddressPool
+  kubernetes.core.k8s_info:
+    api_version: metallb.io/v1beta1
+    kind: IPAddressPool
+    namespace: "{{ metallb_namespace }}"
+    name: "{{ metallb_ipaddresspool_name }}"
+  register: metallb_pool
+  changed_when: false
+
+- name: Assert that the IPAddressPool exists and has the expected addresses
+  ansible.builtin.assert:
+    that:
+      - metallb_pool.resources | length == 1
+      - metallb_pool.resources[0].spec.addresses == metallb_addresses
+    fail_msg: >-
+      IPAddressPool {{ metallb_namespace }}/{{ metallb_ipaddresspool_name }}
+      is missing or does not advertise the expected addresses
+      {{ metallb_addresses }}.
+
+- name: Query the L2Advertisement
+  kubernetes.core.k8s_info:
+    api_version: metallb.io/v1beta1
+    kind: L2Advertisement
+    namespace: "{{ metallb_namespace }}"
+    name: "{{ metallb_l2advertisement_name }}"
+  register: metallb_l2adv
+  changed_when: false
+
+- name: Assert that the L2Advertisement targets the IPAddressPool
+  ansible.builtin.assert:
+    that:
+      - metallb_l2adv.resources | length == 1
+      - metallb_ipaddresspool_name in (metallb_l2adv.resources[0].spec.ipAddressPools | default([]))
+    fail_msg: >-
+      L2Advertisement {{ metallb_namespace }}/{{ metallb_l2advertisement_name }}
+      is missing or does not reference IPAddressPool {{ metallb_ipaddresspool_name }}.

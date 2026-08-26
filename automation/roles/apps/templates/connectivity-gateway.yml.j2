@@ -1,0 +1,151 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ apps_connectivity_gateway_name }}
+  namespace: {{ apps_connectivity_gateway_namespace }}
+{% if apps_connectivity_gateway_service_type %}
+  annotations:
+    # Tells the Istio Gateway controller (openshift.io/gateway-controller/v1)
+    # to provision the auto-generated Service with this type. Defaults to
+    # LoadBalancer; in restricted environments (no LB controller, or traffic
+    # routed via an external ingress) set this to ClusterIP or NodePort.
+    networking.istio.io/service-type: {{ apps_connectivity_gateway_service_type }}
+{% endif %}
+spec:
+  gatewayClassName: {{ gateway_api_gatewayclass_name }}
+  listeners:
+{% if apps_connectivity_listener_wildcard_enabled %}
+    - name: http
+      protocol: HTTP
+      port: 80
+      hostname: {{ ('*.' ~ rhcl_zone_root_domain) | quote }}
+      allowedRoutes:
+        namespaces:
+          from: All
+{% if apps_connectivity_tls_enabled %}
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: {{ ('*.' ~ rhcl_zone_root_domain) | quote }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: {{ apps_connectivity_tls_secret_name }}
+      allowedRoutes:
+        namespaces:
+          from: All
+{% endif %}
+{% else %}
+    - name: http
+      protocol: HTTP
+      port: 80
+      hostname: {{ apps_connectivity_route_hostname_resolved | quote }}
+      allowedRoutes:
+        namespaces:
+          from: All
+{% if apps_connectivity_frontend_route_enabled %}
+    - name: {{ apps_connectivity_frontend_listener_name }}
+      protocol: HTTP
+      port: 80
+      hostname: {{ apps_connectivity_frontend_route_hostname_resolved | quote }}
+      allowedRoutes:
+        namespaces:
+          from: All
+{% endif %}
+{% if apps_ipfilter_enabled %}
+    - name: {{ apps_ipfilter_http_listener_name }}
+      protocol: HTTP
+      port: 80
+      hostname: {{ apps_ipfilter_route_hostname_resolved | quote }}
+      allowedRoutes:
+        namespaces:
+          from: All
+{% endif %}
+{% if apps_backend_tls_route_enabled %}
+    - name: {{ apps_backend_tls_http_listener_name }}
+      protocol: HTTP
+      port: 80
+      hostname: {{ apps_backend_tls_route_hostname_resolved | quote }}
+      allowedRoutes:
+        namespaces:
+          from: All
+{% endif %}
+{% if apps_req054_enabled %}
+    - name: {{ apps_req054_http_listener_name }}
+      protocol: HTTP
+      port: 80
+      hostname: {{ apps_req054_route_hostname_resolved | quote }}
+      allowedRoutes:
+        namespaces:
+          from: All
+{% endif %}
+{% if apps_req048_enabled %}
+    - name: {{ apps_req048_http_listener_name }}
+      protocol: HTTP
+      port: 80
+      hostname: {{ apps_req048_route_hostname_resolved | quote }}
+      allowedRoutes:
+        namespaces:
+          from: All
+{% endif %}
+{% if apps_ledger_enabled %}
+    - name: {{ apps_ledger_http_listener_name }}
+      protocol: HTTP
+      port: 80
+      hostname: {{ apps_ledger_route_hostname_resolved | quote }}
+      allowedRoutes:
+        namespaces:
+          from: All
+{% endif %}
+{% if apps_pix_enabled %}
+    - name: {{ apps_pix_http_listener_name }}
+      protocol: HTTP
+      port: 80
+      hostname: {{ apps_pix_route_hostname_resolved | quote }}
+      allowedRoutes:
+        namespaces:
+          from: All
+{% endif %}
+{% if apps_connectivity_tls_enabled %}
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: {{ apps_connectivity_route_hostname_resolved | quote }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: {{ apps_connectivity_tls_secret_name }}
+      allowedRoutes:
+        namespaces:
+          from: All
+{% endif %}
+{% if apps_connectivity_frontend_route_enabled and apps_connectivity_frontend_https_enabled %}
+    - name: {{ apps_connectivity_frontend_https_listener_name }}
+      protocol: HTTPS
+      port: 443
+      hostname: {{ apps_connectivity_frontend_route_hostname_resolved | quote }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: {{ apps_connectivity_frontend_tls_secret_name }}
+      allowedRoutes:
+        namespaces:
+          from: All
+{% endif %}
+{% if apps_pix_enabled and apps_connectivity_tls_enabled %}
+    - name: {{ apps_pix_https_listener_name }}
+      protocol: HTTPS
+      port: 443
+      hostname: {{ apps_pix_route_hostname_resolved | quote }}
+      tls:
+        mode: Terminate
+        # TLSPolicy targets the Gateway itself, so cert-manager
+        # provisions a Certificate for this listener's hostname under
+        # the secret name below — no extra Certificate resource needed.
+        certificateRefs:
+          - name: {{ apps_pix_https_listener_name }}-tls
+      allowedRoutes:
+        namespaces:
+          from: All
+{% endif %}
+{% endif %}

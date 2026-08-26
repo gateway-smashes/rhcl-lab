@@ -1,0 +1,29 @@
+# Scrape banking-api's `/q/metrics` from the User Workload Monitoring
+# stack so the bank_ai_tokens_total (req018) and banking_transfers_total
+# (req032) counters reach Thanos. Without this manifest UWM has no
+# discovery on the `rhcl-apps` namespace and the dashboards / plugin
+# Cost view both return empty result sets.
+#
+# Prereq: cluster-monitoring-config has `enableUserWorkload: true`. The
+# rhcl-lab readme calls this out as a pre-install step; we don't try to
+# patch the cluster-level CM from here because it's owned by a different
+# operator and a customer may have their own monitoring contract.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ apps_backend_servicemonitor_name }}
+  namespace: {{ apps_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-banking-poc
+spec:
+  selector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - {{ apps_backend_primary_name }}
+          - {{ apps_backend_secondary_name }}
+  endpoints:
+    - port: http
+      path: /q/metrics
+      interval: 30s

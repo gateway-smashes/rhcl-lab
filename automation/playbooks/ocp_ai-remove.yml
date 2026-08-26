@@ -1,0 +1,10 @@
+---
+- name: Remove OpenShift AI stack
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  roles:
+    - role: ocp_ai
+      vars:
+        rhcl_action: remove

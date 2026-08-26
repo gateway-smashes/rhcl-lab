@@ -1,0 +1,12 @@
+# Self-signed ClusterIssuer used by the TLSPolicy below to generate the
+# serving cert for the Gateway. Safe for a lab — do not use in production.
+#
+# Requires the cert-manager Operator to be installed on the cluster.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: req55-selfsigned
+  labels:
+    app.kubernetes.io/part-of: rhcl-req55-tls
+spec:
+  selfSigned: {}

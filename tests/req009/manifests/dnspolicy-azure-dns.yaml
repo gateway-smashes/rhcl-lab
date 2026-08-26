@@ -1,0 +1,58 @@
+# DNSPolicy for Azure DNS
+#
+# Prerequisites:
+# 1. Azure DNS zone created (e.g., apps.cluster-xyz.com)
+# 2. Service principal with DNS Zone Contributor role on the zone
+# 3. Service principal credentials (client ID, secret, tenant ID)
+#
+# Create service principal:
+#   az ad sp create-for-rbac --name kuadrant-dns --role "DNS Zone Contributor"
+#
+# Installation:
+#   oc apply -f dnspolicy-azure-dns.yaml
+#
+# After applying:
+#   oc describe dnspolicy rhcl-apps-gateway-dns -n openshift-ingress
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rhcl-dns-credentials
+  namespace: openshift-ingress
+type: Opaque
+stringData:
+  # Azure service principal credentials
+  AZURE_CLIENT_ID: "..."        # Service principal client ID
+  AZURE_CLIENT_SECRET: "..."    # Service principal secret
+  AZURE_SUBSCRIPTION_ID: "..."  # Azure subscription ID
+  AZURE_TENANT_ID: "..."        # Azure tenant ID
+  AZURE_RESOURCE_GROUP: "rg-dns-zones"  # Resource group containing DNS zones
+
+---
+apiVersion: kuadrant.io/v1
+kind: DNSPolicy
+metadata:
+  name: rhcl-apps-gateway-dns
+  namespace: openshift-ingress
+  labels:
+    app: rhcl
+spec:
+  # Target the main RHCL Gateway
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: rhcl-apps-gateway
+
+  # Reference the Azure credentials secret
+  providerRefs:
+    - name: rhcl-dns-credentials
+
+  # Load balancing configuration (optional)
+  # Comment out to disable load balancing
+  loadBalancing:
+    # defaultGeo: true means this cluster is the fallback for unmapped regions
+    defaultGeo: true
+    # weight: 80 means this cluster receives 80% of DNS queries globally
+    # Pair with weight: 20 on another cluster for 80/20 split
+    weight: 80

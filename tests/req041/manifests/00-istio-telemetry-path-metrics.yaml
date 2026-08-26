@@ -1,0 +1,76 @@
+# Istio Telemetry CR — enable request_url_path, x-consumer-id, and
+# route_name as metric labels on the Gateway proxy. These labels power
+# the per-endpoint, per-consumer, and per-HTTPRoute Grafana panels in req041.
+#
+# CARDINALITY NOTE: request_url_path adds one label value per distinct URL
+# path. If your APIs contain unbounded path segments (UUIDs, numeric IDs),
+# consider normalizing paths via EnvoyFilter or restricting this Telemetry
+# to specific namespaces.
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata:
+  name: rhcl-api-metrics
+  namespace: openshift-ingress
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+    rhcl.redhat.com/requirement: req041
+spec:
+  metrics:
+    - providers:
+        - name: prometheus
+      overrides:
+        # Per-endpoint visibility (request_url_path)
+        - match:
+            metric: REQUEST_COUNT
+            mode: CLIENT_AND_SERVER
+          tagOverrides:
+            request_url_path:
+              value: "request.url_path"
+        - match:
+            metric: REQUEST_DURATION
+            mode: CLIENT_AND_SERVER
+          tagOverrides:
+            request_url_path:
+              value: "request.url_path"
+        # Per-consumer visibility (x-consumer-id header)
+        - match:
+            metric: REQUEST_COUNT
+            mode: CLIENT_AND_SERVER
+          tagOverrides:
+            request_headers_x_consumer_id:
+              # When the request didn't pass through Authorino (AuthPolicy
+              # rules with `anonymous: {}` like the AI-mock endpoints),
+              # Istio emits the literal "<nil>" string for this label.
+              # The Wasm stats filter only accepts simple attribute access
+              # expressions — CEL fallback operators (`|`, ternary,
+              # `has()`) are silently rejected and the label drops. So
+              # the rename to "anonymous" happens via `label_replace` in
+              # the dashboard queries, not here.
+              value: "request.headers['x-consumer-id']"
+        - match:
+            metric: REQUEST_DURATION
+            mode: CLIENT_AND_SERVER
+          tagOverrides:
+            request_headers_x_consumer_id:
+              # When the request didn't pass through Authorino (AuthPolicy
+              # rules with `anonymous: {}` like the AI-mock endpoints),
+              # Istio emits the literal "<nil>" string for this label.
+              # The Wasm stats filter only accepts simple attribute access
+              # expressions — CEL fallback operators (`|`, ternary,
+              # `has()`) are silently rejected and the label drops. So
+              # the rename to "anonymous" happens via `label_replace` in
+              # the dashboard queries, not here.
+              value: "request.headers['x-consumer-id']"
+        # Per-HTTPRoute visibility (xds.route_name = <ns>.<httproute>.<rule>)
+        - match:
+            metric: REQUEST_COUNT
+            mode: CLIENT_AND_SERVER
+          tagOverrides:
+            route_name:
+              value: "xds.route_name"
+        - match:
+            metric: REQUEST_DURATION
+            mode: CLIENT_AND_SERVER
+          tagOverrides:
+            route_name:
+              value: "xds.route_name"

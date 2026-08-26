@@ -1,0 +1,10 @@
+---
+- name: Install DNS provider secret
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  roles:
+    - role: dns
+      vars:
+        rhcl_action: install

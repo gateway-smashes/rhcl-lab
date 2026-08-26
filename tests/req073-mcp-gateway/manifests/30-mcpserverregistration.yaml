@@ -1,0 +1,28 @@
+# Registers the backend MCP server with the gateway broker. The controller
+# discovers the server via the referenced HTTPRoute and federates its tools
+# under `prefix` (so `echo` becomes `everything_echo`). This is the resource the
+# console plugin's "MCP Servers" page lists.
+#
+# API is mcp.kuadrant.io/v1alpha1 — the version the released chart (0.7.x) serves
+# (v1 is on the project's main branch but not yet released). Fields verified
+# against the deployed CRD schema:
+#   - targetRef → an HTTPRoute (not a Gateway)
+#   - prefix must match ^[a-z0-9][a-z0-9_]*$ and is immutable once set
+#   - path defaults to /mcp; state defaults to Enabled
+apiVersion: mcp.kuadrant.io/v1alpha1
+kind: MCPServerRegistration
+metadata:
+  name: everything-server
+  namespace: mcp-test
+  labels:
+    mcp.kuadrant.io/managed: "true"
+  annotations:
+    description: "Upstream MCP 'everything' reference server (echo, add, printEnv, …)"
+spec:
+  prefix: everything_
+  path: /mcp
+  state: Enabled
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: everything-server-route

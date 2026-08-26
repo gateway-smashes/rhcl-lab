@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: red-bank-frontend
+  labels:
+    app: red-bank-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: red-bank-frontend
+  template:
+    metadata:
+      labels:
+        app: red-bank-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: quay.io/hodrigohamalho/red-bank-frontend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20

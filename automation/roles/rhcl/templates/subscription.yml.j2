@@ -1,0 +1,23 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: {{ rhcl_operator_subscription_name }}
+  namespace: {{ rhcl_namespace }}
+spec:
+  channel: {{ rhcl_operator_channel }}
+  # Always Automatic. When pinning, the source catalog (v4.18 redhat-operator-
+  # index) only carries 1.3.x — there is literally no 1.4 CSV in it for OLM
+  # to upgrade to, so Automatic is safe AND it actually lets the initial
+  # install go through. (An earlier attempt at Manual + startingCSV left the
+  # first InstallPlan stuck at approved=false and the role failed waiting
+  # for the Kuadrant CRD.)
+  installPlanApproval: Automatic
+  name: {{ rhcl_operator_name }}
+{% if rhcl_operator_starting_csv | length > 0 %}
+  # startingCSV locks the initial install to a specific 1.3.x patch — combined
+  # with Manual approval above, the operator can't drift to 1.4 even when the
+  # source catalog gets refreshed.
+  startingCSV: {{ rhcl_operator_starting_csv }}
+{% endif %}
+  source: {{ rhcl_operator_source }}
+  sourceNamespace: {{ rhcl_operator_source_namespace }}

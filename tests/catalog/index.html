@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RHCL Lab — Tests Catalog</title>
+<style>
+  :root {
+    --rh-red: #EE0000;
+    --rh-red-dark: #A30000;
+    --rh-black: #151515;
+    --rh-gray-100: #F5F5F5;
+    --rh-gray-200: #E0E0E0;
+    --rh-gray-700: #4D4D4D;
+    --rh-success: #3E8635;
+    --rh-warn: #F0AB00;
+    --rh-danger: #C9190B;
+    --rh-info: #2B9AF3;
+    --sans: "Red Hat Display", "Red Hat Text", -apple-system, BlinkMacSystemFont,
+            "Segoe UI", Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    color: var(--rh-black);
+    background: var(--rh-gray-100);
+    line-height: 1.45;
+  }
+  header.rh-header {
+    background: var(--rh-black);
+    color: #fff;
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 4px solid var(--rh-red);
+  }
+  header.rh-header .logo {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 700; font-size: 18px; letter-spacing: 0.5px;
+    color: inherit; text-decoration: none;
+  }
+  header.rh-header a.logo:hover { color: var(--rh-red); }
+  header.rh-header a.logo:focus-visible {
+    outline: 2px solid var(--rh-red); outline-offset: 4px; border-radius: 2px;
+  }
+  header.rh-header .title {
+    margin-left: auto; font-size: 14px; color: #cfcfcf;
+    text-transform: uppercase; letter-spacing: 1px;
+  }
+  main { max-width: 1100px; margin: 0 auto; padding: 32px; }
+  h1 { font-size: 28px; margin: 0 0 4px 0; }
+  .subtitle { color: var(--rh-gray-700); margin: 0 0 24px 0; }
+  .toolbar {
+    display: flex; gap: 12px; align-items: center; margin: 16px 0 24px 0;
+    flex-wrap: wrap;
+  }
+  .toolbar input[type="search"] {
+    flex: 1; min-width: 240px;
+    font-family: var(--sans); font-size: 14px;
+    padding: 10px 12px;
+    border: 1px solid var(--rh-gray-200); border-radius: 3px;
+    background: #fff;
+  }
+  .toolbar input[type="search"]:focus {
+    outline: 2px solid var(--rh-red); outline-offset: -1px;
+  }
+  .status-filters {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .status-filter {
+    min-width: 38px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 3px;
+    background: #fff;
+    color: var(--rh-black);
+    cursor: pointer;
+    padding: 6px 8px;
+  }
+  .status-filter:hover { border-color: var(--rh-gray-700); }
+  .status-filter.active {
+    border-color: var(--rh-red);
+    box-shadow: inset 0 0 0 1px var(--rh-red);
+  }
+  .status-filter .filter-count {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--rh-gray-700);
+  }
+  .count {
+    font-family: var(--mono); font-size: 12px; color: var(--rh-gray-700);
+  }
+  .grid {
+    display: grid; gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  }
+  .card {
+    background: #fff;
+    border: 1px solid var(--rh-gray-200);
+    border-left: 4px solid var(--rh-red);
+    border-radius: 4px;
+    padding: 18px 20px;
+    display: flex; flex-direction: column;
+    transition: box-shadow 0.12s ease, border-left-color 0.12s ease;
+  }
+  .card:hover {
+    box-shadow: 0 4px 12px rgba(21,21,21,0.08);
+    border-left-color: var(--rh-red-dark);
+  }
+  .card .id {
+    font-family: var(--mono); font-size: 12px;
+    color: var(--rh-red-dark); text-transform: uppercase;
+    letter-spacing: 1px; margin-bottom: 4px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .status-icon {
+    width: 18px; height: 18px;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    color: #fff;
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: 0;
+  }
+  .status-icon.done { background: var(--rh-success); }
+  .status-icon.partial { background: var(--rh-warn); color: var(--rh-black); }
+  .status-icon.blocked { background: var(--rh-danger); }
+  .status-icon.not-started { background: var(--rh-gray-200); color: var(--rh-gray-700); }
+  .status-note {
+    font-size: 12px;
+    color: var(--rh-gray-700);
+    margin: -4px 0 10px 26px;
+  }
+  .card .title {
+    font-size: 16px; font-weight: 600; margin-bottom: 8px;
+    color: var(--rh-black);
+  }
+  .card .desc {
+    font-size: 13px; color: var(--rh-gray-700);
+    flex: 1;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn {
+    font-family: var(--sans); font-size: 13px; font-weight: 600;
+    padding: 6px 12px; border-radius: 3px;
+    text-decoration: none; cursor: pointer;
+    border: 1px solid var(--rh-red);
+    color: var(--rh-red); background: #fff;
+    transition: background 0.1s ease, color 0.1s ease;
+  }
+  .btn:hover { background: var(--rh-red); color: #fff; }
+  .btn.primary { background: var(--rh-red); color: #fff; }
+  .btn.primary:hover { background: var(--rh-red-dark); border-color: var(--rh-red-dark); }
+  .btn.disabled {
+    color: var(--rh-gray-200); border-color: var(--rh-gray-200);
+    background: #fff; cursor: not-allowed; pointer-events: none;
+  }
+  .empty, .error {
+    background: #fff;
+    border: 1px solid var(--rh-gray-200);
+    border-left: 4px solid var(--rh-info);
+    border-radius: 4px;
+    padding: 20px;
+    color: var(--rh-gray-700);
+  }
+  .error { border-left-color: var(--rh-red); }
+  footer {
+    margin-top: 48px; padding: 16px 32px;
+    color: var(--rh-gray-700); font-size: 12px; text-align: center;
+  }
+</style>
+</head>
+<body>
+<header class="rh-header">
+  <a class="logo" href="/" aria-label="Voltar para o catálogo de testes">
+    <span style="display:inline-block;width:14px;height:14px;background:var(--rh-red);border-radius:2px;"></span>
+    RHCL Lab
+  </a>
+  <div class="title">Tests Catalog</div>
+</header>
+
+<main>
+  <h1>Requirement test pages</h1>
+  <p class="subtitle">
+    Each card pairs the interactive PoC (when available) with the markdown
+    spec describing how to run the test.
+  </p>
+
+  <div class="toolbar">
+    <input id="filter" type="search" placeholder="Filter by id, title or description…" autocomplete="off" />
+    <div class="status-filters" id="statusFilters" aria-label="Filter by status"></div>
+    <span id="count" class="count">loading…</span>
+  </div>
+
+  <div id="grid" class="grid" role="list"></div>
+  <div id="status"></div>
+</main>
+
+<footer>
+  RHCL Lab · catalog served by nginx · refreshed at container start
+</footer>
+
+<script>
+  const grid = document.getElementById('grid');
+  const status = document.getElementById('status');
+  const countEl = document.getElementById('count');
+  const filter = document.getElementById('filter');
+  const statusFilters = document.getElementById('statusFilters');
+  let entries = [];
+  let activeStatus = 'all';
+
+  function actionLink(href, label, primary) {
+    if (!href) return '';
+    return `<a class="btn${primary ? ' primary' : ''}" href="${href}">${label}</a>`;
+  }
+
+  function statusMeta(status) {
+    const normalized = ['done', 'partial', 'blocked', 'not-started'].includes(status) ? status : 'not-started';
+    const map = {
+      'done': { label: 'Done', symbol: '✓' },
+      'partial': { label: 'Partial', symbol: '!' },
+      'blocked': { label: 'Blocked', symbol: '!' },
+      'not-started': { label: 'Not started', symbol: '–' }
+    };
+    return { key: normalized, ...map[normalized] };
+  }
+
+  function renderStatusFilters() {
+    const counts = entries.reduce((acc, e) => {
+      const key = statusMeta(e.status).key;
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const filters = [
+      { key: 'all', label: 'All', symbol: 'All', count: entries.length },
+      { key: 'done', ...statusMeta('done'), count: counts.done || 0 },
+      { key: 'partial', ...statusMeta('partial'), count: counts.partial || 0 },
+      { key: 'blocked', ...statusMeta('blocked'), count: counts.blocked || 0 },
+      { key: 'not-started', ...statusMeta('not-started'), count: counts['not-started'] || 0 }
+    ];
+
+    statusFilters.innerHTML = '';
+    for (const f of filters) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `status-filter${activeStatus === f.key ? ' active' : ''}`;
+      button.dataset.status = f.key;
+      button.title = `Show ${f.label}`;
+      button.setAttribute('aria-label', `Show ${f.label}`);
+      button.setAttribute('aria-pressed', activeStatus === f.key ? 'true' : 'false');
+
+      if (f.key === 'all') {
+        button.innerHTML = `<span>${f.symbol}</span><span class="filter-count">${f.count}</span>`;
+      } else {
+        button.innerHTML = `<span class="status-icon ${f.key}" aria-hidden="true">${f.symbol}</span><span class="filter-count">${f.count}</span>`;
+      }
+
+      button.addEventListener('click', () => {
+        activeStatus = activeStatus === f.key ? 'all' : f.key;
+        renderStatusFilters();
+        applyFilter();
+      });
+      statusFilters.appendChild(button);
+    }
+  }
+
+  function render(list) {
+    grid.innerHTML = '';
+    if (!list.length) {
+      grid.style.display = 'none';
+      status.innerHTML = '<div class="empty">No requirement pages match the current filter.</div>';
+      return;
+    }
+    status.innerHTML = '';
+    grid.style.display = '';
+    for (const e of list) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.setAttribute('role', 'listitem');
+
+      const docHref = e.doc ? `viewer.html?path=${encodeURIComponent(e.doc)}` : null;
+      // Primary action: prefer the interactive page if it exists, else the spec.
+      const pageBtn = e.page ? actionLink(e.page, 'Open page', true) : '';
+      const docBtn = docHref ? actionLink(docHref, 'Read spec', !e.page) : '';
+      const status = statusMeta(e.status);
+      const note = e.statusNote ? '<div class="status-note"></div>' : '';
+
+      card.innerHTML = `
+        <div class="id"></div>
+        <div class="title"></div>
+        <div class="desc"></div>
+        ${note}
+        <div class="actions">${pageBtn}${docBtn}</div>
+      `;
+      card.querySelector('.id').innerHTML = `<span class="status-icon ${status.key}" title="${status.label}" aria-label="${status.label}">${status.symbol}</span><span></span>`;
+      card.querySelector('.id span:last-child').textContent = e.id;
+      card.querySelector('.title').textContent = e.title || e.id;
+      card.querySelector('.desc').textContent = e.description || '';
+      const noteEl = card.querySelector('.status-note');
+      if (noteEl) noteEl.textContent = e.statusNote;
+      grid.appendChild(card);
+    }
+  }
+
+  function applyFilter() {
+    const q = filter.value.trim().toLowerCase();
+    const filtered = entries.filter(e => {
+      const matchesStatus = activeStatus === 'all' || statusMeta(e.status).key === activeStatus;
+      const matchesText = !q ||
+        (e.id || '').toLowerCase().includes(q) ||
+        (e.title || '').toLowerCase().includes(q) ||
+        (e.description || '').toLowerCase().includes(q);
+      return matchesStatus && matchesText;
+    });
+    countEl.textContent = `${filtered.length} / ${entries.length} entries`;
+    render(filtered);
+  }
+
+  filter.addEventListener('input', applyFilter);
+
+  fetch('catalog.json', { cache: 'no-store' })
+    .then(r => {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(data => {
+      entries = Array.isArray(data) ? data : [];
+      renderStatusFilters();
+      applyFilter();
+    })
+    .catch(err => {
+      countEl.textContent = '';
+      grid.style.display = 'none';
+      status.innerHTML = `<div class="error">Failed to load <code>catalog.json</code>: ${err.message}</div>`;
+    });
+</script>
+</body>
+</html>

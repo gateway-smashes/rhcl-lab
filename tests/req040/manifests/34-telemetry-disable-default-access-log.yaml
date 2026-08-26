@@ -1,0 +1,19 @@
+# Disable Istio's default bracket access log on rhcl-apps-gateway so only the
+# RHCL_ACCESS StdoutAccessLog from the EnvoyFilter runs (one line per request).
+---
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata:
+  name: rhcl-gateway-rhcl-access-only
+  namespace: openshift-ingress
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+    rhcl.redhat.com/requirement: req040
+spec:
+  selector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: rhcl-apps-gateway
+  accessLogging:
+    - providers:
+        - name: envoy
+      disabled: true

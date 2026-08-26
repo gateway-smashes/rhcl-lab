@@ -1,0 +1,410 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: rhcl-limitador
+  namespace: rhcl-grafana
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+    rhcl.redhat.com/requirement: req041
+spec:
+  resyncPeriod: 5m
+  instanceSelector:
+    matchLabels:
+      dashboards: rhcl
+  json: >
+    {
+      "id": null,
+      "uid": "rhcl-limitador",
+      "title": "RHCL Limitador — Rate Limiting",
+      "description": "Req 41 — Kuadrant rate-limiting activity: allowed vs denied request rates, Wasm filter counters, per-instance breakdown, and RateLimitPolicy enforcement status.",
+      "tags": ["rhcl", "kuadrant", "limitador", "req041"],
+      "timezone": "browser",
+      "editable": true,
+      "graphTooltip": 1,
+      "refresh": "30s",
+      "time": { "from": "now-1h", "to": "now" },
+      "schemaVersion": 38,
+      "version": 1,
+      "templating": {
+        "list": [
+          {
+            "current": {},
+            "hide": 0,
+            "includeAll": false,
+            "multi": false,
+            "name": "datasource",
+            "options": [],
+            "query": "prometheus",
+            "refresh": 1,
+            "type": "datasource"
+          },
+          {
+            "current": {},
+            "datasource": { "type": "prometheus", "uid": "${datasource}" },
+            "definition": "label_values(kuadrant_allowed, namespace)",
+            "hide": 0,
+            "includeAll": true,
+            "allValue": ".*",
+            "multi": false,
+            "name": "namespace",
+            "label": "Namespace",
+            "query": { "query": "label_values(kuadrant_allowed, namespace)", "refId": "namespace" },
+            "refresh": 2,
+            "sort": 1,
+            "type": "query"
+          },
+          {
+            "current": {},
+            "datasource": { "type": "prometheus", "uid": "${datasource}" },
+            "definition": "label_values(kuadrant_allowed{namespace=~\"$namespace\"}, pod)",
+            "hide": 0,
+            "includeAll": true,
+            "allValue": ".*",
+            "multi": true,
+            "name": "pod",
+            "label": "Gateway Pod",
+            "query": { "query": "label_values(kuadrant_allowed{namespace=~\"$namespace\"}, pod)", "refId": "pod" },
+            "refresh": 2,
+            "sort": 1,
+            "type": "query"
+          }
+        ]
+      },
+      "panels": [
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+          "id": 100,
+          "title": "Rate Limit Overview",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+              "unit": "reqps"
+            }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+          "id": 1,
+          "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "title": "Allowed Rate",
+          "type": "stat",
+          "targets": [
+            { "expr": "sum(rate(kuadrant_allowed{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "allowed/s", "refId": "A" }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.01 }, { "color": "red", "value": 1 }] },
+              "unit": "reqps"
+            }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+          "id": 2,
+          "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "title": "Denied Rate",
+          "type": "stat",
+          "targets": [
+            { "expr": "sum(rate(kuadrant_denied{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "denied/s", "refId": "A" }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 5 }, { "color": "red", "value": 20 }] },
+              "unit": "percent", "max": 100, "min": 0
+            }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+          "id": 3,
+          "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "title": "Deny Ratio",
+          "type": "stat",
+          "targets": [
+            { "expr": "100 * sum(rate(kuadrant_denied{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])) / (sum(rate(kuadrant_allowed{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])) + sum(rate(kuadrant_denied{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))", "legendFormat": "deny %", "refId": "A" }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] },
+              "unit": "short"
+            }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+          "id": 4,
+          "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "title": "Total Requests (range)",
+          "type": "stat",
+          "targets": [
+            { "expr": "sum(increase(kuadrant_allowed{namespace=~\"$namespace\", pod=~\"$pod\"}[$__range])) + sum(increase(kuadrant_denied{namespace=~\"$namespace\", pod=~\"$pod\"}[$__range]))", "legendFormat": "Total", "refId": "A" }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 20, "stacking": { "mode": "normal" }, "showPoints": "never" }, "unit": "reqps" }
+          },
+          "gridPos": { "h": 8, "w": 14, "x": 0, "y": 5 },
+          "id": 5,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "title": "Allowed vs Denied Over Time",
+          "type": "timeseries",
+          "targets": [
+            { "expr": "sum(rate(kuadrant_allowed{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "Allowed", "refId": "A" },
+            { "expr": "sum(rate(kuadrant_denied{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "Denied", "refId": "B" }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" } } },
+          "gridPos": { "h": 8, "w": 10, "x": 14, "y": 5 },
+          "id": 6,
+          "options": { "legend": { "displayMode": "list", "placement": "right" }, "tooltip": { "mode": "single" }, "pieType": "donut", "reduceOptions": { "calcs": ["sum"] } },
+          "title": "Allowed / Denied Breakdown",
+          "type": "piechart",
+          "targets": [
+            { "expr": "sum(increase(kuadrant_allowed{namespace=~\"$namespace\", pod=~\"$pod\"}[$__range]))", "legendFormat": "Allowed", "refId": "A", "instant": true },
+            { "expr": "sum(increase(kuadrant_denied{namespace=~\"$namespace\", pod=~\"$pod\"}[$__range]))", "legendFormat": "Denied", "refId": "B", "instant": true }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }, "unit": "percent", "max": 100, "min": 0 }
+          },
+          "gridPos": { "h": 6, "w": 24, "x": 0, "y": 13 },
+          "id": 7,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "title": "Deny Ratio Over Time",
+          "type": "timeseries",
+          "targets": [
+            { "expr": "100 * sum(rate(kuadrant_denied{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])) / (sum(rate(kuadrant_allowed{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])) + sum(rate(kuadrant_denied{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))", "legendFormat": "Deny %", "refId": "A" }
+          ]
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 19 },
+          "id": 101,
+          "title": "Wasm Filter Activity",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 15, "showPoints": "never" }, "unit": "reqps" }
+          },
+          "gridPos": { "h": 8, "w": 16, "x": 0, "y": 20 },
+          "id": 8,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "title": "Wasm Filter Counters / sec",
+          "type": "timeseries",
+          "targets": [
+            { "expr": "sum(rate(kuadrant_hits{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "Hits", "refId": "A" },
+            { "expr": "sum(rate(kuadrant_misses{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "Misses", "refId": "B" },
+            { "expr": "sum(rate(kuadrant_errors{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "Errors", "refId": "C" }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 0.01 }] },
+              "unit": "reqps"
+            }
+          },
+          "gridPos": { "h": 4, "w": 4, "x": 16, "y": 20 },
+          "id": 9,
+          "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "title": "Error Rate",
+          "type": "stat",
+          "targets": [
+            { "expr": "sum(rate(kuadrant_errors{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "errors/s", "refId": "A" }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] },
+              "unit": "short"
+            }
+          },
+          "gridPos": { "h": 4, "w": 4, "x": 20, "y": 20 },
+          "id": 10,
+          "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "title": "Wasm Configs",
+          "type": "stat",
+          "targets": [
+            { "expr": "sum(kuadrant_configs{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "configs", "refId": "A" }
+          ]
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 28 },
+          "id": 104,
+          "title": "Per-Instance Breakdown",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }, "unit": "reqps" }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 29 },
+          "id": 16,
+          "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max", "lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "title": "Allowed / sec per Pod",
+          "type": "timeseries",
+          "targets": [
+            { "expr": "sum by (pod)(rate(kuadrant_allowed{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "{{pod}}", "refId": "A" }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }, "unit": "reqps" }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 29 },
+          "id": 17,
+          "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max", "lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "title": "Denied / sec per Pod",
+          "type": "timeseries",
+          "targets": [
+            { "expr": "sum by (pod)(rate(kuadrant_denied{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "{{pod}}", "refId": "A" }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              { "matcher": { "id": "byName", "options": "Pod" }, "properties": [{ "id": "custom.width", "value": 400 }] },
+              { "matcher": { "id": "byName", "options": "Allowed/s" }, "properties": [{ "id": "unit", "value": "reqps" }, { "id": "decimals", "value": 2 }] },
+              { "matcher": { "id": "byName", "options": "Denied/s" }, "properties": [{ "id": "unit", "value": "reqps" }, { "id": "decimals", "value": 2 }] },
+              { "matcher": { "id": "byName", "options": "Hits/s" }, "properties": [{ "id": "unit", "value": "reqps" }, { "id": "decimals", "value": 2 }] },
+              { "matcher": { "id": "byName", "options": "Errors/s" }, "properties": [{ "id": "unit", "value": "reqps" }, { "id": "decimals", "value": 2 }] }
+            ]
+          },
+          "gridPos": { "h": 6, "w": 24, "x": 0, "y": 37 },
+          "id": 18,
+          "options": { "showHeader": true, "sortBy": [{ "displayName": "Allowed/s", "desc": true }] },
+          "title": "Instance Summary Table",
+          "type": "table",
+          "transformations": [
+            { "id": "merge" },
+            { "id": "organize", "options": { "renameByName": { "pod": "Pod", "Value #A": "Allowed/s", "Value #B": "Denied/s", "Value #C": "Hits/s", "Value #D": "Errors/s" } } }
+          ],
+          "targets": [
+            { "expr": "sum by (pod)(rate(kuadrant_allowed{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "refId": "A", "instant": true, "format": "table" },
+            { "expr": "sum by (pod)(rate(kuadrant_denied{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "refId": "B", "instant": true, "format": "table" },
+            { "expr": "sum by (pod)(rate(kuadrant_hits{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "refId": "C", "instant": true, "format": "table" },
+            { "expr": "sum by (pod)(rate(kuadrant_errors{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "refId": "D", "instant": true, "format": "table" }
+          ]
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 43 },
+          "id": 102,
+          "title": "Policy & Component Health",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] },
+              "unit": "short"
+            }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 44 },
+          "id": 11,
+          "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "title": "Limitador Ready",
+          "type": "stat",
+          "targets": [
+            { "expr": "kuadrant_component_ready{component=\"limitador\"}", "legendFormat": "Ready", "refId": "A" }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] },
+              "unit": "short"
+            }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 44 },
+          "id": 12,
+          "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "title": "Limitador Up",
+          "type": "stat",
+          "targets": [
+            { "expr": "limitador_up", "legendFormat": "Up", "refId": "A" }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] },
+              "unit": "short"
+            }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 44 },
+          "id": 13,
+          "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "title": "Total RateLimitPolicies",
+          "type": "stat",
+          "targets": [
+            { "expr": "kuadrant_policies_total{kind=\"RateLimitPolicy\"}", "legendFormat": "Total", "refId": "A" }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+              "unit": "short"
+            }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 44 },
+          "id": 14,
+          "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "title": "RateLimitPolicies Enforced",
+          "type": "stat",
+          "targets": [
+            { "expr": "kuadrant_policies_enforced{kind=\"RateLimitPolicy\", status=\"true\"}", "legendFormat": "Enforced", "refId": "A" }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              { "matcher": { "id": "byName", "options": "Kind" }, "properties": [{ "id": "custom.width", "value": 200 }] },
+              { "matcher": { "id": "byName", "options": "Status" }, "properties": [{ "id": "custom.width", "value": 100 }] },
+              { "matcher": { "id": "byName", "options": "Count" }, "properties": [{ "id": "unit", "value": "short" }, { "id": "decimals", "value": 0 }] }
+            ]
+          },
+          "gridPos": { "h": 6, "w": 24, "x": 0, "y": 48 },
+          "id": 15,
+          "options": { "showHeader": true, "sortBy": [{ "displayName": "Kind", "desc": false }] },
+          "title": "Policy Enforcement Status",
+          "type": "table",
+          "transformations": [
+            { "id": "merge" },
+            { "id": "organize", "options": { "renameByName": { "kind": "Kind", "status": "Status", "Value": "Count" } } }
+          ],
+          "targets": [
+            { "expr": "kuadrant_policies_enforced{kind=~\"RateLimitPolicy|AuthPolicy\"}", "refId": "A", "instant": true, "format": "table" }
+          ]
+        }
+      ]
+    }

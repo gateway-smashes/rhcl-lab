@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RHCL Lab — REQ 03: HPA on Gateway data plane</title>
+<style>
+  :root {
+    --rh-red: #EE0000;
+    --rh-red-dark: #A30000;
+    --rh-black: #151515;
+    --rh-gray-100: #F5F5F5;
+    --rh-gray-200: #E0E0E0;
+    --rh-gray-700: #4D4D4D;
+    --rh-success: #3E8635;
+    --rh-warn: #F0AB00;
+    --rh-info: #2B9AF3;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: "Red Hat Display", "Red Hat Text", -apple-system, BlinkMacSystemFont,
+            "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    color: var(--rh-black);
+    background: var(--rh-gray-100);
+    line-height: 1.45;
+  }
+  header.rh-header {
+    background: var(--rh-black);
+    color: #fff;
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 4px solid var(--rh-red);
+  }
+  header.rh-header .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 0.5px;
+    color: inherit;
+    text-decoration: none;
+  }
+  header.rh-header a.logo:hover { color: var(--rh-red); }
+  header.rh-header a.logo:focus-visible {
+    outline: 2px solid var(--rh-red);
+    outline-offset: 4px;
+    border-radius: 2px;
+  }
+  header.rh-header .title {
+    margin-left: auto;
+    font-size: 14px;
+    color: #cfcfcf;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  main { max-width: 1100px; margin: 0 auto; padding: 32px; }
+  h1 { font-size: 28px; margin: 0 0 4px 0; }
+  h2 {
+    font-size: 16px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--rh-gray-700);
+    margin: 32px 0 12px 0;
+    border-bottom: 1px solid var(--rh-gray-200);
+    padding-bottom: 8px;
+  }
+  .subtitle { color: var(--rh-gray-700); margin: 0 0 24px 0; }
+  .panel {
+    background: #fff;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 4px;
+    padding: 20px;
+  }
+  .panel + .panel { margin-top: 16px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .row + .row { margin-top: 12px; }
+  label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--rh-gray-700);
+    display: block;
+    margin-bottom: 4px;
+  }
+  input[type="text"], input[type="url"], input[type="number"], select, textarea {
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 8px 10px;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 3px;
+    background: #fff;
+    color: var(--rh-black);
+    flex: 1;
+    min-width: 160px;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: 2px solid var(--rh-red);
+    outline-offset: -1px;
+    border-color: var(--rh-red);
+  }
+  button {
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    padding: 8px 16px;
+    border: 1px solid var(--rh-red);
+    background: var(--rh-red);
+    color: #fff;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  button:hover { background: var(--rh-red-dark); border-color: var(--rh-red-dark); }
+  button.secondary {
+    background: #fff;
+    color: var(--rh-black);
+    border-color: var(--rh-gray-200);
+  }
+  button.secondary:hover { background: var(--rh-gray-100); }
+  button.preset {
+    background: #fff;
+    color: var(--rh-black);
+    border-color: var(--rh-gray-200);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+  button.preset:hover { background: var(--rh-gray-100); border-color: var(--rh-red); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .log {
+    background: var(--rh-black);
+    color: #e8e8e8;
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 16px;
+    border-radius: 3px;
+    max-height: 480px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .log .entry { padding: 4px 0; border-bottom: 1px solid #2a2a2a; }
+  .log .entry:last-child { border-bottom: none; }
+  .log .ts { color: #6a6a6a; margin-right: 8px; }
+  .log .lvl { font-weight: 700; margin-right: 8px; }
+  .log .lvl.info    { color: var(--rh-info); }
+  .log .lvl.success { color: #6EC664; }
+  .log .lvl.warn    { color: var(--rh-warn); }
+  .log .lvl.error   { color: #F87171; }
+
+  .callout {
+    background: #FFF8E1;
+    border-left: 4px solid var(--rh-warn);
+    padding: 12px 16px;
+    font-size: 13px;
+    margin: 16px 0;
+  }
+  .callout strong { color: var(--rh-red-dark); }
+  .callout code {
+    font-family: var(--mono);
+    background: rgba(0,0,0,.06);
+    padding: 1px 4px;
+    border-radius: 2px;
+  }
+
+  pre.scenario, pre.shell, pre.yaml {
+    background: var(--rh-gray-100);
+    border: 1px solid var(--rh-gray-200);
+    padding: 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    overflow-x: auto;
+    margin: 0;
+  }
+  pre.shell { background: #1f1f1f; color: #e8e8e8; border-color: #1f1f1f; }
+  pre.yaml { background: #f7f7f9; }
+
+  .shell-block, .yaml-block { position: relative; margin-top: 8px; }
+  .shell-block .copy, .yaml-block .copy {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 11px;
+    padding: 4px 8px;
+    background: #fff;
+    color: var(--rh-black);
+    border: 1px solid var(--rh-gray-200);
+  }
+  .shell-block .copy:hover, .yaml-block .copy:hover {
+    background: var(--rh-gray-100);
+    border-color: var(--rh-red);
+  }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+  }
+  .card-title {
+    font-weight: 700;
+    font-size: 13px;
+    margin-bottom: 8px;
+    color: var(--rh-black);
+  }
+  .kv {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--rh-gray-700);
+  }
+  .kv b { color: var(--rh-black); font-weight: 600; }
+  .stat {
+    display: inline-block;
+    margin-right: 12px;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .stat b { color: var(--rh-black); }
+  .stat span { color: var(--rh-gray-700); margin-right: 4px; }
+
+  footer {
+    max-width: 1100px;
+    margin: 32px auto;
+    padding: 0 32px;
+    color: var(--rh-gray-700);
+    font-size: 12px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header class="rh-header">
+  <a class="logo" href="/" aria-label="Back to the test catalog">
+    <svg width="36" height="28" viewBox="0 0 36 28" xmlns="http://www.w3.org/2000/svg" aria-label="Red Hat">
+      <path fill="#EE0000" d="M26 14c2.5 0 5 .8 5 3 0 .8-.3 1.4-.7 2H5.7c-.4-.6-.7-1.2-.7-2 0-2.2 2.5-3 5-3 0-3 3-7 8-7 2 0 3 1 4 1 1.5 0 2-1 3.5-1 1 0 2 1 2 3 0 2-1 4-1.5 4z"/>
+      <rect x="3" y="20" width="30" height="4" rx="1" fill="#151515"/>
+    </svg>
+    RHCL Lab
+  </a>
+  <div class="title">REQ 03</div>
+</header>
+
+<main>
+  <h1>Native HPA on the Gateway API data plane (autoscaling/v2)</h1>
+  <p class="subtitle">
+    Generates HTTP load against the connectivity gateway hostname so the
+    <code>HorizontalPodAutoscaler</code> watching
+    <code>Deployment/rhcl-apps-gateway-istio</code> in
+    <code>openshift-ingress</code> scales from <code>2</code> to
+    <code>6</code> replicas. The browser log shows RPS/latency; the
+    source of truth is <code>oc get hpa -w</code> in the cluster
+    (blocks below).
+  </p>
+
+  <h2>Scenario</h2>
+  <div class="panel">
+    <pre class="scenario">
+[ browser @ this page ]
+        |
+        |  N parallel workers issuing GET (configurable path)
+        v
+[ Gateway data plane pod (istio-proxy) ] --> Pod CPU climbs --> metrics-server
+                                                                   |
+                                                                   v
+                                          [ HPA rhcl-apps-gateway ]
+                                          target: cpu 200m / mem 384Mi (AverageValue)
+                                          min 2  ->  max 6
+                                                                   |
+                                                                   v
+                            kube-controller-manager scales the gateway Deployment
+    </pre>
+    <div class="callout">
+      The browser is a "best-effort" load generator. For an
+      authoritative run (stable numbers, in-cluster metrics) use the
+      <code>oc run hey-loadgen ...</code> block below. The HPA reacts
+      the same way — what matters is the CPU on the target pods (the
+      gateway data plane), not where the client runs. Hitting the
+      backend host directly will <strong>not</strong> drive this HPA,
+      because that path bypasses the gateway.
+    </div>
+  </div>
+
+  <h2>Controls</h2>
+  <div class="panel" id="controls">
+    <div class="row">
+      <button class="preset" data-preset="gateway">Via gateway</button>
+      <button class="preset" data-preset="direct">Direct backend (for comparison only)</button>
+      <span class="kv" id="presetHint">(the preset fills the Base URL — only "Via gateway" drives the HPA)</span>
+    </div>
+    <div class="row">
+      <div style="flex:2; min-width:280px;">
+        <label for="backendUrl">Base URL</label>
+        <input id="backendUrl" type="url"
+               value="https://banking-api-connectivity.apps.cluster1.poc.rhcl.com.br" />
+      </div>
+      <div style="flex:1; min-width:200px;">
+        <label for="path">Path</label>
+        <input id="path" type="text" value="/api/v1/accounts/summary" />
+      </div>
+    </div>
+    <div class="row">
+      <div style="flex:1; min-width:140px;">
+        <label for="concurrency">Concurrency (workers)</label>
+        <input id="concurrency" type="number" min="1" max="400" value="100" />
+      </div>
+      <div style="flex:1; min-width:140px;">
+        <label for="duration">Duration (s)</label>
+        <input id="duration" type="number" min="5" max="900" value="180" />
+      </div>
+      <div style="align-self:flex-end;">
+        <button id="startBtn">Start load</button>
+        <button id="stopBtn" class="secondary" disabled>Stop</button>
+        <button id="probeBtn" class="secondary">Single GET</button>
+        <button class="secondary" id="clearLogButton">Clear log</button>
+      </div>
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <span class="stat"><span>active workers:</span><b id="statWorkers">0</b></span>
+      <span class="stat"><span>RPS (5s):</span><b id="statRps">0</b></span>
+      <span class="stat"><span>avg latency (5s):</span><b id="statLat">0ms</b></span>
+      <span class="stat"><span>total OK:</span><b id="statOk">0</b></span>
+      <span class="stat"><span>errors:</span><b id="statErr">0</b></span>
+    </div>
+  </div>
+
+  <h2>Log</h2>
+  <div class="log" id="log" aria-live="polite"></div>
+
+  <h2>HPA manifest</h2>
+  <div class="panel">
+    <p class="kv">
+      Manifest applied to the cluster (also available at
+      <b>tests/req003/manifests/hpa-gateway.yaml</b>).
+    </p>
+    <div class="yaml-block">
+      <button class="copy" data-copy="hpaYaml">Copy</button>
+      <pre class="yaml" id="hpaYaml">apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: rhcl-apps-gateway
+  namespace: openshift-ingress
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: rhcl-apps-gateway-istio
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: AverageValue
+          averageValue: 200m
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: AverageValue
+          averageValue: 384Mi
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 15
+      selectPolicy: Max
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+        - type: Pods
+          value: 2
+          periodSeconds: 30
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      selectPolicy: Max
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60</pre>
+    </div>
+  </div>
+
+  <h2>Cluster commands (source of truth)</h2>
+  <div class="panel">
+    <div class="grid-2">
+      <div>
+        <div class="card-title">1) Apply the HPA</div>
+        <div class="shell-block">
+          <button class="copy" data-copy="cmdApply">Copy</button>
+<pre class="shell" id="cmdApply">oc apply -f tests/req003/manifests/hpa-gateway.yaml</pre>
+        </div>
+      </div>
+      <div>
+        <div class="card-title">2) Watch the HPA scale</div>
+        <div class="shell-block">
+          <button class="copy" data-copy="cmdWatch">Copy</button>
+<pre class="shell" id="cmdWatch">oc -n openshift-ingress get hpa rhcl-apps-gateway -w</pre>
+        </div>
+      </div>
+      <div>
+        <div class="card-title">3) Watch gateway pods coming up</div>
+        <div class="shell-block">
+          <button class="copy" data-copy="cmdPods">Copy</button>
+<pre class="shell" id="cmdPods">oc -n openshift-ingress get pods \
+  -l gateway.networking.k8s.io/gateway-name=rhcl-apps-gateway -w</pre>
+        </div>
+      </div>
+      <div>
+        <div class="card-title">4) HPA events (rescale reason)</div>
+        <div class="shell-block">
+          <button class="copy" data-copy="cmdDescribe">Copy</button>
+<pre class="shell" id="cmdDescribe">oc -n openshift-ingress describe hpa rhcl-apps-gateway</pre>
+        </div>
+      </div>
+      <div>
+        <div class="card-title">5) Top CPU/mem per gateway pod (what the HPA sees)</div>
+        <div class="shell-block">
+          <button class="copy" data-copy="cmdTop">Copy</button>
+<pre class="shell" id="cmdTop">oc -n openshift-ingress adm top pods \
+  -l gateway.networking.k8s.io/gateway-name=rhcl-apps-gateway</pre>
+        </div>
+      </div>
+      <div>
+        <div class="card-title">6) Authoritative load via <code>hey</code> (in-cluster, hitting the gateway)</div>
+        <div class="shell-block">
+          <button class="copy" data-copy="cmdHey">Copy</button>
+<pre class="shell" id="cmdHey">oc -n rhcl-apps run hey-loadgen --rm -i --tty --restart=Never \
+  --image=quay.io/luksa/hey -- \
+  -z 180s -c 100 \
+  http://rhcl-apps-gateway-istio.openshift-ingress.svc.cluster.local/api/v1/accounts/summary</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  RHCL Lab — Red Hat Connectivity Link proof-of-concept · REQ 03 / HPA on Gateway data plane
+</footer>
+
+<script>
+  // ---- Log helpers ---------------------------------------------------------
+  const logEl = document.getElementById("log");
+
+  function logLine(message, level = "info") {
+    const ts = new Date().toISOString().split("T")[1].replace("Z", "");
+    const entry = document.createElement("div");
+    entry.className = "entry";
+    entry.innerHTML =
+      `<span class="ts">${ts}</span>` +
+      `<span class="lvl ${level}">${level.toUpperCase()}</span>` +
+      escapeHtml(message);
+    logEl.appendChild(entry);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+  }
+
+  function clearLog() { logEl.innerHTML = ""; }
+  document.getElementById("clearLogButton")?.addEventListener("click", clearLog);
+
+  // ---- Copy buttons --------------------------------------------------------
+  document.querySelectorAll("button.copy").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const targetId = btn.getAttribute("data-copy");
+      const txt = document.getElementById(targetId)?.textContent ?? "";
+      navigator.clipboard.writeText(txt).then(
+        () => {
+          const old = btn.textContent;
+          btn.textContent = "Copied!";
+          setTimeout(() => { btn.textContent = old; }, 1500);
+        },
+        () => logLine("Clipboard copy failed", "error")
+      );
+    });
+  });
+
+  // ---- Env-driven presets --------------------------------------------------
+  const PRESETS = {
+    direct: "https://banking-api-v1-rhcl-apps.apps.cluster1.poc.rhcl.com.br",
+    gateway: "https://banking-api-connectivity.apps.cluster1.poc.rhcl.com.br",
+  };
+
+  fetch("/env.json")
+    .then((r) => (r.ok ? r.json() : {}))
+    .catch(() => ({}))
+    .then((env) => {
+      if (env && env.rhclZoneRootDomain) {
+        PRESETS.gateway = `https://banking-api-connectivity.${env.rhclZoneRootDomain}`;
+        PRESETS.direct = `https://banking-api-v1-rhcl-apps.${env.rhclZoneRootDomain}`;
+        document.getElementById("backendUrl").value = PRESETS.gateway;
+        logLine(`env.json: rhclZoneRootDomain=${env.rhclZoneRootDomain} (preset: via gateway)`, "info");
+      } else {
+        logLine("env.json unavailable — falling back to lab default hosts", "warn");
+      }
+    });
+
+  document.querySelectorAll("button.preset").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const k = btn.getAttribute("data-preset");
+      const url = PRESETS[k];
+      if (!url) return;
+      document.getElementById("backendUrl").value = url;
+      document.getElementById("presetHint").textContent = `preset: ${k} -> ${url}`;
+    });
+  });
+
+  // ---- Single probe --------------------------------------------------------
+  function buildUrl() {
+    const base = document.getElementById("backendUrl").value.replace(/\/+$/, "");
+    const path = document.getElementById("path").value;
+    return base + (path.startsWith("/") ? path : "/" + path);
+  }
+
+  document.getElementById("probeBtn").addEventListener("click", async () => {
+    const url = buildUrl();
+    const t0 = performance.now();
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      const dt = (performance.now() - t0).toFixed(0);
+      logLine(`GET ${url} -> ${res.status} (${dt} ms)`, res.ok ? "success" : "warn");
+    } catch (e) {
+      logLine(`GET ${url} -> ${e.message}`, "error");
+    }
+  });
+
+  // ---- Load generator ------------------------------------------------------
+  const stats = {
+    ok: 0,
+    err: 0,
+    latSum: 0,
+    latCount: 0,
+    windowOk: 0,
+    windowLatSum: 0,
+    windowLatCount: 0,
+  };
+  let running = false;
+  let workersActive = 0;
+
+  const elWorkers = document.getElementById("statWorkers");
+  const elRps = document.getElementById("statRps");
+  const elLat = document.getElementById("statLat");
+  const elOk = document.getElementById("statOk");
+  const elErr = document.getElementById("statErr");
+
+  function resetStats() {
+    stats.ok = stats.err = 0;
+    stats.latSum = stats.latCount = 0;
+    stats.windowOk = stats.windowLatSum = stats.windowLatCount = 0;
+    elOk.textContent = "0";
+    elErr.textContent = "0";
+    elRps.textContent = "0";
+    elLat.textContent = "0ms";
+  }
+
+  async function worker(url, deadline) {
+    workersActive++;
+    elWorkers.textContent = String(workersActive);
+    while (running && performance.now() < deadline) {
+      const t0 = performance.now();
+      try {
+        const res = await fetch(url, { cache: "no-store" });
+        const dt = performance.now() - t0;
+        if (res.ok) {
+          stats.ok++;
+          stats.windowOk++;
+          stats.latSum += dt;
+          stats.latCount++;
+          stats.windowLatSum += dt;
+          stats.windowLatCount++;
+          // drain body so the connection can be reused
+          await res.text();
+        } else {
+          stats.err++;
+        }
+      } catch (_) {
+        stats.err++;
+      }
+    }
+    workersActive--;
+    elWorkers.textContent = String(workersActive);
+  }
+
+  let windowTimer = null;
+  function startWindowTimer() {
+    windowTimer = setInterval(() => {
+      const rps = (stats.windowOk / 5).toFixed(1);
+      const avg =
+        stats.windowLatCount > 0
+          ? (stats.windowLatSum / stats.windowLatCount).toFixed(0)
+          : "0";
+      elRps.textContent = rps;
+      elLat.textContent = `${avg}ms`;
+      elOk.textContent = String(stats.ok);
+      elErr.textContent = String(stats.err);
+      logLine(
+        `5s window: ok=${stats.windowOk} rps=${rps} latAvg=${avg}ms (totals ok=${stats.ok} err=${stats.err})`,
+        "info"
+      );
+      stats.windowOk = stats.windowLatSum = stats.windowLatCount = 0;
+    }, 5000);
+  }
+
+  function stopWindowTimer() {
+    if (windowTimer) {
+      clearInterval(windowTimer);
+      windowTimer = null;
+    }
+  }
+
+  document.getElementById("startBtn").addEventListener("click", () => {
+    if (running) return;
+    const url = buildUrl();
+    const c = Math.max(1, parseInt(document.getElementById("concurrency").value, 10) || 1);
+    const dur = Math.max(5, parseInt(document.getElementById("duration").value, 10) || 5);
+    resetStats();
+    running = true;
+    document.getElementById("startBtn").disabled = true;
+    document.getElementById("stopBtn").disabled = false;
+    logLine(`load started: workers=${c} duration=${dur}s target=${url}`, "success");
+    const deadline = performance.now() + dur * 1000;
+    for (let i = 0; i < c; i++) worker(url, deadline);
+    startWindowTimer();
+    // auto-stop when deadline passes
+    setTimeout(() => stop(true), dur * 1000 + 100);
+  });
+
+  function stop(auto) {
+    if (!running) return;
+    running = false;
+    stopWindowTimer();
+    document.getElementById("startBtn").disabled = false;
+    document.getElementById("stopBtn").disabled = true;
+    elRps.textContent = "0";
+    const avg =
+      stats.latCount > 0 ? (stats.latSum / stats.latCount).toFixed(0) : "0";
+    logLine(
+      `load ${auto ? "ended (deadline reached)" : "stopped by user"}: ok=${stats.ok} err=${stats.err} latAvgGlobal=${avg}ms`,
+      auto ? "success" : "warn"
+    );
+  }
+
+  document.getElementById("stopBtn").addEventListener("click", () => stop(false));
+</script>
+</body>
+</html>

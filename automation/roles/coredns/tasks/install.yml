@@ -1,0 +1,48 @@
+---
+- name: Skip CoreDNS installation when disabled
+  ansible.builtin.meta: end_play
+  when: not coredns_enabled
+
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Validate kustomize availability
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_kustomize.yml
+
+- name: Build the CoreDNS manifests from the Kuadrant kustomize source
+  ansible.builtin.command:
+    argv:
+      - "{{ coredns_kustomize_binary }}"
+      - build
+      - --enable-helm
+      - "{{ coredns_kustomize_source }}"
+  register: coredns_kustomize_build
+  changed_when: false
+
+- name: Parse the CoreDNS manifests
+  ansible.builtin.set_fact:
+    coredns_manifests: "{{ coredns_kustomize_build.stdout | from_yaml_all | list }}"
+
+- name: Apply the CoreDNS manifests
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ coredns_manifests }}"
+
+- name: Wait for the CoreDNS deployment to become available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ coredns_namespace }}"
+    name: "{{ coredns_deployment_name }}"
+  register: coredns_deployment
+  changed_when: false
+  failed_when: false
+  until:
+    - coredns_deployment.resources | length == 1
+    - (coredns_deployment.resources[0].status.availableReplicas | default(0)) | int >= 1
+  retries: 30
+  delay: 10

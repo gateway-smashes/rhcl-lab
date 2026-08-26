@@ -1,0 +1,169 @@
+---
+- name: Skip MetalLB installation when disabled
+  ansible.builtin.meta: end_play
+  when: not metallb_enabled
+
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Validate MetalLB inputs
+  ansible.builtin.assert:
+    that:
+      - metallb_addresses | length > 0
+    fail_msg: >-
+      METALLB_ADDRESSES must be set. Accepted notation: hyphenated ranges
+      ('192.168.68.31-192.168.68.35'), comma-separated single IPs
+      ('192.168.68.31,192.168.68.33'), CIDR blocks ('192.168.68.0/24'), or
+      any mix ('192.168.68.31-192.168.68.35,192.168.68.40').
+
+- name: Ensure the metallb-system namespace exists
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ metallb_namespace }}"
+        labels:
+          pod-security.kubernetes.io/enforce: privileged
+          pod-security.kubernetes.io/audit: privileged
+          pod-security.kubernetes.io/warn: privileged
+          security.openshift.io/scc.podSecurityLabelSync: "false"
+
+- name: Query existing OperatorGroups in the metallb-system namespace
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    namespace: "{{ metallb_namespace }}"
+  register: metallb_existing_ogs
+  changed_when: false
+
+- name: Remove pre-existing OperatorGroups with a different name
+  kubernetes.core.k8s:
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    namespace: "{{ metallb_namespace }}"
+    name: "{{ item.metadata.name }}"
+    state: absent
+  loop: "{{ metallb_existing_ogs.resources }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  when: item.metadata.name != metallb_operatorgroup_name
+
+- name: Ensure the MetalLB OperatorGroup exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'operatorgroup.yml.j2') | from_yaml }}"
+
+- name: Ensure the MetalLB Subscription exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'subscription.yml.j2') | from_yaml }}"
+
+- name: Wait for the MetalLB subscription to report a current CSV
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ metallb_namespace }}"
+    name: "{{ metallb_subscription_name }}"
+  register: metallb_subscription
+  changed_when: false
+  failed_when: false
+  until:
+    - metallb_subscription.resources | length == 1
+    - metallb_subscription.resources[0].status.currentCSV is defined
+  retries: 30
+  delay: 10
+
+- name: Wait for the MetalLB CSV to succeed
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ metallb_namespace }}"
+    name: "{{ metallb_subscription.resources[0].status.currentCSV }}"
+  register: metallb_csv
+  changed_when: false
+  failed_when: false
+  until:
+    - metallb_csv.resources | length == 1
+    - metallb_csv.resources[0].status.phase == "Succeeded"
+  retries: 30
+  delay: 10
+
+- name: Wait for the MetalLB operator webhook deployment to be available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ metallb_namespace }}"
+    name: "{{ metallb_operator_webhook_deployment }}"
+  register: metallb_webhook_deployment
+  changed_when: false
+  failed_when: false
+  until:
+    - metallb_webhook_deployment.resources | length == 1
+    - (metallb_webhook_deployment.resources[0].status.availableReplicas | default(0)) | int >= 1
+  retries: 30
+  delay: 10
+
+- name: Create or update the MetalLB CR
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'metallb.yml.j2') | from_yaml }}"
+  register: metallb_cr_apply
+  retries: 12
+  delay: 10
+  until: metallb_cr_apply is succeeded
+
+- name: Wait for the MetalLB speaker DaemonSet to be available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: DaemonSet
+    namespace: "{{ metallb_namespace }}"
+    name: speaker
+  register: metallb_speaker_ds
+  changed_when: false
+  failed_when: false
+  until:
+    - metallb_speaker_ds.resources | length == 1
+    - (metallb_speaker_ds.resources[0].status.numberReady | default(0)) | int >= 1
+    - (metallb_speaker_ds.resources[0].status.desiredNumberScheduled | default(0)) | int
+      == (metallb_speaker_ds.resources[0].status.numberReady | default(0)) | int
+  retries: 30
+  delay: 10
+
+- name: Wait for the MetalLB controller deployment to be available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ metallb_namespace }}"
+    name: controller
+  register: metallb_controller_deployment
+  changed_when: false
+  failed_when: false
+  until:
+    - metallb_controller_deployment.resources | length == 1
+    - (metallb_controller_deployment.resources[0].status.availableReplicas | default(0)) | int >= 1
+  retries: 30
+  delay: 10
+
+- name: Create or update the IPAddressPool
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'ipaddresspool.yml.j2') | from_yaml }}"
+
+- name: Create or update the L2Advertisement
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'l2advertisement.yml.j2') | from_yaml }}"
+
+- name: Summarise the MetalLB pool configuration
+  ansible.builtin.debug:
+    msg:
+      - "MetalLB is ready in namespace '{{ metallb_namespace }}'."
+      - "IPAddressPool '{{ metallb_ipaddresspool_name }}' advertises:"
+      - "{{ metallb_addresses }}"
+      - "L2Advertisement '{{ metallb_l2advertisement_name }}' targets the pool above."
+      - "Any Service of type=LoadBalancer with no loadBalancerIP / no pool annotation"
+      - "will receive the next free address from this pool."

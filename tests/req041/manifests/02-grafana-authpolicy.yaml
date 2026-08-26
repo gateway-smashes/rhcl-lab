@@ -1,0 +1,14 @@
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: grafana-anonymous
+  namespace: rhcl-grafana
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: grafana
+  rules:
+    authentication:
+      anonymous:
+        anonymous: {}

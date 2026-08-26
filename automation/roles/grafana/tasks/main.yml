@@ -1,0 +1,13 @@
+---
+- name: Skip grafana role when disabled
+  ansible.builtin.meta: end_play
+  when: not (grafana_enabled | bool)
+
+- name: Validate grafana role action
+  ansible.builtin.assert:
+    that:
+      - (component_action | default(rhcl_action)) in ["install", "remove", "validate"]
+    fail_msg: "Requested grafana action must be install, remove, or validate."
+
+- name: Run grafana action
+  ansible.builtin.include_tasks: "{{ component_action | default(rhcl_action) }}.yml"

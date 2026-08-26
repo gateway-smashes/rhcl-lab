@@ -1,0 +1,14 @@
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: {{ mcp_gateway_server_registration_route_name }}-to-backend
+  namespace: {{ mcp_gateway_server_backend_service_namespace }}
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: {{ mcp_gateway_namespace }}
+  to:
+    - group: ""
+      kind: Service
+      name: {{ mcp_gateway_server_backend_service_name }}

@@ -1,0 +1,14 @@
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: {{ mcp_gateway_server_registration_name }}-mcp-registration
+  namespace: {{ mcp_gateway_namespace }}
+spec:
+  from:
+    - group: mcp.kuadrant.io
+      kind: MCPServerRegistration
+      namespace: {{ mcp_gateway_namespace }}
+  to:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: {{ mcp_gateway_server_registration_route_name }}

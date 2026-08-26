@@ -1,0 +1,17 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ apps_rhoai_frontend_name }}
+  namespace: {{ apps_namespace }}
+  labels:
+    app: {{ apps_rhoai_frontend_name }}
+    rhcl-lab/component: rhoai-assistant
+spec:
+  to:
+    kind: Service
+    name: {{ apps_rhoai_frontend_name }}
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Allow

@@ -1,0 +1,1189 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RHCL Lab — REQ 05: Balanceamento de carga por peso</title>
+<style>
+  :root {
+    --rh-red: #EE0000;
+    --rh-red-dark: #A30000;
+    --rh-black: #151515;
+    --rh-gray-100: #F5F5F5;
+    --rh-gray-200: #E0E0E0;
+    --rh-gray-700: #4D4D4D;
+    --rh-success: #3E8635;
+    --rh-warn: #F0AB00;
+    --rh-info: #2B9AF3;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: "Red Hat Display", "Red Hat Text", -apple-system, BlinkMacSystemFont,
+            "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    color: var(--rh-black);
+    background: var(--rh-gray-100);
+    line-height: 1.45;
+  }
+  header.rh-header {
+    background: var(--rh-black);
+    color: #fff;
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 4px solid var(--rh-red);
+  }
+  header.rh-header .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 0.5px;
+    color: inherit;
+    text-decoration: none;
+  }
+  header.rh-header a.logo:hover { color: var(--rh-red); }
+  header.rh-header a.logo:focus-visible {
+    outline: 2px solid var(--rh-red);
+    outline-offset: 4px;
+    border-radius: 2px;
+  }
+  header.rh-header .title {
+    margin-left: auto;
+    font-size: 14px;
+    color: #cfcfcf;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px;
+  }
+  h1 { font-size: 28px; margin: 0 0 4px 0; }
+  h2 {
+    font-size: 16px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--rh-gray-700);
+    margin: 32px 0 12px 0;
+    border-bottom: 1px solid var(--rh-gray-200);
+    padding-bottom: 8px;
+  }
+  .subtitle { color: var(--rh-gray-700); margin: 0 0 24px 0; }
+  .panel {
+    background: #fff;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 4px;
+    padding: 20px;
+  }
+  .panel + .panel { margin-top: 16px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .row + .row { margin-top: 12px; }
+  label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--rh-gray-700);
+    display: block;
+    margin-bottom: 4px;
+  }
+  input[type="text"], input[type="url"], input[type="number"], select, textarea {
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 8px 10px;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 3px;
+    background: #fff;
+    color: var(--rh-black);
+    flex: 1;
+    min-width: 120px;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: 2px solid var(--rh-red);
+    outline-offset: -1px;
+    border-color: var(--rh-red);
+  }
+  button {
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    padding: 8px 16px;
+    border: 1px solid var(--rh-red);
+    background: var(--rh-red);
+    color: #fff;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  button:hover { background: var(--rh-red-dark); border-color: var(--rh-red-dark); }
+  button.secondary {
+    background: #fff;
+    color: var(--rh-black);
+    border-color: var(--rh-gray-200);
+  }
+  button.secondary:hover { background: var(--rh-gray-100); }
+  button.preset {
+    background: #fff;
+    color: var(--rh-black);
+    border-color: var(--rh-gray-200);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+  button.preset:hover { background: var(--rh-gray-100); border-color: var(--rh-red); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .log {
+    background: var(--rh-black);
+    color: #e8e8e8;
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 16px;
+    border-radius: 3px;
+    max-height: 520px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .log .entry { padding: 4px 0; border-bottom: 1px solid #2a2a2a; }
+  .log .entry:last-child { border-bottom: none; }
+  .log .ts { color: #6a6a6a; margin-right: 8px; }
+  .log .lvl { font-weight: 700; margin-right: 8px; }
+  .log .lvl.info    { color: var(--rh-info); }
+  .log .lvl.success { color: #6EC664; }
+  .log .lvl.warn    { color: var(--rh-warn); }
+  .log .lvl.error   { color: #F87171; }
+
+  .callout {
+    background: #FFF8E1;
+    border-left: 4px solid var(--rh-warn);
+    padding: 12px 16px;
+    font-size: 13px;
+    margin: 16px 0;
+  }
+  .callout strong { color: var(--rh-red-dark); }
+  .callout code {
+    font-family: var(--mono);
+    background: rgba(0,0,0,.06);
+    padding: 1px 4px;
+    border-radius: 2px;
+  }
+
+  pre.scenario, pre.curl, pre.yaml {
+    background: var(--rh-gray-100);
+    border: 1px solid var(--rh-gray-200);
+    padding: 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    overflow-x: auto;
+    margin: 0;
+  }
+  pre.curl { background: #1f1f1f; color: #e8e8e8; border-color: #1f1f1f; }
+  pre.yaml { background: #f7f7f9; }
+
+  .curl-block, .yaml-block { position: relative; margin-top: 8px; }
+  .curl-block .copy, .yaml-block .copy {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 11px;
+    padding: 4px 8px;
+    background: #fff;
+    color: var(--rh-black);
+    border: 1px solid var(--rh-gray-200);
+  }
+  .curl-block .copy:hover, .yaml-block .copy:hover {
+    background: var(--rh-gray-100);
+    border-color: var(--rh-red);
+  }
+
+  .badge {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--rh-gray-100);
+    border: 1px solid var(--rh-gray-200);
+    padding: 2px 8px;
+    border-radius: 12px;
+    color: var(--rh-gray-700);
+    margin-left: 8px;
+  }
+  .badge.ok { background: #E6F4E5; color: #1E5E1A; border-color: #B5DBB1; }
+  .badge.bad { background: #FBE5E5; color: #7A1212; border-color: #F2B8B8; }
+  .badge.warn { background: #FFF8E1; color: #7A5A00; border-color: #F2D89A; }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+  }
+  .card-title {
+    font-weight: 700;
+    font-size: 13px;
+    margin-bottom: 8px;
+    color: var(--rh-black);
+  }
+  .kv {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--rh-gray-700);
+  }
+  .kv b { color: var(--rh-black); font-weight: 600; }
+
+  .matrix {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .matrix th, .matrix td {
+    border: 1px solid var(--rh-gray-200);
+    padding: 8px 12px;
+    text-align: left;
+  }
+  .matrix th {
+    background: var(--rh-gray-100);
+    font-weight: 700;
+    color: var(--rh-gray-700);
+    text-transform: uppercase;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+  }
+  .matrix td.mono { font-family: var(--mono); font-size: 12px; }
+  .matrix td.num { text-align: right; font-family: var(--mono); }
+
+  /* Stacked weight bar */
+  .wbar {
+    display: flex;
+    height: 22px;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 3px;
+    overflow: hidden;
+    background: #fff;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 22px;
+    color: #fff;
+  }
+  .wbar .seg-v1 { background: #2B9AF3; text-align: center; }
+  .wbar .seg-v2 { background: #6EC664; text-align: center; color: #0a3a00; }
+  .wbar .seg-other { background: var(--rh-gray-700); text-align: center; }
+  .legend {
+    display: flex;
+    gap: 16px;
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--rh-gray-700);
+  }
+  .legend .sw {
+    display: inline-block;
+    width: 12px; height: 12px;
+    border-radius: 2px;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .legend .sw.v1 { background: #2B9AF3; }
+  .legend .sw.v2 { background: #6EC664; }
+  .legend .sw.other { background: var(--rh-gray-700); }
+
+  footer {
+    max-width: 1100px;
+    margin: 32px auto;
+    padding: 0 32px;
+    color: var(--rh-gray-700);
+    font-size: 12px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header class="rh-header">
+  <a class="logo" href="/" aria-label="Voltar para o catálogo de testes">
+    <svg width="36" height="28" viewBox="0 0 36 28" xmlns="http://www.w3.org/2000/svg" aria-label="Red Hat">
+      <path fill="#EE0000" d="M26 14c2.5 0 5 .8 5 3 0 .8-.3 1.4-.7 2H5.7c-.4-.6-.7-1.2-.7-2 0-2.2 2.5-3 5-3 0-3 3-7 8-7 2 0 3 1 4 1 1.5 0 2-1 3.5-1 1 0 2 1 2 3 0 2-1 4-1.5 4z"/>
+      <rect x="3" y="20" width="30" height="4" rx="1" fill="#151515"/>
+    </svg>
+    RHCL Lab
+  </a>
+  <div class="title">REQ 05</div>
+</header>
+
+<main>
+  <h1>
+    Balanceamento de carga por peso
+    <span class="badge" id="originPill">origin: …</span>
+  </h1>
+  <p class="subtitle">
+    Demonstra que o gateway (RHCL / Gateway API) distribui o tráfego entre as
+    duas versões do <code>banking-api</code> (<code>banking-api-v1</code> e
+    <code>banking-api-v2</code>) segundo o campo <code>weight</code> de cada
+    <code>backendRef</code> da <code>HTTPRoute</code>. Como os dois Deployments
+    rodam a mesma imagem, o path neutro escolhido (<code>/api/whoami</code>) é
+    servido por ambos; o campo <code>instance</code> da resposta
+    (<code>banking-api-v1</code> ou <code>banking-api-v2</code>) identifica
+    qual Service o gateway escolheu em cada chamada. Um filtro
+    <code>RequestHeaderModifier</code> por <em>backendRef</em> ainda injeta
+    <code>x-route-version: v1|v2</code> antes do encaminhamento, e o backend
+    ecoa esse cabeçalho em <code>allHeaders</code> — um segundo sinal
+    independente do split.
+  </p>
+
+  <h2>Cenário</h2>
+  <div class="panel">
+    <pre class="scenario">
+[ cliente ]                       [ RHCL / Gateway ]                   [ backends ]
+    |                                       |                                 |
+    |  GET /api/whoami                      |                                 |
+    |-------------------------------------->|                                 |
+    |                                       |  weight: v1=90 / v2=10          |
+    |                                       |                                 |
+    |                                  ┌────┴────┐                            |
+    |                                  │ ~90%    │ injeta x-route-version: v1 |
+    |                                  │         │------------------------->  |
+    |                                  │         │                  banking-api-v1
+    |                                  │         │ <-------------------------|
+    |                                  │         │ instance=banking-api-v1    |
+    |                                  ├─────────┤ allHeaders[x-route-version]=v1
+    |                                  │ ~10%    │ injeta x-route-version: v2 |
+    |                                  │         │------------------------->  |
+    |                                  │         │                  banking-api-v2
+    |                                  │         │ <-------------------------|
+    |                                  │         │ instance=banking-api-v2    |
+    |                                  └─────────┘ allHeaders[x-route-version]=v2
+    |  HTTP 200 OK { instance, allHeaders, … }                                |
+    | <--------------------------------------|                                |
+    </pre>
+    <div class="callout">
+      <strong>O que esta página prova.</strong> Disparando N requisições
+      sequenciais (ou em paralelo) contra o mesmo path neutro, o gateway
+      seleciona um backend por chamada respeitando os pesos da
+      <code>HTTPRoute</code>. A página tabula <code>instance</code>
+      (e o eco de <code>x-route-version</code>) de cada resposta e compara a
+      proporção observada com a esperada. Em amostras pequenas o desvio é
+      normal — aumente <code>N</code> para ver a distribuição convergir.
+    </div>
+    <div class="callout" style="background:#FFE8E8; border-left-color: var(--rh-red-dark);">
+      <strong>Por que não <code>URLRewrite</code> por backendRef?</strong>
+      O controller <code>openshift.io/gateway-controller/v1</code> (Istio)
+      declara <code>URLRewrite</code> apenas em
+      <code>HTTPRouteRule.filters</code>, não em
+      <code>HTTPBackendRef.filters</code>. Aplicando-o por backendRef o
+      recurso vira com <code>ResolvedRefs=False, reason=InvalidFilter,
+      message="unsupported filter type URLRewrite"</code>. Por isso o demo
+      usa um path que existe nos dois pods e o sinal vem de
+      <code>RequestHeaderModifier</code> (suporte core no Istio) +
+      <code>instance</code> da resposta.
+    </div>
+  </div>
+
+  <h2>Controles</h2>
+  <div class="panel" id="controls">
+    <div class="row">
+      <div style="flex:2; min-width:280px;">
+        <label for="backendUrl">Base URL do gateway (rota com pesos)</label>
+        <input id="backendUrl" type="url"
+               value="https://weighted.apps.cluster1.poc.rhcl.com.br" />
+      </div>
+      <div style="flex:1; min-width:200px;">
+        <label for="path">Path neutro</label>
+        <input id="path" type="text" value="/api/whoami" />
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:16px;">
+      <div style="min-width:120px;">
+        <label for="reqCount">Total de requisições (N)</label>
+        <input id="reqCount" type="number" min="1" max="500" step="10" value="100" />
+      </div>
+      <div style="min-width:120px;">
+        <label for="concurrency">Concorrência</label>
+        <input id="concurrency" type="number" min="1" max="32" step="1" value="8" />
+      </div>
+      <div style="min-width:100px;">
+        <label for="weightV1">Peso v1 esperado (%)</label>
+        <input id="weightV1" type="number" min="0" max="100" step="1" value="90" />
+      </div>
+      <div style="min-width:100px;">
+        <label for="weightV2">Peso v2 esperado (%)</label>
+        <input id="weightV2" type="number" min="0" max="100" step="1" value="10" />
+      </div>
+      <div style="align-self:flex-end;">
+        <button id="runBtn">Disparar amostra</button>
+        <button class="secondary" id="stopBtn" disabled>Parar</button>
+        <button class="secondary" id="clearLogButton">Limpar log</button>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:16px;">
+      <label style="margin:0; align-self:center;">Presets de proporção:</label>
+      <button class="preset weight-preset" data-v1="100" data-v2="0">100 / 0</button>
+      <button class="preset weight-preset" data-v1="90"  data-v2="10">90 / 10 (canary)</button>
+      <button class="preset weight-preset" data-v1="50"  data-v2="50">50 / 50</button>
+      <button class="preset weight-preset" data-v1="10"  data-v2="90">10 / 90</button>
+      <button class="preset weight-preset" data-v1="0"   data-v2="100">0 / 100</button>
+    </div>
+
+    <div class="row" style="margin-top:16px;">
+      <label style="margin:0; align-self:center;">Presets de URL:</label>
+      <button class="preset" data-url="https://weighted.apps.cluster1.poc.rhcl.com.br">
+        Via gateway — weighted.apps.cluster1.poc
+      </button>
+      <button class="preset" data-url="https://banking-api-v1-rhcl-apps.apps.cluster1.poc.rhcl.com.br">
+        Backend v1 direto (cluster1.poc)
+      </button>
+      <button class="preset" data-url="https://banking-api-v2-rhcl-apps.apps.cluster1.poc.rhcl.com.br">
+        Backend v2 direto (cluster1.poc)
+      </button>
+    </div>
+  </div>
+
+  <h2>Log</h2>
+  <div class="log" id="log" aria-live="polite"></div>
+
+  <h2>Resultado da amostra</h2>
+  <div class="panel">
+    <div class="row" style="margin-bottom:8px;">
+      <div style="flex:1; min-width:240px;">
+        <div class="card-title">Distribuição observada</div>
+        <div class="wbar" id="wbar">
+          <div class="seg-v1" style="width: 0%;">v1 0</div>
+          <div class="seg-v2" style="width: 0%;">v2 0</div>
+          <div class="seg-other" style="width: 100%;">—</div>
+        </div>
+        <div class="legend">
+          <span><span class="sw v1"></span>banking-api-v1</span>
+          <span><span class="sw v2"></span>banking-api-v2</span>
+          <span><span class="sw other"></span>outro / erro</span>
+        </div>
+      </div>
+      <div style="flex:1; min-width:240px;">
+        <div class="card-title">Veredito</div>
+        <div class="kv" id="verdict">(nenhuma amostra ainda)</div>
+      </div>
+    </div>
+
+    <table class="matrix" id="resultTable">
+      <thead>
+        <tr>
+          <th>Versão (<code>instance</code>)</th>
+          <th class="num">esperado %</th>
+          <th class="num">observado %</th>
+          <th class="num">acertos</th>
+          <th class="num">desvio (pp)</th>
+        </tr>
+      </thead>
+      <tbody id="resultTableBody">
+        <tr>
+          <td class="mono">v1</td>
+          <td class="num" id="rowV1Exp">90</td>
+          <td class="num" id="rowV1Obs">—</td>
+          <td class="num" id="rowV1Hits">0</td>
+          <td class="num" id="rowV1Diff">—</td>
+        </tr>
+        <tr>
+          <td class="mono">v2</td>
+          <td class="num" id="rowV2Exp">10</td>
+          <td class="num" id="rowV2Obs">—</td>
+          <td class="num" id="rowV2Hits">0</td>
+          <td class="num" id="rowV2Diff">—</td>
+        </tr>
+        <tr>
+          <td class="mono">outro / erro</td>
+          <td class="num">0</td>
+          <td class="num" id="rowOtherObs">—</td>
+          <td class="num" id="rowOtherHits">0</td>
+          <td class="num" id="rowOtherDiff">—</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Distribuição por <code>instance</code></h2>
+  <div class="panel">
+    <p style="margin-top:0;">
+      O campo <code>instance</code> da resposta vem do env
+      <code>APP_INSTANCE_NAME</code> do Deployment — vale
+      <code>banking-api-v1</code> ou <code>banking-api-v2</code>. Réplicas do
+      mesmo Deployment compartilham o valor (não é o hostname do pod). A
+      coluna <em>x-route-version</em> é o eco, vindo de
+      <code>allHeaders</code>, do header injetado pelo
+      <code>RequestHeaderModifier</code> em cada backendRef — confirmação
+      independente da escolha do gateway.
+    </p>
+    <table class="matrix" id="instanceTable">
+      <thead>
+        <tr>
+          <th><code>instance</code></th>
+          <th>x-route-version (eco)</th>
+          <th class="num">acertos</th>
+          <th class="num">% do total</th>
+        </tr>
+      </thead>
+      <tbody id="instanceTableBody">
+        <tr><td colspan="4" class="kv">(nenhuma amostra ainda)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Atalhos de comparação <code>/api/v1</code> e <code>/api/v2</code></h2>
+  <div class="panel">
+    <p style="margin-top:0;">
+      A mesma <code>HTTPRoute</code> também publica dois atalhos sem
+      reescrita: <code>/api/v1/accounts/summary</code> sempre vai ao
+      <code>banking-api-v1</code> e <code>/api/v2/accounts/summary</code>
+      sempre vai ao <code>banking-api-v2</code>. Útil para confirmar que os
+      Services estão saudáveis antes de tirar conclusões da amostra com peso.
+    </p>
+    <div class="row">
+      <button class="pinBtn" data-version="v1">GET /api/v1/accounts/summary</button>
+      <button class="pinBtn secondary" data-version="v2">GET /api/v2/accounts/summary</button>
+      <div class="kv" id="pinStatus" style="margin-left:8px;">(aguardando)</div>
+    </div>
+    <div id="pinResult" style="margin-top:16px; padding:16px; background:#f7f7f9; border:1px solid var(--rh-gray-200); border-radius:3px; font-family:var(--mono); font-size:13px; color:var(--rh-gray-700); min-height:48px;">
+      A resposta JSON aparecerá aqui.
+    </div>
+  </div>
+
+  <h2>HTTPRoute com pesos por backendRef</h2>
+  <div class="panel">
+    <p style="margin-top:0;">
+      Exemplo de <code>HTTPRoute</code> em que cada <code>backendRef</code>
+      declara seu próprio <code>weight</code>. O filtro
+      <code>RequestHeaderModifier</code> em cada entrada injeta
+      <code>x-route-version: v1|v2</code> antes do envio ao backend; o
+      campo <code>instance</code> da resposta de <code>/api/whoami</code>
+      identifica diretamente qual Deployment serviu a chamada.
+    </p>
+    <div class="yaml-block">
+      <pre class="yaml" id="yamlRoute"></pre>
+      <button class="copy" data-target="yamlRoute">Copiar</button>
+    </div>
+  </div>
+
+  <h2>Verificação por shell</h2>
+  <div class="panel">
+    <p style="margin-top:0;">
+      Os comandos abaixo reproduzem o mesmo experimento por terminal,
+      tabulando <code>instance</code> (e o eco de
+      <code>x-route-version</code>) com <code>jq</code>. O pareto deve
+      convergir para os pesos configurados conforme N cresce.
+    </p>
+
+    <div class="card-title" style="margin-top:12px;">curl — burst de N chamadas e contagem por instance</div>
+    <div class="curl-block">
+      <pre class="curl" id="curlBurst"></pre>
+      <button class="copy" data-target="curlBurst">Copiar</button>
+    </div>
+
+    <div class="card-title" style="margin-top:16px;">curl — eco do header injetado pelo gateway</div>
+    <div class="curl-block">
+      <pre class="curl" id="curlInstances"></pre>
+      <button class="copy" data-target="curlInstances">Copiar</button>
+    </div>
+
+    <div class="card-title" style="margin-top:16px;">oc apply — aplicar / atualizar a HTTPRoute</div>
+    <div class="curl-block">
+      <pre class="curl" id="ocApply"></pre>
+      <button class="copy" data-target="ocApply">Copiar</button>
+    </div>
+
+    <div class="card-title" style="margin-top:16px;">oc patch — alterar pesos sem recriar</div>
+    <div class="curl-block">
+      <pre class="curl" id="ocPatch"></pre>
+      <button class="copy" data-target="ocPatch">Copiar</button>
+    </div>
+
+    <div class="card-title" style="margin-top:16px;">log dos pods — confirmar a divisão</div>
+    <div class="curl-block">
+      <pre class="curl" id="ocLogs"></pre>
+      <button class="copy" data-target="ocLogs">Copiar</button>
+    </div>
+
+    <div class="callout" style="margin-top:16px;">
+      <strong>Como interpretar.</strong> O somatório dos pesos não precisa ser
+      100 — o gateway normaliza. A distribuição é estatística: amostras
+      pequenas (N&lt;50) flutuam em torno do esperado. Para uma evidência
+      forte de canary, use N≥200 e concorrência ≥8.
+    </div>
+  </div>
+</main>
+
+<footer>
+  RHCL Lab — REQ 05 · Balanceamento de carga por peso
+</footer>
+
+<script>
+  const logEl = document.getElementById("log");
+  const backendInput = document.getElementById("backendUrl");
+  const pathInput = document.getElementById("path");
+  const reqCountInput = document.getElementById("reqCount");
+  const concInput = document.getElementById("concurrency");
+  const w1Input = document.getElementById("weightV1");
+  const w2Input = document.getElementById("weightV2");
+  const runBtn = document.getElementById("runBtn");
+  const stopBtn = document.getElementById("stopBtn");
+
+  document.getElementById("originPill").textContent = "origin: " + window.location.origin;
+
+  // ---- Runtime env from /env.json (populated by the tests container at boot)
+  // The Base URL is pre-filled with weighted.<domain> when RHCL_ZONE_ROOT_DOMAIN
+  // is set on the deployment. When the file is missing (e.g. running via
+  // python3 -m http.server) we just keep the defaults.
+  window.rhclEnv = {};
+  async function loadRuntimeEnv() {
+    const candidates = ["/env.json", "../../env.json", "../env.json"];
+    for (const url of candidates) {
+      try {
+        const r = await fetch(url, { cache: "no-store" });
+        if (!r.ok) continue;
+        const env = await r.json();
+        if (env && typeof env === "object") {
+          window.rhclEnv = env;
+          return env;
+        }
+      } catch { /* try next */ }
+    }
+    return {};
+  }
+
+  function applyEnvDefaults() {
+    const domain = (window.rhclEnv && window.rhclEnv.rhclZoneRootDomain) || "";
+    if (!domain) return;
+    const gatewayUrl = `https://weighted.${domain}`;
+
+    if (!backendInput.dataset.userEdited) {
+      backendInput.value = gatewayUrl;
+    }
+
+    const presetGateway = document.querySelector(`button.preset[data-url^="https://weighted."]`);
+    if (presetGateway) {
+      presetGateway.dataset.url = gatewayUrl;
+      presetGateway.textContent = `Via gateway — weighted.${domain}`;
+    }
+    const presetV1 = document.querySelector(`button.preset[data-url*="banking-api-v1"]`);
+    if (presetV1) {
+      const u = `https://banking-api-v1-rhcl-apps.${domain}`;
+      presetV1.dataset.url = u;
+      presetV1.textContent = `Backend v1 direto (${domain})`;
+    }
+    const presetV2 = document.querySelector(`button.preset[data-url*="banking-api-v2"]`);
+    if (presetV2) {
+      const u = `https://banking-api-v2-rhcl-apps.${domain}`;
+      presetV2.dataset.url = u;
+      presetV2.textContent = `Backend v2 direto (${domain})`;
+    }
+
+    logLine(`env.json carregado · RHCL_ZONE_ROOT_DOMAIN=${domain}`, "info");
+  }
+
+  backendInput.addEventListener("input", () => {
+    backendInput.dataset.userEdited = "1";
+  });
+
+  function logLine(message, level = "info") {
+    const ts = new Date().toISOString().split("T")[1].replace("Z", "");
+    const entry = document.createElement("div");
+    entry.className = "entry";
+    entry.innerHTML =
+      `<span class="ts">${ts}</span>` +
+      `<span class="lvl ${level}">${level.toUpperCase()}</span>` +
+      escapeHtml(message);
+    logEl.appendChild(entry);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function escapeHtml(s) {
+    return String(s)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+  }
+  document.getElementById("clearLogButton").addEventListener("click", () => {
+    logEl.innerHTML = "";
+  });
+
+  // ---- Presets --------------------------------------------------------------
+  document.querySelectorAll("button.preset[data-url]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const url = btn.dataset.url;
+      if (!url) return;
+      backendInput.value = url;
+      backendInput.dataset.userEdited = "1";
+      refreshShellCommands();
+      logLine(`Preset URL selecionada: ${url}`, "info");
+    });
+  });
+  document.querySelectorAll("button.weight-preset").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const v1 = parseInt(btn.dataset.v1, 10);
+      const v2 = parseInt(btn.dataset.v2, 10);
+      if (!isNaN(v1)) w1Input.value = v1;
+      if (!isNaN(v2)) w2Input.value = v2;
+      refreshShellCommands();
+      refreshYaml();
+      logLine(`Preset de pesos: v1=${v1} / v2=${v2}`, "info");
+    });
+  });
+
+  // ---- Copy buttons ---------------------------------------------------------
+  document.querySelectorAll("button.copy").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.target;
+      const txt = document.getElementById(id)?.textContent || "";
+      try {
+        await navigator.clipboard.writeText(txt);
+        const old = btn.textContent;
+        btn.textContent = "Copiado!";
+        setTimeout(() => (btn.textContent = old), 1200);
+      } catch {
+        logLine("Falha ao copiar — selecione o texto manualmente.", "warn");
+      }
+    });
+  });
+
+  // ---- Helpers --------------------------------------------------------------
+  function buildUrl(base, path) {
+    const cleaned = (base || "").replace(/\/+$/, "");
+    const p = (path || "").startsWith("/") ? path : `/${path || ""}`;
+    return `${cleaned}${p}`;
+  }
+  function getBaseUrl() { return backendInput.value.trim(); }
+  function getPath() { return pathInput.value.trim() || "/api/whoami"; }
+  function getN() {
+    const v = parseInt(reqCountInput.value, 10);
+    return Math.max(1, Math.min(500, isNaN(v) ? 100 : v));
+  }
+  function getConc() {
+    const v = parseInt(concInput.value, 10);
+    return Math.max(1, Math.min(32, isNaN(v) ? 8 : v));
+  }
+  function getWeights() {
+    const v1 = Math.max(0, Math.min(100, parseInt(w1Input.value, 10) || 0));
+    const v2 = Math.max(0, Math.min(100, parseInt(w2Input.value, 10) || 0));
+    const sum = v1 + v2 || 1;
+    return { v1, v2, v1Pct: (v1 / sum) * 100, v2Pct: (v2 / sum) * 100 };
+  }
+
+  // ---- Shell command rendering ---------------------------------------------
+  function refreshShellCommands() {
+    const base = getBaseUrl() || "https://api.example.com";
+    const url = buildUrl(base, getPath());
+    const n = getN();
+    const w = getWeights();
+
+    document.getElementById("curlBurst").textContent =
+`# Dispara N chamadas ao path neutro e tabula o campo \`instance\` da resposta.
+# instance vem do env APP_INSTANCE_NAME do Deployment: banking-api-v1 ou v2.
+N=${n}
+URL="${url}"
+for i in $(seq 1 $N); do
+  curl -s "$URL" | jq -r '.instance'
+done | sort | uniq -c | awk '{printf "%-4s %s (%s%%)\\n", $1, $2, ($1*100)/'"$N"'}'`;
+
+    document.getElementById("curlInstances").textContent =
+`# Mesmo burst, agora lendo o eco do header injetado pelo
+# RequestHeaderModifier por backendRef — confirmação independente
+# (vinda do gateway, não do backend) de qual versão recebeu cada chamada.
+N=${n}
+URL="${url}"
+for i in $(seq 1 $N); do
+  curl -s "$URL" | jq -r '"\\(.instance)\\t\\(.allHeaders["x-route-version"][0] // "-")"'
+done | sort | uniq -c | sort -nr`;
+
+    document.getElementById("ocApply").textContent =
+`export RHCL_ZONE_ROOT_DOMAIN=${(window.rhclEnv && window.rhclEnv.rhclZoneRootDomain) || "apps.cluster1.poc.rhcl.com.br"}
+envsubst < tests/req005/manifests/httproute-weighted.yaml | oc apply -f -
+
+# Confirme que o controller aceitou os filtros e os pesos
+oc -n rhcl-apps get httproute banking-api-weighted -o yaml \\
+  | yq '.spec.rules[0].backendRefs[] | {name: .name, weight: .weight, filters: .filters}'
+
+# E que ResolvedRefs ficou True (nada de InvalidFilter)
+oc -n rhcl-apps get httproute banking-api-weighted \\
+  -o jsonpath='{.status.parents[0].conditions}' | jq`;
+
+    document.getElementById("ocPatch").textContent =
+`# Atualiza pesos sem recriar o recurso. Os índices [0] e [1] referem-se à
+# ordem dos backendRefs na rule do path neutro (v1 primeiro, v2 depois).
+oc -n rhcl-apps patch httproute banking-api-weighted --type=json -p='[
+  {"op":"replace","path":"/spec/rules/0/backendRefs/0/weight","value":${w.v1}},
+  {"op":"replace","path":"/spec/rules/0/backendRefs/1/weight","value":${w.v2}}
+]'`;
+
+    document.getElementById("ocLogs").textContent =
+`# /api/whoami emite uma linha 'whoami instance=...' a cada chamada.
+# Greps separados nos dois Deployments confirmam quem recebeu o quê.
+oc -n rhcl-apps logs deploy/banking-api-v1 --tail=200 | grep -c 'whoami instance='
+oc -n rhcl-apps logs deploy/banking-api-v2 --tail=200 | grep -c 'whoami instance='`;
+  }
+
+  function refreshYaml() {
+    const domain = (window.rhclEnv && window.rhclEnv.rhclZoneRootDomain) || "";
+    const hostname = domain ? `weighted.${domain}` : "weighted.${RHCL_ZONE_ROOT_DOMAIN}";
+    const w = getWeights();
+    const yaml = `apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: banking-api-weighted
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-req5-weighted
+spec:
+  parentRefs:
+    - name: rhcl-apps-gateway
+      namespace: openshift-ingress
+  hostnames:
+    - ${hostname}
+  rules:
+    # Path neutro com weighted load balancing entre v1 e v2.
+    # /api/whoami existe nos dois Deployments (mesma imagem). O gateway
+    # marca cada chamada com x-route-version via RequestHeaderModifier
+    # por backendRef — suporte core no controller Istio do OpenShift
+    # (URLRewrite por backendRef NÃO é suportado e produziria
+    # ResolvedRefs=False, reason=InvalidFilter).
+    - matches:
+        - path:
+            type: Exact
+            value: /api/whoami
+      backendRefs:
+        - name: banking-api-v1
+          port: 8080
+          weight: ${w.v1}
+          filters:
+            - type: RequestHeaderModifier
+              requestHeaderModifier:
+                set:
+                  - name: x-route-version
+                    value: v1
+        - name: banking-api-v2
+          port: 8080
+          weight: ${w.v2}
+          filters:
+            - type: RequestHeaderModifier
+              requestHeaderModifier:
+                set:
+                  - name: x-route-version
+                    value: v2
+
+    # Atalhos sem peso (catch-all v1 e v2 — sanity check).
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/v1
+      backendRefs:
+        - name: banking-api-v1
+          port: 8080
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/v2
+      backendRefs:
+        - name: banking-api-v2
+          port: 8080
+
+# Aplicar:
+#   export RHCL_ZONE_ROOT_DOMAIN=apps.cluster1.poc.rhcl.com.br
+#   envsubst < tests/req005/manifests/httproute-weighted.yaml | oc apply -f -`;
+    document.getElementById("yamlRoute").textContent = yaml;
+  }
+
+  [backendInput, pathInput, reqCountInput, concInput, w1Input, w2Input].forEach((el) => {
+    el.addEventListener("input", () => {
+      refreshShellCommands();
+      refreshYaml();
+      updateExpectedRow();
+    });
+  });
+
+  function updateExpectedRow() {
+    const w = getWeights();
+    document.getElementById("rowV1Exp").textContent = w.v1Pct.toFixed(1);
+    document.getElementById("rowV2Exp").textContent = w.v2Pct.toFixed(1);
+  }
+
+  refreshShellCommands();
+  refreshYaml();
+  updateExpectedRow();
+
+  loadRuntimeEnv().then(() => {
+    applyEnvDefaults();
+    refreshShellCommands();
+    refreshYaml();
+  });
+
+  // ---- Burst sampling -------------------------------------------------------
+  let abortController = null;
+
+  async function runOne(url) {
+    const t0 = performance.now();
+    try {
+      const res = await fetch(url, {
+        method: "GET",
+        headers: { "Accept": "application/json" },
+        mode: "cors",
+        cache: "no-store",
+        signal: abortController?.signal,
+      });
+      const ms = Math.round(performance.now() - t0);
+      if (!res.ok) {
+        return { ok: false, status: res.status, ms, error: `${res.status} ${res.statusText}` };
+      }
+      const data = await res.json();
+      // /api/whoami returns the request headers verbatim under `allHeaders`
+      // as Map<String, List<String>>; the gateway sets x-route-version per
+      // backendRef and the backend echoes it. /api/v*/accounts/summary do
+      // NOT echo headers, so we keep apiVersion as a fallback discriminator
+      // when the page is pointed at those paths instead of /api/whoami.
+      let routeVersion = "";
+      const all = data && data.allHeaders;
+      if (all && typeof all === "object") {
+        for (const [k, v] of Object.entries(all)) {
+          if (String(k).toLowerCase() === "x-route-version") {
+            routeVersion = String(Array.isArray(v) ? v[0] : v) || "";
+            break;
+          }
+        }
+      }
+      return {
+        ok: true,
+        status: res.status,
+        ms,
+        apiVersion: String(data.apiVersion || ""),
+        instance: String(data.instance || "?"),
+        routeVersion: routeVersion,
+        backendTag: String(data.backendTag || ""),
+      };
+    } catch (err) {
+      const ms = Math.round(performance.now() - t0);
+      if (err.name === "AbortError") return { ok: false, aborted: true, ms };
+      return { ok: false, status: 0, ms, error: `${err.name}: ${err.message}` };
+    }
+  }
+
+  function renderResults(stats, total) {
+    const v1 = stats.byVersion.v1 || 0;
+    const v2 = stats.byVersion.v2 || 0;
+    const other = total - v1 - v2;
+
+    const v1Pct = total ? (v1 * 100) / total : 0;
+    const v2Pct = total ? (v2 * 100) / total : 0;
+    const otherPct = total ? (other * 100) / total : 0;
+
+    // Stacked bar
+    const wbar = document.getElementById("wbar");
+    wbar.innerHTML =
+      (v1 > 0 ? `<div class="seg-v1" style="width:${v1Pct.toFixed(2)}%;">v1 ${v1}</div>` : "") +
+      (v2 > 0 ? `<div class="seg-v2" style="width:${v2Pct.toFixed(2)}%;">v2 ${v2}</div>` : "") +
+      (other > 0 ? `<div class="seg-other" style="width:${otherPct.toFixed(2)}%;">err ${other}</div>` : "");
+
+    // Result table
+    const w = getWeights();
+    document.getElementById("rowV1Exp").textContent = w.v1Pct.toFixed(1);
+    document.getElementById("rowV2Exp").textContent = w.v2Pct.toFixed(1);
+    document.getElementById("rowV1Obs").textContent = v1Pct.toFixed(1);
+    document.getElementById("rowV2Obs").textContent = v2Pct.toFixed(1);
+    document.getElementById("rowOtherObs").textContent = otherPct.toFixed(1);
+    document.getElementById("rowV1Hits").textContent = v1;
+    document.getElementById("rowV2Hits").textContent = v2;
+    document.getElementById("rowOtherHits").textContent = other;
+    document.getElementById("rowV1Diff").textContent = (v1Pct - w.v1Pct).toFixed(1);
+    document.getElementById("rowV2Diff").textContent = (v2Pct - w.v2Pct).toFixed(1);
+    document.getElementById("rowOtherDiff").textContent = otherPct.toFixed(1);
+
+    // Per-instance table
+    const tb = document.getElementById("instanceTableBody");
+    const instances = Object.entries(stats.byInstance)
+      .sort((a, b) => b[1].count - a[1].count);
+    if (instances.length === 0) {
+      tb.innerHTML = `<tr><td colspan="4" class="kv">(nenhuma resposta tabulável)</td></tr>`;
+    } else {
+      tb.innerHTML = instances.map(([instance, info]) => {
+        const pct = total ? (info.count * 100) / total : 0;
+        return `<tr>
+          <td class="mono">${escapeHtml(instance)}</td>
+          <td class="mono">${escapeHtml(info.routeVersion || "—")}</td>
+          <td class="num">${info.count}</td>
+          <td class="num">${pct.toFixed(1)}</td>
+        </tr>`;
+      }).join("");
+    }
+
+    // Verdict
+    const verdictEl = document.getElementById("verdict");
+    if (other > 0 && (v1 + v2) === 0) {
+      verdictEl.innerHTML =
+        `<div><span class="badge bad">amostra inválida</span></div>` +
+        `<div style="margin-top:6px;">Nenhuma resposta classificável como v1/v2 (${other} erros ou respostas sem <code>instance</code>/<code>x-route-version</code>). Verifique a URL base, o path e a HTTPRoute.</div>`;
+      return;
+    }
+    const tolPP = Math.max(5, 30 / Math.sqrt(Math.max(1, v1 + v2))); // larger tolerance for small samples
+    const okV1 = Math.abs(v1Pct - w.v1Pct) <= tolPP;
+    const okV2 = Math.abs(v2Pct - w.v2Pct) <= tolPP;
+    const allOk = okV1 && okV2 && other === 0;
+
+    let badgeClass = "warn", badgeText = "coerência parcial";
+    if (allOk) { badgeClass = "ok"; badgeText = "coerente com pesos"; }
+    else if (other > 0) { badgeClass = "bad"; badgeText = "com erros na amostra"; }
+
+    verdictEl.innerHTML =
+      `<div><span class="badge ${badgeClass}">${badgeText}</span></div>` +
+      `<div style="margin-top:6px;">N=${total} · esperado v1=${w.v1Pct.toFixed(1)}% / v2=${w.v2Pct.toFixed(1)}% · ` +
+      `observado v1=${v1Pct.toFixed(1)}% / v2=${v2Pct.toFixed(1)}% · ` +
+      `tolerância ±${tolPP.toFixed(1)} pp (cresce com 1/√N)${other ? ` · ${other} erros` : ""}.</div>`;
+  }
+
+  function emptyStats() {
+    return { byVersion: { v1: 0, v2: 0 }, byInstance: {} };
+  }
+  // Derive the routed version from (in order):
+  //   1) header echo `x-route-version` (set by RequestHeaderModifier per
+  //      backendRef on /api/whoami) — gateway-side proof,
+  //   2) instance suffix `banking-api-v1` / `banking-api-v2` (env
+  //      APP_INSTANCE_NAME on each Deployment) — backend-side proof,
+  //   3) apiVersion field (only meaningful on /api/v*/accounts/summary).
+  function deriveVersion(r) {
+    if (r.routeVersion === "v1" || r.routeVersion === "v2") return r.routeVersion;
+    const inst = (r.instance || "").toLowerCase();
+    if (inst.endsWith("-v1") || inst === "banking-api-v1") return "v1";
+    if (inst.endsWith("-v2") || inst === "banking-api-v2") return "v2";
+    if (r.apiVersion === "v1" || r.apiVersion === "v2") return r.apiVersion;
+    return "other";
+  }
+  function recordResult(stats, r) {
+    if (!r.ok) return;
+    const v = deriveVersion(r);
+    if (v === "v1" || v === "v2") {
+      stats.byVersion[v] = (stats.byVersion[v] || 0) + 1;
+    }
+    const key = r.instance || "?";
+    if (!stats.byInstance[key]) {
+      stats.byInstance[key] = { version: v, routeVersion: r.routeVersion || "—", count: 0 };
+    }
+    if (r.routeVersion) stats.byInstance[key].routeVersion = r.routeVersion;
+    stats.byInstance[key].count += 1;
+  }
+
+  async function runBurst() {
+    const base = getBaseUrl();
+    if (!base) { logLine("Base URL vazia.", "warn"); return; }
+    const url = buildUrl(base, getPath());
+    const n = getN();
+    const conc = getConc();
+
+    runBtn.disabled = true;
+    stopBtn.disabled = false;
+    abortController = new AbortController();
+
+    const stats = emptyStats();
+    let done = 0, errors = 0;
+
+    logLine(`Burst iniciado: GET ${url} · N=${n} · concorrência=${conc}`, "info");
+
+    // Worker pool
+    let nextIdx = 0;
+    const startedAt = performance.now();
+    async function worker() {
+      while (nextIdx < n && !abortController.signal.aborted) {
+        const i = ++nextIdx;
+        const r = await runOne(url);
+        if (r.aborted) return;
+        done += 1;
+        if (!r.ok) errors += 1;
+        recordResult(stats, r);
+        if (done % Math.max(1, Math.floor(n / 10)) === 0 || done === n) {
+          renderResults(stats, done);
+          const elapsed = ((performance.now() - startedAt) / 1000).toFixed(1);
+          logLine(`progresso: ${done}/${n} (erros: ${errors}, ${elapsed}s)`, "info");
+        }
+      }
+    }
+    const workers = Array.from({ length: conc }, () => worker());
+    await Promise.all(workers);
+
+    renderResults(stats, done);
+    const totalSec = ((performance.now() - startedAt) / 1000).toFixed(1);
+    if (abortController.signal.aborted) {
+      logLine(`Burst interrompido após ${done}/${n} chamadas (erros: ${errors}, ${totalSec}s).`, "warn");
+    } else {
+      logLine(`Burst concluído: ${done} chamadas (erros: ${errors}, ${totalSec}s).`, errors > 0 ? "warn" : "success");
+    }
+
+    runBtn.disabled = false;
+    stopBtn.disabled = true;
+    abortController = null;
+  }
+
+  runBtn.addEventListener("click", runBurst);
+  stopBtn.addEventListener("click", () => {
+    if (abortController) {
+      abortController.abort();
+      logLine("Solicitação de parada enviada — workers terminam a chamada em curso.", "warn");
+    }
+  });
+
+  // ---- Pinned routes (/api/v1 and /api/v2 sanity check) ---------------------
+  const pinBtns = document.querySelectorAll(".pinBtn");
+  const pinStatus = document.getElementById("pinStatus");
+  const pinResult = document.getElementById("pinResult");
+
+  async function runPinned(version) {
+    const base = getBaseUrl();
+    if (!base) { logLine("Base URL vazia.", "warn"); return; }
+    const path = `/api/${version}/accounts/summary`;
+    const url = buildUrl(base, path);
+    pinBtns.forEach((b) => { b.disabled = true; });
+    pinStatus.innerHTML = `<span class="badge warn">chamando ${escapeHtml(path)}…</span>`;
+    pinResult.style.color = "var(--rh-gray-700)";
+    pinResult.textContent = `GET ${url}`;
+    logLine(`GET ${url} (atalho ${version})`, "info");
+
+    const t0 = performance.now();
+    try {
+      const res = await fetch(url, {
+        method: "GET",
+        headers: { "Accept": "application/json" },
+        mode: "cors",
+        cache: "no-store",
+      });
+      const ms = Math.round(performance.now() - t0);
+      if (!res.ok) {
+        const txt = await res.text();
+        const preview = txt.length > 300 ? txt.slice(0, 300) + "…(truncado)" : txt;
+        pinStatus.innerHTML = `<span class="badge bad">${res.status} ${escapeHtml(res.statusText)} em ${ms} ms</span>`;
+        pinResult.style.color = "var(--rh-red-dark)";
+        pinResult.textContent = `GET ${url}\nHTTP ${res.status} ${res.statusText}\n${preview}`;
+        logLine(`Resposta de erro (${version}): ${res.status} ${res.statusText} (${ms} ms)`, "error");
+        return;
+      }
+      const data = await res.json();
+      pinStatus.innerHTML = `<span class="badge ok">200 OK em ${ms} ms (${escapeHtml(String(data.apiVersion || ""))})</span>`;
+      pinResult.style.color = "var(--rh-success)";
+      pinResult.innerHTML =
+        `<div><b>apiVersion:</b> ${escapeHtml(String(data.apiVersion || ""))}</div>` +
+        `<div><b>instance:</b> ${escapeHtml(String(data.instance || ""))}</div>` +
+        `<div><b>backendTag:</b> ${escapeHtml(String(data.backendTag || ""))}</div>` +
+        `<div><b>accountTotal:</b> ${escapeHtml(String(data.accountTotal || ""))}</div>` +
+        `<div><b>features:</b> ${escapeHtml(JSON.stringify(data.features || {}))}</div>` +
+        `<div><b>duração:</b> ${ms} ms</div>`;
+      logLine(`Atalho ${version} OK · instance=${data.instance} · apiVersion=${data.apiVersion}`, "success");
+    } catch (err) {
+      const ms = Math.round(performance.now() - t0);
+      pinStatus.innerHTML = `<span class="badge bad">falha após ${ms} ms</span>`;
+      pinResult.style.color = "var(--rh-red-dark)";
+      pinResult.textContent = `${err.name}: ${err.message}\nGET ${url}`;
+      logLine(`fetch falhou (${version}): ${err.name}: ${err.message}`, "error");
+    } finally {
+      pinBtns.forEach((b) => { b.disabled = false; });
+    }
+  }
+
+  pinBtns.forEach((btn) => {
+    btn.addEventListener("click", () => runPinned(btn.dataset.version));
+  });
+
+  logLine("Página carregada. Aplique a HTTPRoute, ajuste pesos e dispare a amostra.", "info");
+</script>
+</body>
+</html>

@@ -1,0 +1,278 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+# ---------------------------------------------------------------
+# 1. Grafana Operator (OLM)
+# ---------------------------------------------------------------
+- name: Ensure the Grafana Operator namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ grafana_operator_namespace }}"
+    state: present
+
+- name: Query existing OperatorGroups in the Grafana operator namespace
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    namespace: "{{ grafana_operator_namespace }}"
+  register: grafana_existing_ogs
+  changed_when: false
+
+- name: Remove pre-existing OperatorGroups with a different name (Grafana)
+  kubernetes.core.k8s:
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    namespace: "{{ grafana_operator_namespace }}"
+    name: "{{ item.metadata.name }}"
+    state: absent
+  loop: "{{ grafana_existing_ogs.resources }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  when: item.metadata.name != grafana_operatorgroup_name
+
+- name: Ensure the Grafana OperatorGroup exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'operatorgroup.yml.j2') | from_yaml }}"
+
+- name: Ensure the Grafana Subscription exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'subscription.yml.j2') | from_yaml }}"
+  when: grafana_install_operator | bool
+
+- name: Wait for the Grafana subscription to report a current CSV
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ grafana_operator_namespace }}"
+    name: "{{ grafana_subscription_name }}"
+  register: grafana_subscription
+  changed_when: false
+  failed_when: false
+  until:
+    - grafana_subscription.resources | length == 1
+    - grafana_subscription.resources[0].status.currentCSV is defined
+  retries: 30
+  delay: 10
+  when: grafana_install_operator | bool
+
+- name: Wait for the Grafana CSV to succeed
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ grafana_operator_namespace }}"
+    name: "{{ grafana_subscription.resources[0].status.currentCSV }}"
+  register: grafana_csv
+  changed_when: false
+  failed_when: false
+  until:
+    - grafana_csv.resources | length == 1
+    - grafana_csv.resources[0].status.phase == "Succeeded"
+  retries: 30
+  delay: 10
+  when: grafana_install_operator | bool
+
+- name: Wait for Grafana CRDs to be registered
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: "{{ item }}"
+  register: grafana_crds_check
+  until: grafana_crds_check.resources | length == 1
+  retries: 20
+  delay: 5
+  loop:
+    - grafanas.grafana.integreatly.org
+    - grafanadashboards.grafana.integreatly.org
+    - grafanadatasources.grafana.integreatly.org
+
+# ---------------------------------------------------------------
+# 2. Grafana instance + Route
+# ---------------------------------------------------------------
+- name: Ensure the Grafana instance namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ grafana_namespace }}"
+    state: present
+
+- name: Ensure the Grafana instance exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'grafana-instance.yml.j2') | from_yaml }}"
+
+- name: Wait for the Grafana deployment to become available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ grafana_namespace }}"
+    name: "{{ grafana_instance_name }}-deployment"
+  register: grafana_deploy
+  until:
+    - grafana_deploy.resources | length == 1
+    - (grafana_deploy.resources[0].status.availableReplicas | default(0)) >= 1
+  retries: 30
+  delay: 10
+
+# ---------------------------------------------------------------
+# 3. ServiceAccount + RBAC + SA token Secret for Thanos
+#    The operator auto-creates the SA (named `<instance>-sa`); we just need
+#    to wait for it before applying the token Secret (otherwise the token
+#    controller has nothing to populate).
+# ---------------------------------------------------------------
+- name: Wait for the operator-managed ServiceAccount to exist
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: ServiceAccount
+    namespace: "{{ grafana_namespace }}"
+    name: "{{ grafana_thanos_sa_name }}"
+  register: grafana_sa_check
+  until: grafana_sa_check.resources | length == 1
+  retries: 30
+  delay: 5
+
+- name: Ensure ClusterRoleBinding + SA token Secret exist
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ item }}"
+  loop: "{{ lookup('template', 'thanos-sa-rbac.yml.j2') | from_yaml_all | list }}"
+  loop_control:
+    label: "{{ item.kind }}/{{ item.metadata.name }}"
+
+- name: Wait for the SA token Secret to be populated
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    namespace: "{{ grafana_namespace }}"
+    name: "{{ grafana_thanos_sa_token_secret }}"
+  register: grafana_thanos_token_secret
+  until:
+    - grafana_thanos_token_secret.resources | length == 1
+    - grafana_thanos_token_secret.resources[0].data is defined
+    - grafana_thanos_token_secret.resources[0].data.token is defined
+    - (grafana_thanos_token_secret.resources[0].data.token | b64decode | length) > 100
+  retries: 20
+  delay: 5
+
+# ---------------------------------------------------------------
+# 4. GrafanaDatasource — bearer inlined here, NOT via valuesFrom.
+#    The operator's `valuesFrom` → Secret pathway is broken on v5.24.0
+#    (silently leaves secureJsonFields empty → 401s on every query). We
+#    resolve the token now and stamp it directly into the CR.
+# ---------------------------------------------------------------
+- name: Extract the SA token for inline injection
+  ansible.builtin.set_fact:
+    grafana_thanos_token: "{{ grafana_thanos_token_secret.resources[0].data.token | b64decode }}"
+  no_log: true
+
+- name: Ensure the Thanos GrafanaDatasource exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'datasource-thanos.yml.j2') | from_yaml }}"
+  no_log: true
+
+- name: Wait for the datasource sync condition
+  kubernetes.core.k8s_info:
+    api_version: grafana.integreatly.org/v1beta1
+    kind: GrafanaDatasource
+    namespace: "{{ grafana_namespace }}"
+    name: "{{ grafana_thanos_datasource_name }}"
+  register: grafana_ds_check
+  until:
+    - grafana_ds_check.resources | length == 1
+    - grafana_ds_check.resources[0].status is defined
+    - >-
+      grafana_ds_check.resources[0].status.conditions | default([])
+      | selectattr('type', 'equalto', 'DatasourceSynchronized')
+      | selectattr('reason', 'equalto', 'ApplySuccessful')
+      | list | length > 0
+  retries: 20
+  delay: 5
+
+# ---------------------------------------------------------------
+# 5. Telemetry CR (Istio) — surfaces request_url_path, route_name and
+#    request_headers_x_consumer_id as Prometheus labels so the dashboards
+#    can break traffic down per endpoint / per HTTPRoute / per consumer.
+# ---------------------------------------------------------------
+- name: Ensure the Telemetry CR for Istio metric labels exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'telemetry-istio.yml.j2') | from_yaml }}"
+
+# ---------------------------------------------------------------
+# 5b. PodMonitor scraping the gateway istio-proxy. The Telemetry CR above
+#     only *labels* istio_requests_total; without a scrape Prometheus never
+#     collects it and every dashboard panel (Grafana + console plugin) is
+#     blank. Must be a PodMonitor (the gateway Service lacks the 15020 port)
+#     and it lands in the platform Prometheus via openshift-ingress'
+#     openshift.io/cluster-monitoring=true label.
+# ---------------------------------------------------------------
+- name: Ensure the PodMonitor scraping the gateway istio-proxy metrics exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'podmonitor-gateway-istio.yml.j2') | from_yaml }}"
+
+# ---------------------------------------------------------------
+# 6. Four GrafanaDashboards. The JSON lives in roles/grafana/files/ —
+#    same content as tests/req041/manifests/grafana-dashboard-*.json,
+#    kept here so the role is self-contained (Ansible's lookup('file', ...)
+#    only searches files/ inside the role).
+#
+#    Definition is inline (not via a Jinja template) because the JSON
+#    payload contains braces that confuse the template renderer when piped
+#    through `lookup('template', ...) | from_yaml`. Setting `json:` to the
+#    raw file string side-steps that whole class of escaping bugs.
+# ---------------------------------------------------------------
+- name: Apply RHCL Grafana dashboards
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: grafana.integreatly.org/v1beta1
+      kind: GrafanaDashboard
+      metadata:
+        name: "{{ item.name }}"
+        namespace: "{{ grafana_namespace }}"
+        labels:
+          app.kubernetes.io/part-of: rhcl-poc
+      spec:
+        instanceSelector:
+          matchLabels:
+            dashboards: "{{ grafana_instance_label }}"
+        resyncPeriod: 5m
+        # Force string: the k8s module otherwise coerces a JSON-looking
+        # value back to a dict and the API rejects spec.json as "object".
+        json: "{{ lookup('file', item.file) | string }}"
+  loop:
+    - { name: rhcl-api-overview,  file: dashboard-api-overview.json  }
+    - { name: rhcl-api-consumers, file: dashboard-api-consumers.json }
+    - { name: rhcl-api-costs,     file: dashboard-api-costs.json     }
+    - { name: rhcl-authorino,     file: dashboard-authorino.json     }
+    - { name: rhcl-limitador,     file: dashboard-limitador.json     }
+  loop_control:
+    label: "{{ item.name }}"
+
+# ---------------------------------------------------------------
+# 7. Surface the URL so the operator running the playbook sees it.
+# ---------------------------------------------------------------
+- name: Read the Grafana Route hostname
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    namespace: "{{ grafana_namespace }}"
+  register: grafana_routes
+  changed_when: false
+
+- name: Show Grafana URL
+  ansible.builtin.debug:
+    msg: |
+      Grafana is up:
+        URL:   https://{{ grafana_routes.resources[0].spec.host }}
+        Admin: {{ grafana_admin_user }} / {{ grafana_admin_password }}
+        Dashboards: rhcl-api-overview, rhcl-api-consumers,
+                    rhcl-authorino, rhcl-limitador
+  when: grafana_routes.resources | length > 0

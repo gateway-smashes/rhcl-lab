@@ -1,0 +1,9 @@
+name: {{ mcp_gateway_server_listener_name }}
+{% if mcp_gateway_server_listener_hostname_resolved | length > 0 %}
+hostname: {{ mcp_gateway_server_listener_hostname_resolved | to_json }}
+{% endif %}
+port: {{ mcp_gateway_port }}
+protocol: HTTP
+allowedRoutes:
+  namespaces:
+    from: All

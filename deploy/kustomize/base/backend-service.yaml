@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: red-bank-backend
+  labels:
+    app: red-bank-backend
+spec:
+  selector:
+    app: red-bank-backend
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

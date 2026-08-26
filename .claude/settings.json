@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c 'import yaml,sys; list\\(yaml.safe_load_all\\(open\\('\\\\''__TRACKED_VAR__'\\\\''\\)\\)\\); print\\('\\\\''OK  __TRACKED_VAR__'\\\\''\\)')",
+      "Bash(grep -c ^__TRACKED_VAR__: automation/inventories/example/group_vars/all.yml)",
+      "Bash(grep -rln 'https://$HOST/api/ip\\\\|https://${RHCL_ZONE_ROOT_DOMAIN}\\\\|https://ipfilter' tests/req072/manifests/)",
+      "Bash(python3 -c 'import yaml; list\\(yaml.safe_load_all\\(open\\('\\\\''__TRACKED_VAR__'\\\\''\\)\\)\\)')",
+      "Bash(grep -rn 'https://$HOST\\\\|:443' tests/req072/)",
+      "Bash(sed -n '37,75p' tests/req031/manifests/03-authpolicy.yaml)",
+      "Bash(sed -n '59,85p' tests/req067/authpolicy-introspection.yaml)",
+      "Bash(grep -rniA3 \"language\\\\|english\\\\|portugu\\\\|idioma\\\\|pt-br\\\\|pt_br\" AGENTS.md)",
+      "Bash(echo \"exit grep \\(1 = nenhuma referência, bom\\): $?\")",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Bash(git commit -m ' *)",
+      "Bash(python3 -c ' *)",
+      "Bash(oc get *)",
+      "Bash(nslookup debugocp.poc.rhcl.com.br)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}  \\(resolved %{remote_ip}\\)\\\\n\" https://debugocp.poc.rhcl.com.br/ --max-time 20)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}\\\\n\" https://rhcl-lab.poc.rhcl.com.br/ --max-time 20)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}\\\\n\" https://debugocp.poc.rhcl.com.br/ --max-time 20)",
+      "Bash(oc exec *)",
+      "Bash(oc delete *)"
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+---
+- name: Validate sample applications
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  roles:
+    - role: apps
+      vars:
+        rhcl_action: validate

@@ -1,0 +1,33 @@
+apiVersion: tempo.grafana.com/v1alpha1
+kind: TempoStack
+metadata:
+  name: {{ observability_tempostack_name }}
+  namespace: {{ observability_tempostack_namespace }}
+spec:
+  storage:
+    secret:
+      name: tempo-storage
+      type: s3
+  storageSize: {{ observability_tempostack_storage_size }}
+{% if observability_tempostack_storage_class | length > 0 %}
+  # Pinned via OBSERVABILITY_TEMPOSTACK_STORAGE_CLASS — required on
+  # clusters whose default StorageClass isn't immediate-bind (e.g.
+  # vSphere CSI default) or that don't have a default class at all.
+  storageClassName: {{ observability_tempostack_storage_class }}
+{% endif %}
+  resources:
+    total:
+      limits:
+        memory: {{ observability_tempostack_total_memory }}
+        cpu: "{{ observability_tempostack_total_cpu }}"
+  tenants:
+    mode: openshift
+    authentication:
+      - tenantName: {{ observability_tempostack_tenant_name }}
+        tenantId: "{{ observability_tempostack_tenant_id }}"
+  template:
+    gateway:
+      enabled: true
+    queryFrontend:
+      jaegerQuery:
+        enabled: true

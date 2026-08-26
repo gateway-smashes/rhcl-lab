@@ -1,0 +1,12 @@
+apiVersion: kueue.openshift.io/v1
+kind: Kueue
+metadata:
+  name: {{ ocp_ai_kueue_cr_name }}
+spec:
+  config:
+    integrations:
+      frameworks:
+{% for framework in ocp_ai_kueue_frameworks %}
+        - {{ framework }}
+{% endfor %}
+  managementState: Managed

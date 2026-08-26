@@ -1,0 +1,10 @@
+---
+- name: Remove cert-manager Operator
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  roles:
+    - role: cert_manager
+      vars:
+        rhcl_action: remove

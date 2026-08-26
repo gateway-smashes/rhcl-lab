@@ -1,0 +1,47 @@
+# Tests catalog — build in-cluster a partir da pasta tests/ deste repo (Dockerfile
+# nginx estático que serve os req*/ + req*.md e renderiza os READMEs). Só é criado
+# quando tests_catalog_image_source=build (num ambiente corporativo pode-se usar imagem pronta).
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: {{ tests_catalog_name }}
+  namespace: {{ tests_catalog_namespace }}
+  labels:
+    app: {{ tests_catalog_name }}
+    app.kubernetes.io/part-of: rhcl-tests-catalog
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: {{ tests_catalog_name }}
+  namespace: {{ tests_catalog_namespace }}
+  labels:
+    app: {{ tests_catalog_name }}
+    app.kubernetes.io/part-of: rhcl-tests-catalog
+spec:
+  source:
+    type: Git
+    git:
+      uri: {{ tests_catalog_git_uri }}
+{% if tests_catalog_git_ref | length > 0 %}
+      ref: {{ tests_catalog_git_ref }}
+{% endif %}
+{% if tests_catalog_git_source_secret | length > 0 %}
+    sourceSecret:
+      name: {{ tests_catalog_git_source_secret }}
+{% endif %}
+    contextDir: {{ tests_catalog_context_dir }}
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: {{ tests_catalog_dockerfile_path }}
+  output:
+    to:
+      kind: ImageStreamTag
+      name: {{ tests_catalog_name }}:latest
+  # ConfigChange dispara um build na criação/alteração do BC. Re-builds (pra
+  # pegar conteúdo novo de tests/) vêm do `oc start-build` na task de install.
+  # Webhooks GitHub/Generic ficam de fora (precisam de secret + config externa);
+  # adicione manualmente se quiser rebuild automático no push.
+  triggers:
+    - type: ConfigChange

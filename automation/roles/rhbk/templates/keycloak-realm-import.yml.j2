@@ -1,0 +1,70 @@
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: KeycloakRealmImport
+metadata:
+  name: {{ rhbk_realm }}-realm
+  namespace: {{ rhbk_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-req71-oidc-jwt
+spec:
+  keycloakCRName: {{ rhbk_keycloak_name }}
+  realm:
+    realm: {{ rhbk_realm }}
+    enabled: true
+    displayName: "{{ rhbk_realm_display_name }}"
+    sslRequired: external
+    accessTokenLifespan: {{ rhbk_access_token_lifespan }}
+    # Session lifespans — keep SPA sessions alive through a demo. Without these
+    # the realm defaults (30-min idle) log the user out mid-presentation and
+    # every API call 401s (even /api/me) until re-login.
+    ssoSessionIdleTimeout: {{ rhbk_sso_session_idle_timeout }}
+    ssoSessionMaxLifespan: {{ rhbk_sso_session_max_lifespan }}
+    clientSessionIdleTimeout: {{ rhbk_client_session_idle_timeout }}
+    clientSessionMaxLifespan: {{ rhbk_client_session_max_lifespan }}
+    # NOTE: do NOT declare realm-level clientScopes here — doing so suppresses the
+    # built-in scopes (roles/profile/email/web-origins) and the token loses
+    # realm_access.roles, preferred_username, etc.
+    roles:
+      realm:
+{% for role in rhbk_realm_roles %}
+        - name: {{ role.name }}
+          description: "{{ role.description }}"
+{% endfor %}
+    clients:
+      - clientId: {{ rhbk_client_id }}
+        name: "Banking API (RHCL PoC)"
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        secret: {{ rhbk_client_secret }}
+        standardFlowEnabled: true
+        directAccessGrantsEnabled: true
+        serviceAccountsEnabled: false
+        fullScopeAllowed: true
+        redirectUris: ["*"]
+        webOrigins: ["*"]
+        protocolMappers:
+          # Inject aud={{ rhbk_client_id }} so the gateway can enforce audience.
+          - name: audience-{{ rhbk_client_id }}
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            config:
+              included.client.audience: {{ rhbk_client_id }}
+              id.token.claim: "false"
+              access.token.claim: "true"
+    users:
+{% for user in rhbk_users %}
+      - username: {{ user.username }}
+        enabled: true
+        emailVerified: true
+        email: {{ user.email }}
+        firstName: "{{ user.firstName | default(user.username) }}"
+        lastName: "{{ user.lastName | default('') }}"
+        credentials:
+          - type: password
+            value: "{{ user.password }}"
+            temporary: false
+        realmRoles:
+{% for role in user.realmRoles %}
+          - {{ role }}
+{% endfor %}
+{% endfor %}

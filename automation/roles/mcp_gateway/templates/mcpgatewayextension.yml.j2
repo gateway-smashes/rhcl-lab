@@ -1,0 +1,14 @@
+apiVersion: mcp.kuadrant.io/v1alpha1
+kind: MCPGatewayExtension
+metadata:
+  name: {{ mcp_gateway_extension_name }}
+  namespace: {{ mcp_gateway_namespace }}
+spec:
+  privateHost: {{ mcp_gateway_private_host | to_json }}
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: {{ mcp_gateway_gateway_name }}
+    namespace: {{ mcp_gateway_gateway_namespace }}
+    sectionName: {{ mcp_gateway_listener_name }}
+  httpRouteManagement: {{ mcp_gateway_http_route_management_resolved }}

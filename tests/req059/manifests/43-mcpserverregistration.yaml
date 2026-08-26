@@ -1,0 +1,17 @@
+# Registers the banking-api MCP server with the broker (tool prefix matches Ansible default).
+apiVersion: mcp.kuadrant.io/v1alpha1
+kind: MCPServerRegistration
+metadata:
+  name: banking-api
+  namespace: mcp-gateway
+  labels:
+    rhcl-lab/requirement: req059-mcp-operator
+spec:
+  prefix: banking_
+  path: /mcp
+  state: Enabled
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: banking-api-mcp-server
+    namespace: mcp-gateway

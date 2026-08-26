@@ -1,0 +1,19 @@
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: {{ apps_frontend_image_name }}
+  namespace: {{ apps_namespace }}
+{% if apps_image_source == 'quay' %}
+spec:
+  # See backend-imagestream.yml.j2 for the rationale. When apps_image_source ==
+  # 'quay', the IS imports from the external registry and serves as a proxy.
+  tags:
+    - name: latest
+      from:
+        kind: DockerImage
+        name: {{ apps_frontend_image_quay }}
+      referencePolicy:
+        type: Source
+      importPolicy:
+        scheduled: false
+{% endif %}

@@ -1,0 +1,21 @@
+# Gateway-wide deny-all for rhcl-mcp-gateway. HTTPRoute AuthPolicies in this
+# namespace override this with allow = true (same pattern as rhcl-apps-gateway).
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: rhcl-mcp-gateway-deny-all
+  namespace: mcp-gateway
+  labels:
+    rhcl-lab/requirement: req059-mcp-operator
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: rhcl-mcp-gateway
+  defaults:
+    rules:
+      authorization:
+        deny-all:
+          opa:
+            rego: |
+              allow = false

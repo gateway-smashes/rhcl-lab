@@ -1,0 +1,20 @@
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: {{ apps_rhoai_frontend_image_name }}
+  namespace: {{ apps_namespace }}
+  labels:
+    app: {{ apps_rhoai_frontend_name }}
+    rhcl-lab/component: rhoai-assistant
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: {{ apps_rhoai_frontend_image_name }}:latest
+  source:
+    binary: {}
+    type: Binary
+  strategy:
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+    type: Docker

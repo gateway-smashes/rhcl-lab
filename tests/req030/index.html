@@ -1,0 +1,1164 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Item 30 — Interceptação de requisições · RHCL Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@400;500;600;700&family=Red+Hat+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --rh-red: #EE0000;
+    --rh-red-dark: #A30000;
+    --rh-red-soft: rgba(238, 0, 0, 0.08);
+    --rh-black: #151515;
+    --rh-gray-50: #FAFAFA;
+    --rh-gray-100: #F5F5F5;
+    --rh-gray-200: #E0E0E0;
+    --rh-gray-400: #8A8A8A;
+    --rh-gray-700: #4D4D4D;
+    --rh-success: #3E8635;
+    --rh-success-soft: rgba(62, 134, 53, 0.1);
+    --rh-warn: #F0AB00;
+    --rh-warn-soft: rgba(240, 171, 0, 0.12);
+    --rh-info: #2B9AF3;
+    --rh-info-soft: rgba(43, 154, 243, 0.1);
+    --shadow-sm: 0 1px 3px rgba(21, 21, 21, 0.06);
+    --shadow-md: 0 8px 24px rgba(21, 21, 21, 0.08);
+    --shadow-lg: 0 20px 48px rgba(21, 21, 21, 0.12);
+    --radius: 12px;
+    --radius-sm: 8px;
+    --mono: "Red Hat Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: "Red Hat Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    --nav-width: 260px;
+    --header-h: 64px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: calc(var(--header-h) + 24px); }
+  body {
+    margin: 0;
+    font-family: var(--sans);
+    color: var(--rh-black);
+    background: var(--rh-gray-50);
+    line-height: 1.6;
+    font-size: 16px;
+  }
+
+  .topbar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: var(--header-h);
+    z-index: 100;
+    background: rgba(21, 21, 21, 0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 3px solid var(--rh-red);
+    display: flex;
+    align-items: center;
+    padding: 0 28px;
+    gap: 16px;
+  }
+  .topbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #fff;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.3px;
+  }
+  .topbar-brand svg { flex-shrink: 0; }
+  .topbar-tag {
+    margin-left: auto;
+    font-size: 12px;
+    color: #aaa;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    font-weight: 500;
+  }
+  .menu-toggle {
+    display: none;
+    background: transparent;
+    border: 1px solid #555;
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: var(--sans);
+    font-size: 13px;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: var(--nav-width) 1fr;
+    min-height: 100vh;
+    padding-top: var(--header-h);
+  }
+
+  nav.sidebar {
+    position: sticky;
+    top: var(--header-h);
+    height: calc(100vh - var(--header-h));
+    overflow-y: auto;
+    padding: 28px 20px 40px;
+    background: #fff;
+    border-right: 1px solid var(--rh-gray-200);
+  }
+  nav.sidebar .nav-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--rh-gray-400);
+    margin: 0 0 12px 4px;
+  }
+  nav.sidebar a {
+    display: block;
+    padding: 8px 12px;
+    margin-bottom: 2px;
+    border-radius: var(--radius-sm);
+    color: var(--rh-gray-700);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    transition: background 0.15s, color 0.15s;
+  }
+  nav.sidebar a:hover { background: var(--rh-gray-100); color: var(--rh-black); }
+  nav.sidebar a.active {
+    background: var(--rh-red-soft);
+    color: var(--rh-red-dark);
+    font-weight: 600;
+  }
+  nav.sidebar .nav-divider {
+    height: 1px;
+    background: var(--rh-gray-200);
+    margin: 16px 0;
+  }
+
+  main.content {
+    padding: 0 48px 80px;
+    max-width: 960px;
+  }
+
+  .hero {
+    margin: 40px 0 48px;
+    padding: 48px 44px;
+    background: linear-gradient(135deg, var(--rh-black) 0%, #2a1515 50%, #1a1a1a 100%);
+    border-radius: var(--radius);
+    color: #fff;
+    position: relative;
+    overflow: hidden;
+    box-shadow: var(--shadow-lg);
+  }
+  .hero::before {
+    content: "";
+    position: absolute;
+    top: -40%;
+    right: -10%;
+    width: 420px;
+    height: 420px;
+    background: radial-gradient(circle, rgba(238,0,0,0.25) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .hero::after {
+    content: "";
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--rh-red), #ff4444, var(--rh-red));
+  }
+  .hero-kicker {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--rh-red);
+    margin-bottom: 12px;
+  }
+  .hero h1 {
+    margin: 0 0 16px;
+    font-size: clamp(28px, 4vw, 38px);
+    font-weight: 700;
+    line-height: 1.15;
+    max-width: 680px;
+  }
+  .hero p {
+    margin: 0;
+    font-size: 17px;
+    color: #c8c8c8;
+    max-width: 640px;
+    line-height: 1.65;
+  }
+  .hero-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 28px;
+  }
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #eee;
+  }
+  .hero-badge .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+  }
+  .hero-badge.sync .dot { background: var(--rh-red); }
+  .hero-badge.async .dot { background: var(--rh-info); }
+  .hero-badge.ns .dot { background: #c58cff; }
+
+  .requirement-banner {
+    margin: 32px 0 0;
+    padding: 28px 32px;
+    background: linear-gradient(135deg, #fff 0%, #fff8f8 100%);
+    border: 2px solid var(--rh-red);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    position: relative;
+    overflow: hidden;
+  }
+  .requirement-banner::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: 6px;
+    background: var(--rh-red);
+  }
+  .requirement-banner .req-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--rh-red);
+    margin-bottom: 10px;
+  }
+  .requirement-banner .req-label span {
+    background: var(--rh-red);
+    color: #fff;
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+  }
+  .requirement-banner .req-text {
+    margin: 0;
+    font-size: clamp(17px, 2.2vw, 20px);
+    font-weight: 600;
+    line-height: 1.45;
+    color: var(--rh-black);
+    max-width: 820px;
+  }
+  .requirement-banner .req-sub {
+    margin: 12px 0 0;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--rh-gray-700);
+    max-width: 720px;
+  }
+
+  section.block {
+    margin-bottom: 40px;
+    scroll-margin-top: calc(var(--header-h) + 24px);
+  }
+  section.block > h2 {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--rh-black);
+    margin: 0 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  section.block > h2 .num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    background: var(--rh-red);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  section.block > .lead {
+    color: var(--rh-gray-700);
+    margin: 0 0 24px;
+    font-size: 15px;
+  }
+  section.block h3 {
+    font-size: 16px;
+    font-weight: 700;
+    margin: 24px 0 12px;
+    color: var(--rh-black);
+  }
+
+  .card {
+    background: #fff;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: var(--radius);
+    padding: 24px 28px;
+    box-shadow: var(--shadow-sm);
+    margin-bottom: 20px;
+  }
+  .card h3 {
+    margin: 0 0 12px;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--rh-black);
+  }
+  .card p:last-child { margin-bottom: 0; }
+  .card p { margin: 0 0 12px; color: var(--rh-gray-700); font-size: 15px; }
+  .card ul {
+    margin: 0;
+    padding-left: 20px;
+    color: var(--rh-gray-700);
+    font-size: 15px;
+  }
+  .card ul li { margin-bottom: 8px; }
+
+  .callout {
+    border-radius: var(--radius-sm);
+    padding: 16px 20px;
+    margin: 16px 0;
+    font-size: 14px;
+    line-height: 1.55;
+  }
+  .callout.info {
+    background: var(--rh-info-soft);
+    border-left: 4px solid var(--rh-info);
+    color: #1a4a6e;
+  }
+  .callout.warn {
+    background: var(--rh-warn-soft);
+    border-left: 4px solid var(--rh-warn);
+    color: #6b5200;
+  }
+  .callout.success {
+    background: var(--rh-success-soft);
+    border-left: 4px solid var(--rh-success);
+    color: #1e4d1a;
+  }
+  .callout strong { color: inherit; }
+
+  .strategy-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin: 24px 0;
+  }
+  .strategy-card {
+    border-radius: var(--radius);
+    padding: 28px;
+    border: 2px solid transparent;
+    position: relative;
+    overflow: hidden;
+  }
+  .strategy-card.sync {
+    background: linear-gradient(160deg, #fff 0%, #fff5f5 100%);
+    border-color: rgba(238,0,0,0.2);
+  }
+  .strategy-card.async {
+    background: linear-gradient(160deg, #fff 0%, #f0f7ff 100%);
+    border-color: rgba(43,154,243,0.25);
+  }
+  .strategy-card .icon {
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    margin-bottom: 16px;
+  }
+  .strategy-card.sync .icon { background: var(--rh-red-soft); }
+  .strategy-card.async .icon { background: var(--rh-info-soft); }
+  .strategy-card h3 {
+    margin: 0 0 8px;
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .strategy-card .hostname {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--rh-gray-700);
+    margin-bottom: 12px;
+    word-break: break-all;
+  }
+  .strategy-card ul {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 14px;
+    color: var(--rh-gray-700);
+  }
+  .strategy-card ul li { margin-bottom: 6px; }
+  .pill {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+  }
+  .pill.block { background: #fde8e8; color: var(--rh-red-dark); }
+  .pill.noblock { background: #e0f0ff; color: #1565a8; }
+
+  .diagram-wrap {
+    background: #fff;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: var(--radius);
+    padding: 24px 16px;
+    margin: 20px 0;
+    overflow-x: auto;
+    box-shadow: var(--shadow-sm);
+  }
+  .diagram-wrap .mermaid {
+    display: flex;
+    justify-content: center;
+    background: transparent;
+    padding: 0;
+    margin: 0;
+    box-shadow: none;
+    font-family: var(--sans);
+  }
+  .diagram-caption {
+    text-align: center;
+    font-size: 13px;
+    color: var(--rh-gray-400);
+    margin-top: 8px;
+    font-style: italic;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--rh-gray-200);
+    margin: 16px 0;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    background: #fff;
+  }
+  th, td {
+    text-align: left;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--rh-gray-200);
+    vertical-align: top;
+  }
+  th {
+    background: var(--rh-gray-100);
+    font-weight: 700;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--rh-gray-700);
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--rh-gray-50); }
+  td code, th code {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: var(--rh-gray-100);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .yes { color: var(--rh-success); font-weight: 700; }
+  .no { color: var(--rh-gray-400); font-weight: 600; }
+
+  code.inline {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    background: var(--rh-gray-100);
+    padding: 2px 7px;
+    border-radius: 4px;
+    border: 1px solid var(--rh-gray-200);
+    color: var(--rh-red-dark);
+  }
+  pre {
+    position: relative;
+    background: #1e1e1e;
+    color: #d4d4d4;
+    padding: 18px 20px;
+    border-radius: var(--radius-sm);
+    overflow-x: auto;
+    margin: 12px 0;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.55;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+  }
+  pre .copy-btn {
+    position: absolute;
+    top: 10px; right: 10px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #ccc;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: var(--sans);
+    font-size: 11px;
+    font-weight: 600;
+    transition: background 0.15s;
+  }
+  pre .copy-btn:hover { background: var(--rh-red); color: #fff; border-color: var(--rh-red); }
+  pre .copy-btn.done { background: var(--rh-success); border-color: var(--rh-success); }
+  .yaml .key { color: #9cdcfe; }
+  .yaml .val { color: #ce9178; }
+  .yaml .comment { color: #6a9955; }
+
+  .steps {
+    counter-reset: step;
+    list-style: none;
+    padding: 0;
+    margin: 16px 0;
+  }
+  .steps li {
+    counter-increment: step;
+    display: flex;
+    gap: 16px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--rh-gray-200);
+    font-size: 15px;
+    color: var(--rh-gray-700);
+  }
+  .steps li:last-child { border-bottom: none; }
+  .steps li::before {
+    content: counter(step);
+    flex-shrink: 0;
+    width: 32px; height: 32px;
+    background: var(--rh-black);
+    color: #fff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .checklist {
+    list-style: none;
+    padding: 0;
+    margin: 16px 0;
+  }
+  .checklist li {
+    padding: 10px 0 10px 32px;
+    position: relative;
+    font-size: 15px;
+    color: var(--rh-gray-700);
+    border-bottom: 1px solid var(--rh-gray-200);
+  }
+  .checklist li:last-child { border-bottom: none; }
+  .checklist li::before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    top: 10px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--rh-success-soft);
+    color: var(--rh-success);
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  footer.page-footer {
+    margin-top: 60px;
+    padding: 28px 0;
+    border-top: 1px solid var(--rh-gray-200);
+    text-align: center;
+    font-size: 13px;
+    color: var(--rh-gray-400);
+  }
+  footer.page-footer a { color: var(--rh-red); text-decoration: none; }
+  footer.page-footer a:hover { text-decoration: underline; }
+
+  @media (max-width: 960px) {
+    .layout { grid-template-columns: 1fr; }
+    nav.sidebar {
+      position: fixed;
+      top: var(--header-h);
+      left: 0; bottom: 0;
+      width: var(--nav-width);
+      z-index: 90;
+      transform: translateX(-100%);
+      transition: transform 0.25s ease;
+      box-shadow: var(--shadow-lg);
+    }
+    nav.sidebar.open { transform: translateX(0); }
+    .menu-toggle { display: block; }
+    main.content { padding: 0 20px 60px; }
+    .hero { padding: 32px 24px; margin-top: 24px; }
+    .strategy-grid { grid-template-columns: 1fr; }
+  }
+
+  @media print {
+    .topbar, nav.sidebar, .menu-toggle, pre .copy-btn { display: none !important; }
+    .layout { display: block; padding-top: 0; }
+    main.content { max-width: 100%; padding: 0; }
+    .hero { break-inside: avoid; }
+    section.block { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" id="menuToggle" aria-label="Abrir menu">☰ Menu</button>
+  <a class="topbar-brand" href="#top">
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+      <rect width="28" height="28" rx="4" fill="#EE0000"/>
+      <path d="M7 20V8h3.2l3.8 7.2L17.8 8H21v12h-2.8v-7.4L14.8 20h-1.6L9.8 12.6V20H7z" fill="#fff"/>
+    </svg>
+    RHCL Lab · REQ 030
+  </a>
+  <span class="topbar-tag">PoC · Interceptação</span>
+</header>
+
+<div class="layout">
+  <nav class="sidebar" id="sidebar">
+    <div class="nav-label">Visão geral</div>
+    <a href="#intro">Introdução</a>
+    <a href="#arquitetura">Arquitetura</a>
+    <a href="#componentes">Componentes</a>
+    <div class="nav-divider"></div>
+    <div class="nav-label">Estratégias</div>
+    <a href="#extauthz">ext_authz (síncrona)</a>
+    <a href="#mirror">RequestMirror (assíncrona)</a>
+    <a href="#comparacao">Comparação</a>
+    <div class="nav-divider"></div>
+    <div class="nav-label">Operação</div>
+    <a href="#deploy">Deploy</a>
+    <a href="#validar">Validar</a>
+    <a href="#limitacoes">Limitações</a>
+    <a href="#manifests">Manifests</a>
+    <a href="#cleanup">Cleanup</a>
+    <a href="#relacionados">Relacionados</a>
+  </nav>
+
+  <main class="content" id="top">
+
+    <div class="requirement-banner">
+      <div class="req-label">Requisito PoC <span>Item 30</span></div>
+      <p class="req-text">
+        Proxy com acesso completo à requisição — o gateway/interceptor pode inspecionar
+        método, headers, body e metadados antes ou em paralelo ao encaminhamento ao backend.
+      </p>
+      <p class="req-sub">
+        Stack dedicada em <code class="inline">tests/req030/manifests/</code> — não usa o
+        <code class="inline">banking-api-v1</code> compartilhado. Deploy manual via
+        <code class="inline">./deploy.sh</code>.
+      </p>
+    </div>
+
+    <div class="hero">
+      <div class="hero-kicker">Red Hat Connectivity Link · Lab isolado</div>
+      <h1>Interceptação de requisições no Gateway</h1>
+      <p>
+        Gateway dedicado <code class="inline">req030-interceptor-gateway</code> com dois listeners
+        HTTP em hostnames separados — cada estratégia validada de forma independente.
+      </p>
+      <div class="hero-badges">
+        <span class="hero-badge sync"><span class="dot"></span> req030-extauthz.* · ext_authz</span>
+        <span class="hero-badge async"><span class="dot"></span> req030-mirror.* · RequestMirror</span>
+        <span class="hero-badge ns"><span class="dot"></span> req030-gateway + req030-apps</span>
+      </div>
+    </div>
+
+    <section class="block" id="intro">
+      <h2><span class="num">●</span> Introdução</h2>
+      <p class="lead">
+        Este lab demonstra duas formas de entregar a requisição completa do cliente a um
+        componente interno do cluster. O foco são os <strong>mecanismos do Envoy/Istio</strong>,
+        não a aplicação de exemplo em si.
+      </p>
+      <div class="callout info">
+        <strong>Princípio:</strong> qualquer serviço HTTP interno pode ocupar o papel de
+        interceptor — basta apontar o extension provider (<code class="inline">envoyExtAuthzHttp</code>)
+        e/ou o filtro <code class="inline">RequestMirror</code> para o seu Deployment/Service.
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Listener</th><th>Hostname</th><th>Estratégia</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>http-extauthz</code></td>
+              <td><code>req030-extauthz.${RHCL_ZONE_ROOT_DOMAIN}</code></td>
+              <td>Autorização externa bloqueante (<code>ext_authz</code>)</td>
+            </tr>
+            <tr>
+              <td><code>http-mirror</code></td>
+              <td><code>req030-mirror.${RHCL_ZONE_ROOT_DOMAIN}</code></td>
+              <td>Espelhamento assíncrono (<code>RequestMirror</code>)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="block" id="arquitetura">
+      <h2><span class="num">◎</span> Arquitetura</h2>
+      <p class="lead">
+        Tráfego entra por OpenShift Route (TLS edge), passa pelo gateway dedicado e segue
+        um dos dois caminhos conforme o hostname.
+      </p>
+
+      <div class="diagram-wrap">
+        <div class="mermaid">
+flowchart TB
+    CLIENT["Cliente"]
+    ROUTE["OpenShift Route\n(edge TLS)"]
+    GW["req030-interceptor-gateway\nGatewayClass: istio"]
+    CLIENT --> ROUTE --> GW
+    GW -->|"http-extauthz · síncrono"| AUTHZ["AuthorizationPolicy CUSTOM\next_authz"]
+    GW -->|"http-mirror · assíncrono"| MIRROR["HTTPRoute\nRequestMirror filter"]
+    AUTHZ -->|"bloqueia até resposta"| INT["request-interceptor\nreq030-apps"]
+    MIRROR -.->|"cópia paralela"| INT
+    AUTHZ --> HW["hello-world\nreq030-apps"]
+    MIRROR --> HW
+    HW --> CLIENT
+        </div>
+        <div class="diagram-caption">Gateway dedicado — hostnames separados isolam cada estratégia (síncrona vs assíncrona).</div>
+      </div>
+
+      <div class="callout warn">
+        <strong>Design do lab:</strong> em produção você pode combinar as duas estratégias em
+        uma única rota; aqui usamos hostnames distintos para validação clara (mesmo padrão do
+        req050 com listeners CRL/OCSP separados).
+      </div>
+    </section>
+
+    <section class="block" id="componentes">
+      <h2><span class="num">▣</span> Componentes</h2>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Componente</th><th>Namespace</th><th>Função</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>hello-world</code></td>
+              <td><code>req030-apps</code></td>
+              <td>Backend de teste (<code>GET /</code>, <code>GET /ping</code>)</td>
+            </tr>
+            <tr>
+              <td><code>request-interceptor</code></td>
+              <td><code>req030-apps</code></td>
+              <td>Serviço de inspeção (alvo ext_authz + mirror)</td>
+            </tr>
+            <tr>
+              <td><code>req030-interceptor-gateway</code></td>
+              <td><code>req030-gateway</code></td>
+              <td>Gateway com listeners <code>http-extauthz</code> e <code>http-mirror</code></td>
+            </tr>
+            <tr>
+              <td><code>req030-extauthz-route</code></td>
+              <td><code>req030-gateway</code></td>
+              <td>HTTPRoute → hello-world (sem mirror)</td>
+            </tr>
+            <tr>
+              <td><code>req030-mirror-route</code></td>
+              <td><code>req030-gateway</code></td>
+              <td>HTTPRoute com filtro <code>RequestMirror</code></td>
+            </tr>
+            <tr>
+              <td><code>req030-ext-authz</code></td>
+              <td><code>req030-gateway</code></td>
+              <td><code>AuthorizationPolicy</code> CUSTOM no hostname extauthz</td>
+            </tr>
+            <tr>
+              <td><code>req030-request-interceptor</code></td>
+              <td>Istio CR (cluster)</td>
+              <td>Extension provider <code>envoyExtAuthzHttp</code> (merge-patch)</td>
+            </tr>
+            <tr>
+              <td><code>req030-gateway-to-apps</code></td>
+              <td><code>req030-apps</code></td>
+              <td><code>ReferenceGrant</code> para refs cross-namespace</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3>Imagens</h3>
+        <ul>
+          <li><code>hello-world</code> — <code>docker.io/testcontainers/helloworld:1.3.0</code></li>
+          <li><code>request-interceptor</code> — <code>docker.io/dsferreira54/request-interceptor:latest</code>
+            (<a href="https://github.com/dsferreira54/request-interceptor" target="_blank" rel="noopener">fonte</a>)
+          </li>
+        </ul>
+        <p>Em modo PoC o interceptor sempre permite (<code>200 OK</code>) e registra headers/body nos logs.</p>
+      </div>
+    </section>
+
+    <section class="block" id="extauthz">
+      <h2><span class="num">1</span> External authorization — <code class="inline">http-extauthz</code></h2>
+      <p class="lead">
+        O Envoy <strong>deve</strong> chamar o interceptor e receber allow/deny antes de encaminhar
+        ao hello-world. Use quando a interceptação pode <strong>bloquear</strong> tráfego.
+      </p>
+
+      <div class="strategy-grid">
+        <div class="strategy-card sync">
+          <div class="icon">⏱</div>
+          <span class="pill block">Bloqueia o fluxo</span>
+          <h3>ext_authz síncrono</h3>
+          <div class="hostname">req030-extauthz.&lt;zone&gt;</div>
+          <ul>
+            <li>Istio CR: <code class="inline">envoyExtAuthzHttp</code></li>
+            <li><code class="inline">AuthorizationPolicy</code> com <code class="inline">action: CUSTOM</code></li>
+            <li>Path no interceptor: <code class="inline">/check/...</code></li>
+            <li>Body até 8192 bytes</li>
+          </ul>
+        </div>
+        <div class="card" style="margin:0">
+          <h3>Fluxo</h3>
+          <ol class="steps" style="margin:0">
+            <li>Cliente chama <code class="inline">https://req030-extauthz.&lt;zone&gt;/</code></li>
+            <li>Envoy aplica <code class="inline">AuthorizationPolicy</code> para o host</li>
+            <li>Envoy POST em <code class="inline">request-interceptor:8080/check/...</code></li>
+            <li>Interceptor retorna <code class="inline">200</code> + headers de inspeção</li>
+            <li>Envoy encaminha para <code class="inline">hello-world:8080</code></li>
+          </ol>
+        </div>
+      </div>
+
+      <div class="diagram-wrap">
+        <div class="mermaid">
+sequenceDiagram
+    participant C as Cliente
+    participant E as Envoy Gateway
+    participant I as request-interceptor
+    participant B as hello-world
+    C->>E: POST / + headers + body
+    E->>I: POST /check/ — ext_authz
+    I-->>E: 200 OK + X-Inspected-By
+    E->>B: POST /
+    B-->>E: 200 resposta
+    E-->>C: 200 resposta
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Extension provider (trecho)</h3>
+<pre><button class="copy-btn" onclick="copyCode(this)">copiar</button><span class="yaml">- <span class="key">name:</span> <span class="val">req030-request-interceptor</span>
+  <span class="key">envoyExtAuthzHttp:</span>
+    <span class="key">service:</span> <span class="val">request-interceptor.req030-apps.svc.cluster.local</span>
+    <span class="key">port:</span> <span class="val">8080</span>
+    <span class="key">pathPrefix:</span> <span class="val">/check</span>
+    <span class="key">includeRequestBodyInCheck:</span>
+      <span class="key">maxRequestBytes:</span> <span class="val">8192</span></span></pre>
+        <p style="font-size:13px;color:var(--rh-gray-400);">
+          Aplicado por <code class="inline">deploy-istio-extension-provider.sh</code> (merge-patch no Istio CR existente).
+        </p>
+      </div>
+    </section>
+
+    <section class="block" id="mirror">
+      <h2><span class="num">2</span> RequestMirror — <code class="inline">http-mirror</code></h2>
+      <p class="lead">
+        O Envoy envia uma <strong>cópia fire-and-forget</strong> ao interceptor enquanto a
+        requisição original segue para hello-world. Use para observabilidade assíncrona.
+      </p>
+
+      <div class="strategy-grid">
+        <div class="strategy-card async">
+          <div class="icon">↗</div>
+          <span class="pill noblock">Não bloqueia</span>
+          <h3>RequestMirror assíncrono</h3>
+          <div class="hostname">req030-mirror.&lt;zone&gt;</div>
+          <ul>
+            <li>Filtro <code class="inline">RequestMirror</code> no HTTPRoute</li>
+            <li>Path original preservado</li>
+            <li>Falha do mirror não afeta o cliente</li>
+            <li>Sem impacto de latência no caminho crítico</li>
+          </ul>
+        </div>
+        <div class="card" style="margin:0">
+          <h3>Fluxo</h3>
+          <ol class="steps" style="margin:0">
+            <li>Cliente chama <code class="inline">https://req030-mirror.&lt;zone&gt;/</code></li>
+            <li>Envoy aplica filtro <code class="inline">RequestMirror</code></li>
+            <li>Cópia assíncrona vai para <code class="inline">request-interceptor</code></li>
+            <li>Original segue para <code class="inline">hello-world</code> sem esperar o mirror</li>
+          </ol>
+        </div>
+      </div>
+
+      <div class="diagram-wrap">
+        <div class="mermaid">
+sequenceDiagram
+    participant C as Cliente
+    participant E as Envoy Gateway
+    participant I as request-interceptor
+    participant B as hello-world
+    C->>E: POST / + headers + body
+    par Caminho principal
+        E->>B: POST /
+        B-->>E: 200 resposta
+        E-->>C: 200 resposta
+    and Espelhamento
+        E->>I: POST / — cópia idêntica
+        Note over I: resposta descartada
+    end
+        </div>
+      </div>
+
+      <div class="callout warn">
+        <strong>Atenção:</strong> <code class="inline">RequestMirror</code> é espelhamento, não
+        split de tráfego ou canary.
+      </div>
+    </section>
+
+    <section class="block" id="comparacao">
+      <h2><span class="num">⇄</span> Comparação</h2>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Aspecto</th>
+              <th>ext_authz</th>
+              <th>RequestMirror</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Bloqueia requisição?</td><td class="yes">Sim (se interceptor nega)</td><td class="no">Não</td></tr>
+            <tr><td>Impacto de latência</td><td>Round-trip síncrono</td><td>Mínimo (async)</td></tr>
+            <tr><td>Superfície de config</td><td>Istio CR + AuthorizationPolicy</td><td>Filtro no HTTPRoute</td></tr>
+            <tr><td>Visibilidade do body</td><td>Até 8192 B (<code>maxRequestBytes</code>)</td><td>Cópia integral da requisição</td></tr>
+            <tr><td>Path no interceptor</td><td><code>/check/...</code></td><td>Path original</td></tr>
+            <tr><td>Caso de uso</td><td>WAF, policy engine, auth customizada</td><td>Audit log, SIEM, shadow traffic</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="block" id="deploy">
+      <h2><span class="num">▶</span> Deploy</h2>
+      <p class="lead">
+        Pré-requisitos: OpenShift com Service Mesh 3.x (Istio/Sail), Gateway API,
+        <code class="inline">GatewayClass: istio</code>, e acesso ao Docker Hub para a imagem do interceptor.
+      </p>
+
+      <div class="card">
+        <h3>Deploy completo</h3>
+<pre><button class="copy-btn" onclick="copyCode(this)">copiar</button>export RHCL_ZONE_ROOT_DOMAIN=mycluster.sandbox546.opentlc.com   # ajuste ao seu cluster
+cd tests/req030/manifests
+./deploy.sh</pre>
+        <p>O script executa 8 etapas: namespaces, apps, gateway, extension provider (interativo), AuthorizationPolicy, HTTPRoutes e OpenShift Routes.</p>
+      </div>
+
+      <div class="callout info">
+        <strong>Extension provider:</strong> na etapa 6 o script lista os Istio CRs do cluster e
+        pede qual patchar — nunca substitua a lista inteira de <code class="inline">extensionProviders</code>.
+      </div>
+    </section>
+
+    <section class="block" id="validar">
+      <h2><span class="num">✓</span> Validar</h2>
+
+      <div class="card">
+        <h3>Teste automatizado</h3>
+<pre><button class="copy-btn" onclick="copyCode(this)">copiar</button>export RHCL_ZONE_ROOT_DOMAIN=mycluster.sandbox546.opentlc.com
+cd tests/req030/manifests
+./test-req030.sh</pre>
+      </div>
+
+      <div class="card">
+        <h3>Payload de validação (ext_authz)</h3>
+<pre><button class="copy-btn" onclick="copyCode(this)">copiar</button>curl -sk -X POST "https://req030-extauthz.${RHCL_ZONE_ROOT_DOMAIN}/" \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer demo-token' \
+  -H 'X-Request-ID: req030-demo-001' \
+  -d '{"hello":"world","item":30}'
+
+curl -sk "https://req030-mirror.${RHCL_ZONE_ROOT_DOMAIN}/"
+oc -n req030-apps logs deployment/request-interceptor --tail=30</pre>
+        <p><strong>Esperado:</strong> HTTP 200 do hello-world; logs do interceptor com método, URI, headers, body e <code class="inline">X-Request-ID</code>.</p>
+      </div>
+
+      <h3>Evidências no cluster</h3>
+<pre><button class="copy-btn" onclick="copyCode(this)">copiar</button>oc -n req030-apps get deploy hello-world request-interceptor
+oc -n req030-gateway get gateway req030-interceptor-gateway
+oc -n req030-gateway get httproute
+oc get istio -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{": "}{.spec.values.meshConfig.extensionProviders[*].name}{"\n"}{end}'
+oc -n req030-apps logs deployment/request-interceptor --tail=20 | grep -E 'REQUEST|X-Request-ID'</pre>
+
+      <div class="card">
+        <h3>Critérios de sucesso</h3>
+        <ul class="checklist">
+          <li><code>hello-world</code> e <code>request-interceptor</code> Available em <code>req030-apps</code></li>
+          <li>Gateway Programmed com listeners <code>http-extauthz</code> e <code>http-mirror</code></li>
+          <li><code>https://req030-extauthz.&lt;zone&gt;/</code> retorna HTTP 200</li>
+          <li><code>https://req030-mirror.&lt;zone&gt;/</code> retorna HTTP 200</li>
+          <li>Logs do interceptor mostram tráfego de <strong>ambos</strong> os hostnames</li>
+          <li>Istio CR inclui <code>req030-request-interceptor</code> em <code>extensionProviders</code></li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="block" id="limitacoes">
+      <h2><span class="num">!</span> Limitações conhecidas</h2>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Tópico</th><th>Limitação</th></tr></thead>
+          <tbody>
+            <tr><td>Body no ext_authz</td><td>Apenas os primeiros <strong>8192 bytes</strong> (<code>maxRequestBytes</code>)</td></tr>
+            <tr><td>RequestMirror</td><td>Fire-and-forget — falhas do mirror não falham a requisição do cliente</td></tr>
+            <tr><td>Istio CR</td><td>Operador gerencia o CR; extension provider exige merge-patch</td></tr>
+            <tr><td>Image pull</td><td>Cluster precisa alcançar Docker Hub para <code>dsferreira54/request-interceptor</code></td></tr>
+            <tr><td>Interceptor PoC</td><td>Sempre permite — em produção pode retornar <code>403</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="block" id="manifests">
+      <h2><span class="num">📁</span> Manifests</h2>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Arquivo</th><th>Recurso</th><th>Propósito</th></tr></thead>
+          <tbody>
+            <tr><td><code>00-namespace.yaml</code></td><td>Namespace ×2</td><td><code>req030-gateway</code>, <code>req030-apps</code></td></tr>
+            <tr><td><code>10-gateway.yaml</code></td><td>Gateway</td><td>Gateway dedicado, dois listeners HTTP</td></tr>
+            <tr><td><code>15-hello-world-app.yaml</code></td><td>Deployment, Service</td><td>Backend de teste</td></tr>
+            <tr><td><code>16-request-interceptor-app.yaml</code></td><td>Deployment, Service</td><td>App de interceptação</td></tr>
+            <tr><td><code>20-httproute-extauthz.yaml</code></td><td>HTTPRoute</td><td>Listener extauthz → hello-world</td></tr>
+            <tr><td><code>21-httproute-mirror.yaml</code></td><td>HTTPRoute</td><td>Listener mirror com RequestMirror</td></tr>
+            <tr><td><code>25-referencegrant.yaml</code></td><td>ReferenceGrant</td><td>Refs cross-namespace gateway → apps</td></tr>
+            <tr><td><code>36-authorizationpolicy.yaml</code></td><td>AuthorizationPolicy</td><td>CUSTOM ext_authz no host extauthz</td></tr>
+            <tr><td><code>deploy-istio-extension-provider.sh</code></td><td>Istio CR patch</td><td>Merge interativo de <code>envoyExtAuthzHttp</code></td></tr>
+            <tr><td><code>30-openshift-routes.yaml</code></td><td>Route ×2</td><td>Edge TLS para o gateway Service</td></tr>
+            <tr><td><code>deploy.sh</code></td><td>—</td><td>Orquestração one-shot do deploy</td></tr>
+            <tr><td><code>test-req030.sh</code></td><td>—</td><td>Validador interativo</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="block" id="cleanup">
+      <h2><span class="num">✕</span> Cleanup</h2>
+
+      <div class="card">
+<pre><button class="copy-btn" onclick="copyCode(this)">copiar</button>export RHCL_ZONE_ROOT_DOMAIN=mycluster.sandbox546.opentlc.com
+cd tests/req030/manifests
+
+envsubst &lt; 30-openshift-routes.yaml | oc delete -f - --ignore-not-found
+envsubst &lt; 20-httproute-extauthz.yaml | oc delete -f - --ignore-not-found
+envsubst &lt; 21-httproute-mirror.yaml | oc delete -f - --ignore-not-found
+oc delete -f 36-authorizationpolicy.yaml --ignore-not-found
+oc delete -f 25-referencegrant.yaml --ignore-not-found
+envsubst &lt; 10-gateway.yaml | oc delete -f - --ignore-not-found
+oc -n req030-apps delete -f 15-hello-world-app.yaml 16-request-interceptor-app.yaml --ignore-not-found
+oc delete -f 00-namespace.yaml --ignore-not-found</pre>
+        <p>Remover o extension provider do Istio CR exige merge manual reverso (não automatizado no cleanup).</p>
+      </div>
+    </section>
+
+    <section class="block" id="relacionados">
+      <h2><span class="num">↗</span> Relacionados</h2>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Item</th><th>Relação</th></tr></thead>
+          <tbody>
+            <tr><td><a href="../req050.md">req050 / 051 / 056</a></td><td>Mesmo padrão de gateway dedicado + <code>deploy.sh</code>; foco em mTLS/revogação</td></tr>
+            <tr><td><a href="../req044.md">req044</a></td><td>Enriquecimento de request (headers de identidade); item 30 foca em <strong>inspeção</strong></td></tr>
+            <tr><td><a href="../req054.md">req054</a></td><td>Seleção de protocolo HTTP upstream; ortogonal à interceptação</td></tr>
+            <tr><td><code>tests/req030.md</code></td><td>Runbook técnico completo (versão Markdown)</td></tr>
+            <tr><td><code>tests/req030/README.md</code></td><td>Resumo operacional em Markdown</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="page-footer">
+      RHCL Lab · Item 30 — Interceptação de requisições<br />
+      Documento para fins educacionais — valide todas as configurações antes de produção.<br />
+      <a href="https://www.redhat.com/en/technologies/cloud-computing/openshift/connectivity-link" target="_blank" rel="noopener">Documentação oficial RHCL</a>
+    </footer>
+
+  </main>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#fff5f5',
+      primaryTextColor: '#151515',
+      primaryBorderColor: '#EE0000',
+      lineColor: '#4D4D4D',
+      secondaryColor: '#f0f7ff',
+      tertiaryColor: '#F5F5F5',
+      fontFamily: '"Red Hat Display", sans-serif',
+      fontSize: '14px'
+    },
+    flowchart: { curve: 'basis', padding: 16 },
+    sequence: { actorMargin: 60, messageMargin: 40 }
+  });
+
+  const sections = document.querySelectorAll('section.block');
+  const navLinks = document.querySelectorAll('nav.sidebar a');
+
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        navLinks.forEach(a => a.classList.remove('active'));
+        const link = document.querySelector(`nav.sidebar a[href="#${entry.target.id}"]`);
+        if (link) link.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-30% 0px -60% 0px' });
+
+  sections.forEach(s => observer.observe(s));
+
+  const toggle = document.getElementById('menuToggle');
+  const sidebar = document.getElementById('sidebar');
+  toggle.addEventListener('click', () => sidebar.classList.toggle('open'));
+  navLinks.forEach(a => a.addEventListener('click', () => sidebar.classList.remove('open')));
+
+  function copyCode(btn) {
+    const pre = btn.closest('pre');
+    const text = pre.innerText.replace(/^copiar\n?/, '').trim();
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = 'copiado!';
+      btn.classList.add('done');
+      setTimeout(() => { btn.textContent = 'copiar'; btn.classList.remove('done'); }, 2000);
+    });
+  }
+</script>
+</body>
+</html>

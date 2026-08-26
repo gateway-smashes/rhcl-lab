@@ -1,0 +1,32 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: rust-request-logger-wasm
+spec:
+  workloadSelector:
+    labels:
+      gateway.istio.io/managed: istio.io-gateway-controller
+      #gateway.networking.k8s.io/gateway-name: rhcl-apps-gateway
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      context: GATEWAY
+      listener:
+        filterChain:
+          filter:
+            name: "envoy.filters.network.http_connection_manager"
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: envoy.filters.http.wasm
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.http.wasm.v3.Wasm
+          config:
+            name: rust-request-logger
+            root_id: rust_request_logger_root
+            vm_config:
+              vm_id: rust_request_logger_vm
+              runtime: envoy.wasm.runtime.v8
+              code:
+                local:
+                  filename: /var/lib/envoy/rust-request-logger.wasm

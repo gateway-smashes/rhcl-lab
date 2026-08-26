@@ -1,0 +1,10 @@
+---
+- name: Configure CoreDNS as the Kuadrant DNS provider
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  roles:
+    - role: coredns_dns
+      vars:
+        rhcl_action: install

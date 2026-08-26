@@ -1,0 +1,54 @@
+---
+# Resolve the apps connectivity gateway FQDN. This is the hostname that
+# external clients reach (banking-api-connectivity.<apps-domain> by default)
+# and the value cert-manager / Kuadrant DNS use to decide which Route53 zone
+# receives ACME challenges and DNSPolicy records.
+#
+# On flat layouts the cluster apps domain alone would do, but RHPDS sandboxes
+# nest the apps domain several delegations deep (e.g. apps.cluster-<id>.<id>
+# .<sandbox>.opentlc.com). The gateway hostname carries more labels and lets
+# the longest-suffix matcher land on the most-specific delegated sub-zone.
+#
+# Inputs (set via include_role vars:):
+#   resolve_fqdn_result_var  Name of the fact to populate with the gateway FQDN
+#
+# Output:
+#   The fact named in resolve_fqdn_result_var is set to the gateway FQDN.
+
+- name: Assert resolve_apps_connectivity_fqdn inputs
+  ansible.builtin.assert:
+    that:
+      - resolve_fqdn_result_var | default('') | length > 0
+    fail_msg: >-
+      resolve_apps_connectivity_fqdn.yml requires resolve_fqdn_result_var to be
+      set by the caller.
+
+- name: Query the cluster ingress domain (gateway FQDN fallback)
+  kubernetes.core.k8s_info:
+    api_version: config.openshift.io/v1
+    kind: Ingress
+    name: cluster
+  register: resolve_fqdn_cluster_ingress
+  changed_when: false
+  when:
+    - apps_connectivity_route_hostname | default('') | length == 0
+    - rhcl_zone_root_domain | default('') | length == 0
+
+- name: Compute the gateway connectivity FQDN
+  ansible.builtin.set_fact:
+    "{{ resolve_fqdn_result_var }}": >-
+      {{
+        apps_connectivity_route_hostname
+        if (apps_connectivity_route_hostname | default('') | length > 0)
+        else (apps_connectivity_route_name | default('banking-api-connectivity'))
+             ~ '.' ~
+             (rhcl_zone_root_domain
+              if (rhcl_zone_root_domain | default('') | length > 0)
+              else resolve_fqdn_cluster_ingress.resources[0].spec.domain)
+      }}
+
+- name: Report the resolved gateway connectivity FQDN
+  ansible.builtin.debug:
+    msg: >-
+      [{{ resolve_fqdn_result_var }}] gateway connectivity FQDN:
+      {{ lookup('vars', resolve_fqdn_result_var) }}

@@ -1,0 +1,30 @@
+apiVersion: kuadrant.io/v1alpha1
+kind: TokenRateLimitPolicy
+metadata:
+  name: banking-api-chat-completions-token-limit
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-req060-tokenratelimit
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: banking-api-connectivity
+  limits:
+    chat-completions:
+      rates:
+        - limit: 300
+          window: 1m
+      when:
+        - predicate: request.path.startsWith("/api/v1/chat/completions")
+      # Observação (item 40 / RHCL-native token counting):
+      # O Limitador 2.3.1 deste cluster já expõe um counter Prometheus global
+      # `authorized_hits{limitador_namespace="rhcl-apps/banking-api-connectivity"}`
+      # incrementado pelo CEL de `add_n_to_counter` desta policy (≈ tokens autorizados
+      # acumulados para esta rota). Esse é o "token counter" RHCL-nativo que
+      # alimenta o dashboard do item 40 — sem precisar de Micrometer no
+      # banking-api. Per-consumer breakdown requer `spec.counters` aqui, o que
+      # tornaria o limite per-consumer (em vez de global), além de depender de
+      # labels Prometheus estendidos do Limitador (`spec.telemetry: exhaustive`
+      # + `--metric-labels-default`) que na v2.3.1 não cobrem `authorized_hits`.
+      # Roadmap: ver tests/req040/README.md → "Limitações conhecidas".

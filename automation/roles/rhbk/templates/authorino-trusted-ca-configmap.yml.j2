@@ -1,0 +1,13 @@
+# Corporate profile — ConfigMap que o Cluster Network Operator preenche com o trust
+# bundle COMBINADO (CAs do sistema + user-ca-bundle/proxy.trustedCA = a CA interna
+# do banco). É montado no pod do Authorino pra ele confiar no cert do issuer
+# (Keycloak servido pelo edge corporativo) ao buscar o JWKS.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ rhbk_authorino_trust_ca_configmap }}
+  namespace: {{ rhbk_authorino_namespace }}
+  labels:
+    config.openshift.io/inject-trusted-cabundle: "true"
+    app.kubernetes.io/part-of: rhcl-req71-oidc-jwt
+# data fica vazio de propósito — o operator injeta a chave ca-bundle.crt.

@@ -1,0 +1,71 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Validate supported OpenShift mode
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_supported_mode.yml
+
+- name: Query cluster subscriptions
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+  register: gateway_api_subscriptions
+  changed_when: false
+
+- name: Detect conflicting OpenShift Service Mesh v2 subscriptions
+  ansible.builtin.set_fact:
+    gateway_api_conflicting_subscriptions: >-
+      {{
+        gateway_api_subscriptions.resources
+        | selectattr('spec.name', 'defined')
+        | selectattr('spec.name', 'equalto', 'servicemeshoperator')
+        | selectattr('spec.channel', 'defined')
+        | selectattr('spec.channel', 'search', '(^|[^0-9])2([.-]|$)|stable-2|maistra-2')
+        | list
+      }}
+
+- name: Fail when a conflicting OpenShift Service Mesh v2 subscription exists
+  ansible.builtin.assert:
+    that:
+      - gateway_api_conflicting_subscriptions | length == 0
+    fail_msg: >-
+      Gateway API native mode conflicts with an active OpenShift Service Mesh v2 subscription.
+      Remove the conflicting subscription before validating RHCL prerequisites.
+
+- name: Query the required GatewayClass
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: GatewayClass
+    name: "{{ gateway_api_gatewayclass_name }}"
+  register: gateway_api_gatewayclass
+  changed_when: false
+
+- name: Assert that the required GatewayClass exists
+  ansible.builtin.assert:
+    that:
+      - gateway_api_gatewayclass.resources | length == 1
+      - gateway_api_gatewayclass.resources[0].spec.controllerName == gateway_api_controller_name
+    fail_msg: >-
+      GatewayClass {{ gateway_api_gatewayclass_name }} is missing or uses an unexpected controllerName.
+
+- name: Query the ingress-managed gateway controller deployment
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ gateway_api_controller_namespace }}"
+    name: "{{ gateway_api_controller_deployment }}"
+  register: gateway_api_controller
+  changed_when: false
+
+- name: Assert that the ingress-managed gateway controller is available
+  ansible.builtin.assert:
+    that:
+      - gateway_api_controller.resources | length == 1
+      - (gateway_api_controller.resources[0].status.availableReplicas | default(0)) | int >= 1
+    fail_msg: >-
+      Deployment {{ gateway_api_controller_namespace }}/{{ gateway_api_controller_deployment }}
+      is not available.

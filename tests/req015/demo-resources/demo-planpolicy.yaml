@@ -1,0 +1,34 @@
+apiVersion: extensions.kuadrant.io/v1alpha1
+kind: PlanPolicy
+metadata:
+  name: demo-plan-policy
+  namespace: item-15-api
+  labels:
+    app.kubernetes.io/part-of: connectivity-link-rbac-demo
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: demo-api-route
+  plans:
+  - tier: gold
+    predicate: |
+      has(auth.identity) && auth.identity.metadata.annotations["secret.kuadrant.io/plan-id"] == "gold"
+    limits:
+      daily: 10000
+      weekly: 50000
+      monthly: 200000
+  - tier: silver
+    predicate: |
+      has(auth.identity) && auth.identity.metadata.annotations["secret.kuadrant.io/plan-id"] == "silver"
+    limits:
+      daily: 1000
+      weekly: 5000
+      monthly: 20000
+  - tier: bronze
+    predicate: |
+      has(auth.identity) && auth.identity.metadata.annotations["secret.kuadrant.io/plan-id"] == "bronze"
+    limits:
+      daily: 100
+      weekly: 500
+      monthly: 2000

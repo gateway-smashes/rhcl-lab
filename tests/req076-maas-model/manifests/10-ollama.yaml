@@ -1,0 +1,70 @@
+# A real OpenAI-compatible model server standing in for a MaaS backend.
+#
+# WHY OLLAMA (not vLLM/KServe): this sandbox has no GPU and no OpenShift AI /
+# KServe installed. Ollama serves a small model on CPU and exposes the same
+# OpenAI-compatible surface (/v1/chat/completions with a real `usage` block)
+# that a production MaaS (vLLM under RHOAI, GPU) would. The RHCL front — the
+# HTTPRoute + AuthPolicy + TokenRateLimitPolicy in 20-route-and-policies.yaml —
+# is IDENTICAL whether the backend is this or a real MaaS endpoint. Swap the
+# backendRef host and the governance story is unchanged.
+#
+# anyuid: the upstream ollama/ollama image runs as root; on a throwaway lab we
+# grant anyuid to this SA (see deploy.sh) rather than fight SCC. Not for prod.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ollama
+  namespace: rhcl-apps
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: rhcl-apps
+  labels:
+    app: ollama
+    rhcl.poc/role: maas
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ollama
+  template:
+    metadata:
+      labels:
+        app: ollama
+        rhcl.poc/role: maas
+    spec:
+      serviceAccountName: ollama
+      containers:
+        - name: ollama
+          image: ollama/ollama:latest
+          ports:
+            - { containerPort: 11434, name: http }
+          env:
+            - { name: OLLAMA_HOST, value: "0.0.0.0:11434" }
+          resources:
+            requests: { cpu: "1", memory: 2Gi }
+            limits: { cpu: "4", memory: 6Gi }
+          volumeMounts:
+            - { name: models, mountPath: /root/.ollama }
+          readinessProbe:
+            httpGet: { path: /, port: 11434 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: models
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  namespace: rhcl-apps
+  labels:
+    app: ollama
+spec:
+  selector:
+    app: ollama
+  ports:
+    - { name: http, port: 11434, targetPort: 11434 }

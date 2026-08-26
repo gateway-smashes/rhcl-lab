@@ -1,0 +1,478 @@
+---
+# Opt-in role: set OCP_AI_ENABLED=true to install. When false (the default),
+# end the play so install-all runs don't drag in the full RHOAI + GPU + Kueue
+# stack on clusters that don't need it. Granular toggles still apply once
+# enabled: OCP_AI_GPU_ENABLED, ocp_ai_llmd_enabled, ocp_ai_jobset_enabled etc.
+- name: Skip ocp_ai role when disabled
+  ansible.builtin.meta: end_play
+  when: not (ocp_ai_enabled | bool)
+
+- name: Validate OpenShift AI prerequisites
+  ansible.builtin.include_tasks: assert_prerequisites.yml
+
+# ---------------------------------------------------------------------------
+# 1. Namespaces (operator, applications, optional model-serving)
+# ---------------------------------------------------------------------------
+- name: Ensure OpenShift AI operator namespace exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'namespace.yml.j2') | from_yaml }}"
+  vars:
+    ocp_ai_ns_name: "{{ ocp_ai_operator_namespace }}"
+
+- name: Ensure OpenShift AI applications namespace exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'namespace.yml.j2') | from_yaml }}"
+  vars:
+    ocp_ai_ns_name: "{{ ocp_ai_applications_namespace }}"
+    ocp_ai_ns_labels:
+      opendatahub.io/application-namespace: "true"
+
+- name: Ensure model-serving namespace exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'namespace.yml.j2') | from_yaml }}"
+  vars:
+    ocp_ai_ns_name: "{{ ocp_ai_model_serving_namespace }}"
+  when: ocp_ai_create_model_serving_namespace | bool
+
+- name: Query model-serving namespace labels
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Namespace
+    name: "{{ ocp_ai_model_serving_namespace }}"
+  register: ocp_ai_model_serving_ns
+  changed_when: false
+  when: ocp_ai_create_model_serving_namespace | bool
+
+- name: Remove OpenShift AI application label from model-serving namespace
+  kubernetes.core.k8s_json_patch:
+    api_version: v1
+    kind: Namespace
+    name: "{{ ocp_ai_model_serving_namespace }}"
+    patch:
+      - op: remove
+        path: /metadata/labels/opendatahub.io~1application-namespace
+  when:
+    - ocp_ai_create_model_serving_namespace | bool
+    - ocp_ai_model_serving_ns.resources | length == 1
+    - ocp_ai_model_serving_ns.resources[0].metadata.labels is defined
+    - ocp_ai_model_serving_ns.resources[0].metadata.labels.get('opendatahub.io/application-namespace', '') == 'true'
+
+- name: Query OpenShift AI application namespaces
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Namespace
+    label_selectors:
+      - opendatahub.io/application-namespace=true
+  register: ocp_ai_application_namespaces
+  changed_when: false
+
+- name: Assert exactly one OpenShift AI application namespace is labeled
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_application_namespaces.resources | length == 1
+      - ocp_ai_application_namespaces.resources[0].metadata.name == ocp_ai_applications_namespace
+    fail_msg: >-
+      OpenShift AI supports exactly one namespace labeled
+      opendatahub.io/application-namespace=true. Expected only
+      {{ ocp_ai_applications_namespace }}, found
+      {{ ocp_ai_application_namespaces.resources | map(attribute='metadata.name') | list }}.
+      Remove the label from extra namespaces before installing.
+
+# ---------------------------------------------------------------------------
+# 2. MaaS prerequisites that are not created by DataScienceCluster
+# ---------------------------------------------------------------------------
+- name: Ensure Models as a Service lab database exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'maas-postgres.yml.j2') | from_yaml_all | list }}"
+  when: ocp_ai_maas_database_enabled | bool
+
+- name: Wait for Models as a Service lab database
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ ocp_ai_applications_namespace }}"
+    name: "{{ ocp_ai_maas_db_deployment_name }}"
+  register: ocp_ai_maas_db_deployment
+  changed_when: false
+  failed_when: false
+  until:
+    - ocp_ai_maas_db_deployment.resources | length == 1
+    - (ocp_ai_maas_db_deployment.resources[0].status.availableReplicas | default(0) | int) >= 1
+  retries: 30
+  delay: 10
+  when: ocp_ai_maas_database_enabled | bool
+
+- name: Query Authorino instance for MaaS TLS
+  kubernetes.core.k8s_info:
+    api_version: operator.authorino.kuadrant.io/v1beta1
+    kind: Authorino
+    namespace: "{{ ocp_ai_authorino_namespace }}"
+    name: "{{ ocp_ai_authorino_name }}"
+  register: ocp_ai_authorino
+  changed_when: false
+  failed_when: false
+  when: ocp_ai_authorino_tls_enabled | bool
+
+- name: Assert Authorino instance exists for MaaS TLS
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_authorino.resources | length == 1
+    fail_msg: >-
+      Authorino {{ ocp_ai_authorino_namespace }}/{{ ocp_ai_authorino_name }}
+      not found. MaaS requires Authorino listener TLS when Models as a Service
+      is enabled.
+  when: ocp_ai_authorino_tls_enabled | bool
+
+- name: Query Authorino authorization service for MaaS TLS
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Service
+    namespace: "{{ ocp_ai_authorino_namespace }}"
+    name: "{{ ocp_ai_authorino_service_name }}"
+  register: ocp_ai_authorino_service
+  changed_when: false
+  failed_when: false
+  when: ocp_ai_authorino_tls_enabled | bool
+
+- name: Assert Authorino authorization service exists for MaaS TLS
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_authorino_service.resources | length == 1
+    fail_msg: >-
+      Authorino service {{ ocp_ai_authorino_namespace }}/{{ ocp_ai_authorino_service_name }}
+      not found. MaaS requires a TLS-enabled Authorino listener.
+  when: ocp_ai_authorino_tls_enabled | bool
+
+- name: Request OpenShift service-serving certificate for Authorino
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: "{{ ocp_ai_authorino_service_name }}"
+        namespace: "{{ ocp_ai_authorino_namespace }}"
+        annotations:
+          service.beta.openshift.io/serving-cert-secret-name: "{{ ocp_ai_authorino_tls_secret_name }}"
+  when: ocp_ai_authorino_tls_enabled | bool
+
+- name: Wait for Authorino listener TLS secret
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    namespace: "{{ ocp_ai_authorino_namespace }}"
+    name: "{{ ocp_ai_authorino_tls_secret_name }}"
+  register: ocp_ai_authorino_tls_secret
+  changed_when: false
+  failed_when: false
+  until:
+    - ocp_ai_authorino_tls_secret.resources | length == 1
+  retries: 30
+  delay: 10
+  when: ocp_ai_authorino_tls_enabled | bool
+
+- name: Enable Authorino listener TLS for Models as a Service
+  kubernetes.core.k8s_json_patch:
+    api_version: operator.authorino.kuadrant.io/v1beta1
+    kind: Authorino
+    namespace: "{{ ocp_ai_authorino_namespace }}"
+    name: "{{ ocp_ai_authorino_name }}"
+    patch:
+      - op: replace
+        path: /spec/listener/tls
+        value:
+          enabled: true
+          certSecretRef:
+            name: "{{ ocp_ai_authorino_tls_secret_name }}"
+  when: ocp_ai_authorino_tls_enabled | bool
+
+# Wait for the owning operator to roll the Authorino deployment if needed.
+- name: Wait for Authorino to remain Ready after TLS update
+  kubernetes.core.k8s_info:
+    api_version: operator.authorino.kuadrant.io/v1beta1
+    kind: Authorino
+    namespace: "{{ ocp_ai_authorino_namespace }}"
+    name: "{{ ocp_ai_authorino_name }}"
+  register: ocp_ai_authorino_ready
+  changed_when: false
+  failed_when: false
+  until:
+    - ocp_ai_authorino_ready.resources | length == 1
+    - >-
+      (
+        ocp_ai_authorino_ready.resources[0].status.conditions | default([])
+        | selectattr('type', 'equalto', 'Ready')
+        | selectattr('status', 'equalto', 'True')
+        | list
+        | length
+      ) > 0
+  retries: 30
+  delay: 10
+  when: ocp_ai_authorino_tls_enabled | bool
+
+# ---------------------------------------------------------------------------
+# 3. Node Feature Discovery (GPU prerequisite)
+# ---------------------------------------------------------------------------
+- name: Install Node Feature Discovery Operator
+  ansible.builtin.include_tasks: install_olm_subscription.yml
+  vars:
+    olm_label: "NFD"
+    olm_namespace: "{{ ocp_ai_nfd_namespace }}"
+    olm_operatorgroup_name: "{{ ocp_ai_nfd_operatorgroup_name }}"
+    olm_subscription_name: "{{ ocp_ai_nfd_subscription_name }}"
+    olm_operator_name: "{{ ocp_ai_nfd_operator_name }}"
+    olm_channel: "{{ ocp_ai_nfd_channel }}"
+    olm_source: "{{ ocp_ai_olm_source }}"
+    olm_source_namespace: "{{ ocp_ai_olm_source_namespace }}"
+    olm_target_namespaces:
+      - "{{ ocp_ai_nfd_namespace }}"
+  when: ocp_ai_gpu_enabled | bool
+
+- name: Ensure NodeFeatureDiscovery instance exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'nfd-instance.yml.j2') | from_yaml }}"
+  when: ocp_ai_gpu_enabled | bool
+
+# ---------------------------------------------------------------------------
+# 4. NVIDIA GPU Operator
+# ---------------------------------------------------------------------------
+- name: Install NVIDIA GPU Operator
+  ansible.builtin.include_tasks: install_olm_subscription.yml
+  vars:
+    olm_label: "GPU"
+    olm_namespace: "{{ ocp_ai_gpu_namespace }}"
+    olm_operatorgroup_name: "{{ ocp_ai_gpu_operatorgroup_name }}"
+    olm_subscription_name: "{{ ocp_ai_gpu_subscription_name }}"
+    olm_operator_name: "{{ ocp_ai_gpu_operator_name }}"
+    olm_channel: "{{ ocp_ai_gpu_channel }}"
+    olm_source: "{{ ocp_ai_gpu_source }}"
+    olm_source_namespace: "{{ ocp_ai_olm_source_namespace }}"
+    olm_target_namespaces:
+      - "{{ ocp_ai_gpu_namespace }}"
+  when: ocp_ai_gpu_enabled | bool
+
+- name: Ensure GPU ClusterPolicy exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'gpu-clusterpolicy.yml.j2') | from_yaml }}"
+  when: ocp_ai_gpu_enabled | bool
+
+# ---------------------------------------------------------------------------
+# 5. Leader Worker Set Operator (llm-d prerequisite)
+# ---------------------------------------------------------------------------
+- name: Install Leader Worker Set Operator
+  ansible.builtin.include_tasks: install_olm_subscription.yml
+  vars:
+    olm_label: "LWS"
+    olm_namespace: "{{ ocp_ai_lws_namespace }}"
+    olm_operatorgroup_name: "{{ ocp_ai_lws_operatorgroup_name }}"
+    olm_subscription_name: "{{ ocp_ai_lws_subscription_name }}"
+    olm_operator_name: "{{ ocp_ai_lws_operator_name }}"
+    olm_channel: "{{ ocp_ai_lws_channel }}"
+    olm_source: "{{ ocp_ai_olm_source }}"
+    olm_source_namespace: "{{ ocp_ai_olm_source_namespace }}"
+    # OwnNamespace: targetNamespaces must list only the OperatorGroup namespace.
+    olm_target_namespaces:
+      - "{{ ocp_ai_lws_namespace }}"
+  when: ocp_ai_llmd_enabled | bool
+
+- name: Ensure LeaderWorkerSetOperator CR is Managed
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'leaderworkerset-operator.yml.j2') | from_yaml }}"
+  when: ocp_ai_llmd_enabled | bool
+
+# ---------------------------------------------------------------------------
+# 6. Distributed workloads and llm-d supporting operators
+# ---------------------------------------------------------------------------
+- name: Install JobSet Operator
+  ansible.builtin.include_tasks: install_olm_subscription.yml
+  vars:
+    olm_label: "JobSet"
+    olm_namespace: "{{ ocp_ai_jobset_namespace }}"
+    olm_operatorgroup_name: "{{ ocp_ai_jobset_operatorgroup_name }}"
+    olm_subscription_name: "{{ ocp_ai_jobset_subscription_name }}"
+    olm_operator_name: "{{ ocp_ai_jobset_operator_name }}"
+    olm_channel: "{{ ocp_ai_jobset_channel }}"
+    olm_source: "{{ ocp_ai_olm_source }}"
+    olm_source_namespace: "{{ ocp_ai_olm_source_namespace }}"
+    olm_target_namespaces:
+      - "{{ ocp_ai_jobset_namespace }}"
+  when: ocp_ai_jobset_enabled | bool
+
+- name: Ensure JobSetOperator CR is Managed
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'jobset-operator.yml.j2') | from_yaml }}"
+  when: ocp_ai_jobset_enabled | bool
+
+- name: Install Kueue Operator
+  ansible.builtin.include_tasks: install_olm_subscription.yml
+  vars:
+    olm_label: "Kueue"
+    olm_namespace: "{{ ocp_ai_kueue_namespace }}"
+    olm_operatorgroup_name: "{{ ocp_ai_kueue_operatorgroup_name }}"
+    olm_subscription_name: "{{ ocp_ai_kueue_subscription_name }}"
+    olm_operator_name: "{{ ocp_ai_kueue_operator_name }}"
+    olm_channel: "{{ ocp_ai_kueue_channel }}"
+    olm_source: "{{ ocp_ai_olm_source }}"
+    olm_source_namespace: "{{ ocp_ai_olm_source_namespace }}"
+    # AllNamespaces: Red Hat build of Kueue does not support OwnNamespace.
+    olm_target_namespaces: []
+  when: ocp_ai_kueue_operator_enabled | bool
+
+- name: Ensure Kueue cluster CR is Managed
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'kueue-cluster.yml.j2') | from_yaml }}"
+  when: ocp_ai_kueue_operator_enabled | bool
+
+- name: Install Custom Metrics Autoscaler Operator
+  ansible.builtin.include_tasks: install_olm_subscription.yml
+  vars:
+    olm_label: "Custom Metrics Autoscaler"
+    olm_namespace: "{{ ocp_ai_cma_namespace }}"
+    olm_operatorgroup_name: "{{ ocp_ai_cma_operatorgroup_name }}"
+    olm_subscription_name: "{{ ocp_ai_cma_subscription_name }}"
+    olm_operator_name: "{{ ocp_ai_cma_operator_name }}"
+    olm_channel: "{{ ocp_ai_cma_channel }}"
+    olm_source: "{{ ocp_ai_olm_source }}"
+    olm_source_namespace: "{{ ocp_ai_olm_source_namespace }}"
+    olm_target_namespaces:
+      - "{{ ocp_ai_cma_namespace }}"
+  when: ocp_ai_cma_enabled | bool
+
+- name: Ensure Custom Metrics Autoscaler KedaController exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'custom-metrics-autoscaler.yml.j2') | from_yaml }}"
+  when: ocp_ai_cma_enabled | bool
+
+# ---------------------------------------------------------------------------
+# 7. Red Hat OpenShift AI Operator (rhods-operator)
+# ---------------------------------------------------------------------------
+- name: Install Red Hat OpenShift AI Operator
+  ansible.builtin.include_tasks: install_olm_subscription.yml
+  vars:
+    olm_label: "OpenShift AI"
+    olm_namespace: "{{ ocp_ai_operator_namespace }}"
+    olm_operatorgroup_name: "{{ ocp_ai_operatorgroup_name }}"
+    olm_subscription_name: "{{ ocp_ai_subscription_name }}"
+    olm_operator_name: "{{ ocp_ai_operator_name }}"
+    olm_channel: "{{ ocp_ai_channel }}"
+    olm_source: "{{ ocp_ai_olm_source }}"
+    olm_source_namespace: "{{ ocp_ai_olm_source_namespace }}"
+    olm_starting_csv: "{{ ocp_ai_starting_csv }}"
+
+# ---------------------------------------------------------------------------
+# 8. DataScienceCluster — OpenShift AI components
+# ---------------------------------------------------------------------------
+- name: Ensure DSCInitialization exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'dscinitialization.yml.j2') | from_yaml }}"
+
+- name: Wait for OpenShift AI GatewayClass for MaaS
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: GatewayClass
+    name: "{{ ocp_ai_maas_gatewayclass_name }}"
+  register: ocp_ai_maas_gatewayclass
+  changed_when: false
+  failed_when: false
+  until:
+    - ocp_ai_maas_gatewayclass.resources | length == 1
+  retries: 30
+  delay: 10
+  when: ocp_ai_maas_gateway_enabled | bool
+
+- name: Ensure Models as a Service Gateway exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'maas-gateway.yml.j2') | from_yaml_all | list }}"
+  when: ocp_ai_maas_gateway_enabled | bool
+
+- name: Ensure MaaS gateway OpenShift Route exists for dashboard discovery
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'maas-gateway-route.yml.j2') | from_yaml }}"
+  when:
+    - ocp_ai_maas_gateway_enabled | bool
+    - ocp_ai_maas_gateway_service_type == 'ClusterIP'
+    - ocp_ai_maas_gateway_hostname | length == 0
+    - ocp_ai_maas_route_hostname | length > 0
+
+- name: Ensure DataScienceCluster exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'datasciencecluster.yml.j2') | from_yaml }}"
+
+- name: Wait for DataScienceCluster to reach Ready phase
+  kubernetes.core.k8s_info:
+    api_version: datasciencecluster.opendatahub.io/v2
+    kind: DataScienceCluster
+    name: "{{ ocp_ai_dsc_name }}"
+  register: ocp_ai_dsc
+  changed_when: false
+  failed_when: false
+  until:
+    - ocp_ai_dsc.resources | length == 1
+    - ocp_ai_dsc.resources[0].status.phase is defined
+    - ocp_ai_dsc.resources[0].status.phase == "Ready"
+  retries: "{{ ocp_ai_dsc_ready_retries }}"
+  delay: "{{ ocp_ai_dsc_ready_delay_seconds }}"
+
+- name: Wait for OdhDashboardConfig to be created by the dashboard component
+  kubernetes.core.k8s_info:
+    api_version: opendatahub.io/v1alpha
+    kind: OdhDashboardConfig
+    namespace: "{{ ocp_ai_applications_namespace }}"
+    name: odh-dashboard-config
+  register: ocp_ai_odh_dashboard_config
+  changed_when: false
+  failed_when: false
+  until:
+    - ocp_ai_odh_dashboard_config.resources | length == 1
+  retries: 30
+  delay: 10
+  when:
+    - ocp_ai_dashboard_gen_ai_studio | bool or ocp_ai_dashboard_model_as_service | bool
+
+- name: Enable Gen AI studio and Playground in OdhDashboardConfig
+  kubernetes.core.k8s:
+    state: present
+    merge_type: merge
+    definition: "{{ lookup('template', 'odh-dashboard-config.yml.j2') | from_yaml }}"
+  when:
+    - ocp_ai_dashboard_gen_ai_studio | bool
+      or ocp_ai_dashboard_model_as_service | bool
+      or ocp_ai_dashboard_ai_asset_custom_endpoints | bool
+      or ocp_ai_gpu_hardware_profile_enabled | bool
+
+- name: Ensure NVIDIA GPU HardwareProfile exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'hardware-profile-nvidia-gpu.yml.j2') | from_yaml }}"
+  when: ocp_ai_gpu_hardware_profile_enabled | bool
+
+- name: Report OpenShift AI install summary
+  ansible.builtin.debug:
+    msg: >-
+      OpenShift AI {{ ocp_ai_dsc_name }} is Ready.
+      kserve={{ ocp_ai_kserve_state }},
+      modelsAsService={{ ocp_ai_kserve_models_as_service_state }},
+      wva={{ ocp_ai_kserve_wva_state }},
+      dashboard={{ ocp_ai_dashboard_state }},
+      ray={{ ocp_ai_ray_state }},
+      trainingoperator={{ ocp_ai_trainingoperator_state }},
+      kueue={{ ocp_ai_kueue_state }},
+      llamastackoperator={{ ocp_ai_llamastackoperator_state }},
+      applications={{ ocp_ai_applications_namespace }},
+      modelServing={{ ocp_ai_model_serving_namespace }}.
+      Next: deploy LLMInferenceService for llm-d or use the dashboard to
+      enable "Use distributed inference with llm-d by default".

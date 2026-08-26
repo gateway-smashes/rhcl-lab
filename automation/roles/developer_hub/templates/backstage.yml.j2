@@ -1,0 +1,65 @@
+apiVersion: rhdh.redhat.com/{{ developer_hub_backstage_api_version }}
+kind: Backstage
+metadata:
+  name: {{ developer_hub_instance_name }}
+  namespace: {{ developer_hub_namespace }}
+spec:
+  application:
+    appConfig:
+      mountPath: /opt/app-root/src
+      configMaps:
+        - name: rhdh-app-config
+    extraFiles:
+      mountPath: /opt/app-root/etc
+      configMaps:
+        - name: rbac-policies
+{% if developer_hub_trusted_ca_enabled %}
+        # Populated by the OpenShift Network Operator via the
+        # inject-trusted-cabundle label; lands flat as ca-bundle.crt.
+        - name: {{ developer_hub_trusted_ca_configmap }}
+{% endif %}
+    extraEnvs:
+      secrets:
+        - name: rhdh-oidc
+        - name: rhdh-k8s-token
+{% if developer_hub_trusted_ca_enabled %}
+      envs:
+        # Node keeps its OWN CA list and ignores the system truststore, so a
+        # Keycloak fronted by an internal CA fails at /oidc/start with
+        # SELF_SIGNED_CERT_IN_CHAIN. This points Node at the injected bundle.
+        - name: NODE_EXTRA_CA_CERTS
+          value: /opt/app-root/etc/ca-bundle.crt
+{% endif %}
+    route:
+      enabled: true
+{% if developer_hub_hostname | default('') | length > 0 %}
+      # Corporate profile — when the resolving zone is not the ingress
+      # controller's domain, the host is pinned here instead of being derived
+      # from a subdomain.
+      host: {{ developer_hub_hostname }}
+{% else %}
+      subdomain: {{ developer_hub_route_subdomain }}
+{% endif %}
+    dynamicPluginsConfigMapName: dynamic-plugins-rhdh
+  database:
+    enableLocalDb: true
+  deployment:
+    patch:
+      spec:
+        template:
+          spec:
+            automountServiceAccountToken: true
+{% if developer_hub_storage_class | length > 0 %}
+            # `dynamic-plugins-root` is a generic ephemeral volume, so its PVC
+            # is named after the pod and is recreated on every rollout — it
+            # cannot be pre-provisioned. Inject the class here instead. This is
+            # a strategic-merge patch and `volumes` merges on `name`, so only
+            # the fields below are added; accessModes and resources from the
+            # operator's own template are preserved.
+            volumes:
+              - name: dynamic-plugins-root
+                ephemeral:
+                  volumeClaimTemplate:
+                    spec:
+                      storageClassName: {{ developer_hub_storage_class }}
+{% endif %}

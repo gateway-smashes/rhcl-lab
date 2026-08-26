@@ -1,0 +1,18 @@
+apiVersion: devportal.kuadrant.io/v1alpha1
+kind: APIKey
+metadata:
+  name: demo-apikey-request
+  namespace: item-15-api
+  labels:
+    app.kubernetes.io/part-of: connectivity-link-rbac-demo
+spec:
+  apiProductRef:
+    name: demo-api-product
+  planTier: silver
+  requestedBy:
+    userId: demo-developer
+    email: developer@example.com
+  useCase: |
+    Testing the Demo API for development purposes.
+    This API key will be used to validate RBAC permissions
+    and demonstrate the approval workflow.

@@ -1,0 +1,28 @@
+# Mock-API runtime config for the PIX demo backend. Every endpoint
+# responds with `apps_pix_response_body` and a small artificial delay so
+# the dashboards show a non-flat P95 curve.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ apps_pix_deployment_name }}-config
+  namespace: {{ apps_namespace }}
+  labels:
+    app: {{ apps_pix_deployment_name }}
+    app.kubernetes.io/part-of: rhcl-banking-poc
+data:
+  # Every value must be a YAML SCALAR — ConfigMap.data is Go
+  # `map[string]string`. A dict value (from an env override where the
+  # operator wrote inline YAML for RESPONSE_BODY instead of an escaped
+  # JSON string) broke the apply with:
+  #   json: cannot unmarshal object into Go struct field ConfigMap.data of type string
+  # For RESPONSE_BODY we want the value to REMAIN valid JSON when the
+  # mock-api reads it back, so if the operator passed a dict we
+  # serialise with `to_json` (giving proper JSON), otherwise we pass
+  # the string through unchanged. `to_json` on the final string wraps
+  # it in quotes to make it a YAML scalar.
+  PORT: "8080"
+  HTTP_STATUS: {{ apps_pix_response_status | string | to_json }}
+  CONTENT_TYPE: {{ apps_pix_response_content_type | string | to_json }}
+  RESPONSE_BODY: {{ (apps_pix_response_body if apps_pix_response_body is string else (apps_pix_response_body | to_json)) | to_json }}
+  DELAY_MS: {{ apps_pix_response_delay_ms | string | to_json }}
+  LOG_LEVEL: "info"

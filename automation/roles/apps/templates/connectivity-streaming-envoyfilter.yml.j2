@@ -1,0 +1,92 @@
+{# req026 — gateway-wide cap on request body size.
+
+   Two patches in one EnvoyFilter:
+
+   1. HTTP_FILTER inserts `envoy.filters.http.buffer` BEFORE the
+      router on every GATEWAY listener with `max_request_bytes` =
+      apps_streaming_max_request_bytes. Any inbound request whose
+      body exceeds the cap is rejected with HTTP 413 + "Payload Too
+      Large" (text/plain) BEFORE the bytes reach the backend.
+
+   2. HTTP_ROUTE per-route DISABLES the buffer filter for the
+      WebSocket upgrade route (`/ws`). Without this, the buffer
+      filter waits for the full request body before calling the
+      router; a WS upgrade has no body and never closes the request,
+      so the handshake hangs until client timeout (verified in
+      production: response_flags=DC, upstream_host=null, no upstream
+      log of the request). Route name follows Istio's deterministic
+      `<namespace>.<httproute>.<ruleIndex>` convention — keep
+      `apps_streaming_websocket_route_name` in sync when the
+      HTTPRoute rule order changes.
+
+   Why gateway-wide and not per-route enable:
+   - The clean per-route override (`BufferPerRoute` enable via
+     `applyTo: HTTP_ROUTE` MERGE with route.action: ANY) overwrites
+     every route's `match` block in Istio 1.26 (RHCL 1.3.4 and 1.4.x alike) and
+     breaks all routing. The route-name match works for DISABLE
+     (this patch) but is too brittle for ENABLE because we'd have
+     to track the upload rule's index across template edits.
+   - A gateway-wide cap is what most production setups actually do:
+     "no inbound request may exceed N MiB, period."
+
+   Side effects on other endpoints:
+   - WebSocket upgrades (/ws): explicitly disabled (patch 2). Required.
+   - SSE / AI streaming response: response streaming, not request
+     body — buffer filter only touches REQUEST, so unaffected.
+   - AI prompt POSTs, transfers, applications: typical bodies <100 KiB,
+     well below the 32 MiB cap.
+
+   AuthPolicy interaction: Authorino's ext_authz filter sits before
+   the router and (with the default `with_request_body: false`) reads
+   only headers — auth still runs first, body cap second. An
+   unauthenticated 100 MiB upload gets a 401 from Authorino without
+   ever buffering. Do NOT flip `with_request_body` on any AuthConfig
+   that fronts this gateway, or the rejection order changes.
+
+   The complementary upload TIMEOUT is set on the HTTPRoute itself
+   via `spec.rules[].timeouts.request` — see connectivity-httproute.yml.j2.
+#}
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: {{ apps_streaming_envoyfilter_name }}
+  namespace: {{ apps_streaming_envoyfilter_namespace }}
+  labels:
+    app.kubernetes.io/managed-by: ansible
+    app.kubernetes.io/part-of: rhcl-apps
+    rhcl.poc/req: req026
+spec:
+  workloadSelector:
+    labels:
+      gateway.networking.k8s.io/gateway-name: {{ apps_connectivity_gateway_name }}
+  configPatches:
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+              subFilter:
+                name: envoy.filters.http.router
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.buffer
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.buffer.v3.Buffer
+            max_request_bytes: {{ apps_streaming_max_request_bytes }}
+    - applyTo: HTTP_ROUTE
+      match:
+        context: GATEWAY
+        routeConfiguration:
+          vhost:
+            route:
+              name: {{ apps_streaming_websocket_route_name | string | to_json }}
+      patch:
+        operation: MERGE
+        value:
+          typed_per_filter_config:
+            envoy.filters.http.buffer:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.buffer.v3.BufferPerRoute
+              disabled: true

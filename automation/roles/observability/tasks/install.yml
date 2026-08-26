@@ -1,0 +1,687 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+# All OLM-related work below is gated by observability_install_operator.
+# Set OBSERVABILITY_INSTALL_OPERATOR=false (or OPERATORS_INSTALL_ENABLED=false
+# globally) when Tempo/OTel/COO operators are managed out-of-band. When
+# skipping we still need the namespaces (downstream tasks create CRs in them)
+# but we don't touch OG/Sub/CSV — and we sanity-check presence at the end.
+
+# ---------------------------------------------------------------
+# 1. Tempo Operator (OLM)
+# ---------------------------------------------------------------
+- name: Ensure the Tempo Operator namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ observability_tempo_namespace }}"
+    state: present
+
+- name: Query existing OperatorGroups in the Tempo namespace
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    namespace: "{{ observability_tempo_namespace }}"
+  register: observability_tempo_existing_ogs
+  changed_when: false
+  when: observability_install_operator | bool
+
+- name: Remove pre-existing OperatorGroups with a different name (Tempo)
+  kubernetes.core.k8s:
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    namespace: "{{ observability_tempo_namespace }}"
+    name: "{{ item.metadata.name }}"
+    state: absent
+  loop: "{{ observability_tempo_existing_ogs.resources | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  when:
+    - observability_install_operator | bool
+    - item.metadata.name != observability_tempo_operatorgroup_name
+
+- name: Ensure the Tempo OperatorGroup exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'tempo-operatorgroup.yml.j2') | from_yaml }}"
+  when: observability_install_operator | bool
+
+- name: Ensure the Tempo Subscription exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'tempo-subscription.yml.j2') | from_yaml }}"
+  when: observability_install_operator | bool
+
+- name: Wait for the Tempo subscription to report a current CSV
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ observability_tempo_namespace }}"
+    name: "{{ observability_tempo_subscription_name }}"
+  register: observability_tempo_subscription
+  changed_when: false
+  failed_when: false
+  until:
+    - observability_tempo_subscription.resources | length == 1
+    - observability_tempo_subscription.resources[0].status.currentCSV is defined
+  retries: 60
+  delay: 10
+  when: observability_install_operator | bool
+
+- name: Wait for the Tempo CSV to succeed
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ observability_tempo_namespace }}"
+    name: "{{ observability_tempo_subscription.resources[0].status.currentCSV }}"
+  register: observability_tempo_csv
+  changed_when: false
+  failed_when: false
+  until:
+    - observability_tempo_csv.resources | length == 1
+    - observability_tempo_csv.resources[0].status.phase == "Succeeded"
+  retries: 60
+  delay: 10
+  when: observability_install_operator | bool
+
+# ---------------------------------------------------------------
+# 2. Red Hat build of OpenTelemetry Operator (OLM)
+# ---------------------------------------------------------------
+- name: Ensure the OpenTelemetry Operator namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ observability_otel_namespace }}"
+    state: present
+
+- name: Query existing OperatorGroups in the OTel namespace
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    namespace: "{{ observability_otel_namespace }}"
+  register: observability_otel_existing_ogs
+  changed_when: false
+  when: observability_install_operator | bool
+
+- name: Remove pre-existing OperatorGroups with a different name (OTel)
+  kubernetes.core.k8s:
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    namespace: "{{ observability_otel_namespace }}"
+    name: "{{ item.metadata.name }}"
+    state: absent
+  loop: "{{ observability_otel_existing_ogs.resources | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  when:
+    - observability_install_operator | bool
+    - item.metadata.name != observability_otel_operatorgroup_name
+
+- name: Ensure the OpenTelemetry OperatorGroup exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'otel-operatorgroup.yml.j2') | from_yaml }}"
+  when: observability_install_operator | bool
+
+- name: Ensure the OpenTelemetry Subscription exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'otel-subscription.yml.j2') | from_yaml }}"
+  when: observability_install_operator | bool
+
+- name: Wait for the OTel subscription to report a current CSV
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ observability_otel_namespace }}"
+    name: "{{ observability_otel_subscription_name }}"
+  register: observability_otel_subscription
+  changed_when: false
+  failed_when: false
+  until:
+    - observability_otel_subscription.resources | length == 1
+    - observability_otel_subscription.resources[0].status.currentCSV is defined
+  retries: 60
+  delay: 10
+  when: observability_install_operator | bool
+
+- name: Wait for the OTel CSV to succeed
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ observability_otel_namespace }}"
+    name: "{{ observability_otel_subscription.resources[0].status.currentCSV }}"
+  register: observability_otel_csv
+  changed_when: false
+  failed_when: false
+  until:
+    - observability_otel_csv.resources | length == 1
+    - observability_otel_csv.resources[0].status.phase == "Succeeded"
+  retries: 60
+  delay: 10
+  when: observability_install_operator | bool
+
+# ---------------------------------------------------------------
+# 3. Cluster Observability Operator (OLM)
+# ---------------------------------------------------------------
+- name: Ensure the COO namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ observability_coo_namespace }}"
+    state: present
+
+- name: Query existing OperatorGroups in the COO namespace
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    namespace: "{{ observability_coo_namespace }}"
+  register: observability_coo_existing_ogs
+  changed_when: false
+  when: observability_install_operator | bool
+
+- name: Remove pre-existing OperatorGroups with a different name (COO)
+  kubernetes.core.k8s:
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    namespace: "{{ observability_coo_namespace }}"
+    name: "{{ item.metadata.name }}"
+    state: absent
+  loop: "{{ observability_coo_existing_ogs.resources | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  when:
+    - observability_install_operator | bool
+    - item.metadata.name != observability_coo_operatorgroup_name
+
+- name: Ensure the COO OperatorGroup exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'coo-operatorgroup.yml.j2') | from_yaml }}"
+  when: observability_install_operator | bool
+
+- name: Ensure the COO Subscription exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'coo-subscription.yml.j2') | from_yaml }}"
+  when: observability_install_operator | bool
+
+- name: Wait for the COO subscription to report a current CSV
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ observability_coo_namespace }}"
+    name: "{{ observability_coo_subscription_name }}"
+  register: observability_coo_subscription
+  changed_when: false
+  failed_when: false
+  until:
+    - observability_coo_subscription.resources | length == 1
+    - observability_coo_subscription.resources[0].status.currentCSV is defined
+  retries: 60
+  delay: 10
+  when: observability_install_operator | bool
+
+- name: Wait for the COO CSV to succeed
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ observability_coo_namespace }}"
+    name: "{{ observability_coo_subscription.resources[0].status.currentCSV }}"
+  register: observability_coo_csv
+  changed_when: false
+  failed_when: false
+  until:
+    - observability_coo_csv.resources | length == 1
+    - observability_coo_csv.resources[0].status.phase == "Succeeded"
+  retries: 60
+  delay: 10
+  when: observability_install_operator | bool
+
+# Use `oc get crd` via the command module rather than kubernetes.core.k8s_info.
+# The Python kubernetes-client on the customer's controller node raises
+# `ResourceField.__init__() got multiple values for argument 'self'` even
+# without `name=`. Drop the Python client for this check.
+- name: Probe required Tempo/OTel/COO CRDs (OBSERVABILITY_INSTALL_OPERATOR=false)
+  ansible.builtin.command:
+    cmd: "oc get crd {{ item }} --ignore-not-found -o name"
+  register: observability_crd_probe
+  changed_when: false
+  loop:
+    - tempostacks.tempo.grafana.com
+    - opentelemetrycollectors.opentelemetry.io
+    - uiplugins.observability.openshift.io
+  when: not (observability_install_operator | bool)
+
+- name: Verify required Tempo/OTel/COO CRDs are present
+  ansible.builtin.assert:
+    that:
+      - (item.stdout | default('') | length) > 0
+    fail_msg: >-
+      OBSERVABILITY_INSTALL_OPERATOR=false but the required CRD
+      '{{ item.item }}' is missing on the cluster. Install the
+      observability operators manually first, or set
+      OBSERVABILITY_INSTALL_OPERATOR=true.
+    quiet: true
+  loop: "{{ observability_crd_probe.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: not (observability_install_operator | bool)
+
+# ---------------------------------------------------------------
+# 4. MinIO (S3 backend for lab)
+# ---------------------------------------------------------------
+- name: Apply MinIO resources (namespace, secret, PVC, deployment, service, route, job, tempo namespace + secret)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'minio.yml.j2') | from_yaml_all | list }}"
+
+- name: Wait for the MinIO deployment to be available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ observability_minio_namespace }}"
+    name: minio
+  register: observability_minio_deploy
+  changed_when: false
+  failed_when: false
+  until:
+    - observability_minio_deploy.resources | length == 1
+    - (observability_minio_deploy.resources[0].status.availableReplicas | default(0)) >= 1
+  retries: 30
+  delay: 10
+
+- name: Wait for the MinIO bucket-creation job to complete
+  kubernetes.core.k8s_info:
+    api_version: batch/v1
+    kind: Job
+    namespace: "{{ observability_minio_namespace }}"
+    name: minio-create-bucket
+  register: observability_minio_job
+  changed_when: false
+  failed_when: false
+  until:
+    - observability_minio_job.resources | length == 1
+    - (observability_minio_job.resources[0].status.succeeded | default(0)) >= 1
+  retries: 30
+  delay: 10
+
+# ---------------------------------------------------------------
+# 5. TempoStack
+# ---------------------------------------------------------------
+- name: Apply TempoStack
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'tempostack.yml.j2') | from_yaml }}"
+
+- name: Wait for TempoStack to report Ready
+  kubernetes.core.k8s_info:
+    api_version: tempo.grafana.com/v1alpha1
+    kind: TempoStack
+    namespace: "{{ observability_tempostack_namespace }}"
+    name: "{{ observability_tempostack_name }}"
+  register: observability_tempostack
+  changed_when: false
+  failed_when: false
+  until:
+    - observability_tempostack.resources | length == 1
+    - >-
+      observability_tempostack.resources[0].status.conditions | default([])
+      | selectattr('type', 'equalto', 'Ready')
+      | selectattr('status', 'equalto', 'True')
+      | list | length >= 1
+  retries: 40
+  delay: 15
+
+# ---------------------------------------------------------------
+# 6. RBAC for the OTel Collector
+# ---------------------------------------------------------------
+- name: Apply OTel Collector RBAC (namespace, SA, ClusterRoles, ClusterRoleBindings)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'otel-rbac.yml.j2') | from_yaml_all | list }}"
+
+# ---------------------------------------------------------------
+# 7. OpenTelemetry Collector
+# ---------------------------------------------------------------
+# An OpenTelemetryCollector is admitted through the operator's MUTATING
+# WEBHOOK, so the operator has to be *serving* — not merely installed. A
+# Succeeded CSV does not imply that, and when the operator is pre-installed by
+# the customer (OBSERVABILITY_INSTALL_OPERATOR=false) the CSV wait above is
+# skipped entirely, so nothing guarantees it at all. Applying too early fails
+# the play with a 500:
+#
+#   failed calling webhook "mopentelemetrycollectorbeta.kb.io": ...
+#   no endpoints available for service "opentelemetry-operator-controller-manager-service"
+#
+# Wait for the webhook Service to have at least one READY endpoint first.
+# A collector created while the operator was healthy keeps running on its own
+# — the Deployment does not need the operator to stay up. So an operator that
+# broke later leaves traces flowing while every re-apply of the CR fails at
+# the webhook. Gating the whole rollout on that is wrong: check first whether
+# the collector is already serving, and only insist on the webhook when we
+# genuinely have to create or change something.
+- name: Check whether the collector Deployment is already available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ observability_collector_namespace }}"
+    name: "{{ observability_collector_name }}-collector"
+  register: observability_collector_existing
+  changed_when: false
+  failed_when: false
+
+- name: Note whether the collector is already serving
+  ansible.builtin.set_fact:
+    observability_collector_already_up: >-
+      {{ (observability_collector_existing.resources | default([]) | length) == 1
+         and (((observability_collector_existing.resources | default([]))[0].status.availableReplicas | default(0)) | int) >= 1 }}
+
+- name: Report that the collector is already running
+  ansible.builtin.debug:
+    msg: >-
+      Collector
+      '{{ observability_collector_namespace }}/{{ observability_collector_name }}-collector'
+      is already available — the webhook wait is skipped. A re-apply is still
+      attempted below, but a failure there will not stop the play while this
+      Deployment is serving.
+  when: observability_collector_already_up | bool
+
+# Ask the cluster WHERE the webhook lives instead of assuming: the
+# MutatingWebhookConfiguration carries the Service the API server actually
+# dials, so it cannot drift from reality the way a hardcoded namespace can.
+# The vars remain as a fallback for clusters where the webhook is registered
+# under a name this filter does not match.
+- name: Resolve the OTel collector webhook Service from the cluster
+  kubernetes.core.k8s_info:
+    api_version: admissionregistration.k8s.io/v1
+    kind: MutatingWebhookConfiguration
+  register: observability_otel_mwc
+  changed_when: false
+  failed_when: false
+
+- name: Set the webhook Service coordinates
+  ansible.builtin.set_fact:
+    observability_otel_webhook_ns: >-
+      {{ ((((observability_otel_mwc.resources | default([]))
+             | map(attribute='webhooks') | flatten
+             | selectattr('name', 'search', 'opentelemetrycollector')
+             | map(attribute='clientConfig.service.namespace') | list) + ['']) | first)
+         | default(observability_otel_namespace, true) }}
+    observability_otel_webhook_svc: >-
+      {{ ((((observability_otel_mwc.resources | default([]))
+             | map(attribute='webhooks') | flatten
+             | selectattr('name', 'search', 'opentelemetrycollector')
+             | map(attribute='clientConfig.service.name') | list) + ['']) | first)
+         | default(observability_otel_webhook_service, true) }}
+
+# Short budget on purpose: on a cluster where the operator is already running
+# this returns on the first call, and when it does not, waiting minutes does
+# not help — something is wrong and the operator should hear about it.
+- name: Wait for the OpenTelemetry operator webhook to have ready endpoints
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Endpoints
+    namespace: "{{ observability_otel_webhook_ns }}"
+    name: "{{ observability_otel_webhook_svc }}"
+  register: observability_otel_webhook_ep
+  changed_when: false
+  failed_when: false
+  # Single expression so Jinja's `and` short-circuits: indexing [0] on an
+  # empty resources list would otherwise blow up before the guard is reached.
+  until: >-
+    (observability_otel_webhook_ep.resources | default([]) | length) == 1
+    and ((observability_otel_webhook_ep.resources | default([]))[0].subsets | default([]) | length) > 0
+    and (((observability_otel_webhook_ep.resources | default([]))[0].subsets | default([]))[0].addresses | default([]) | length) > 0
+  retries: "{{ observability_otel_webhook_wait_retries | int }}"
+  delay: "{{ observability_otel_webhook_wait_delay | int }}"
+  when: not (observability_collector_already_up | bool)
+
+# A crash-looping operator is the usual reason the endpoints stay notReady,
+# and reading it back here saves a round of manual digging: the Endpoints
+# object exists (so `get endpoints` looks fine at a glance) but every address
+# sits under notReadyAddresses, which the API server will not route to — that
+# is precisely what "no endpoints available" means.
+- name: Look up the operator pods behind the webhook Service
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ observability_otel_webhook_ns }}"
+  register: observability_otel_webhook_pods
+  changed_when: false
+  failed_when: false
+  when: >-
+    not (observability_collector_already_up | bool)
+    and ((observability_otel_webhook_ep.resources | default([]) | length) != 1
+         or ((observability_otel_webhook_ep.resources | default([]))[0].subsets | default([]) | length) == 0
+         or (((observability_otel_webhook_ep.resources | default([]))[0].subsets | default([]))[0].addresses | default([]) | length) == 0)
+
+- name: Summarise those pods for the failure message
+  ansible.builtin.set_fact:
+    observability_otel_pod_summary: >-
+      {{ (observability_otel_pod_summary | default([]))
+         + [item.metadata.name
+            ~ ' phase=' ~ (item.status.phase | default('?'))
+            ~ ' ready=' ~ ((item.status.containerStatuses | default([{}]) | first).ready | default('?'))
+            ~ ' restarts=' ~ ((item.status.containerStatuses | default([{}]) | first).restartCount | default('?'))] }}
+  loop: "{{ observability_otel_webhook_pods.resources | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+
+- name: Fail with a pointed message when the webhook never became ready
+  ansible.builtin.fail:
+    msg: >-
+      The OpenTelemetryCollector is admitted through a mutating webhook, and
+      the Service the API server dials for it —
+      '{{ observability_otel_webhook_ns }}/{{ observability_otel_webhook_svc }}'
+      (read from the MutatingWebhookConfiguration) — has no ready endpoints
+      after
+      {{ (observability_otel_webhook_wait_retries | int) * (observability_otel_webhook_wait_delay | int) }}s.
+      That Service exists but selects no READY pod, or does not exist at all,
+      so the collector cannot be created. Note that the Endpoints object can
+      look populated while every address sits under notReadyAddresses — the
+      API server will not route to those, which is what "no endpoints
+      available" means.
+      Pods in that namespace:
+      {{ (observability_otel_pod_summary | default([]) | join('; '))
+         | default('none', true) }}.
+      A pod stuck in CrashLoopBackOff is the usual cause — check
+      `oc -n {{ observability_otel_webhook_ns }} logs <pod> --previous`.
+      If instead nothing runs there at all, the webhook is left over from a
+      previous install: delete the stale MutatingWebhookConfiguration.
+  when: >-
+    not (observability_collector_already_up | bool)
+    and ((observability_otel_webhook_ep.resources | default([]) | length) != 1
+         or ((observability_otel_webhook_ep.resources | default([]))[0].subsets | default([]) | length) == 0
+         or (((observability_otel_webhook_ep.resources | default([]))[0].subsets | default([]))[0].addresses | default([]) | length) == 0)
+
+# Reconciliation is still attempted when the collector is already up — the
+# template may have changed — but a webhook that is down must not fail the
+# rollout while the existing collector keeps serving traces. Only one attempt
+# in that case: retrying a webhook we know is dead just wastes time.
+- name: Apply the OpenTelemetryCollector
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'otel-collector.yml.j2') | from_yaml }}"
+  register: observability_collector_apply
+  until: observability_collector_apply is not failed
+  retries: "{{ 1 if (observability_collector_already_up | bool) else 10 }}"
+  delay: 15
+  failed_when:
+    - observability_collector_apply is failed
+    - not (observability_collector_already_up | bool)
+
+- name: Warn that the collector could not be reconciled
+  ansible.builtin.debug:
+    msg: >-
+      Could not re-apply the OpenTelemetryCollector — the operator webhook is
+      not answering — but
+      '{{ observability_collector_namespace }}/{{ observability_collector_name }}-collector'
+      is still available, so traces keep flowing and the play continues. The
+      running collector may not match this role's template until the operator
+      is healthy again.
+  when:
+    - observability_collector_apply is failed
+    - observability_collector_already_up | bool
+
+- name: Wait for the OTel Collector deployment to be available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ observability_collector_namespace }}"
+    name: "{{ observability_collector_name }}-collector"
+  register: observability_collector_deploy
+  changed_when: false
+  failed_when: false
+  until:
+    - observability_collector_deploy.resources | length == 1
+    - (observability_collector_deploy.resources[0].status.availableReplicas | default(0)) >= 1
+  retries: 30
+  delay: 10
+
+# ---------------------------------------------------------------
+# 8. EnvoyFilter — OpenTelemetry tracing on the gateway
+# ---------------------------------------------------------------
+- name: Apply EnvoyFilter for OpenTelemetry tracing
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'envoyfilter-otel-tracing.yml.j2') | from_yaml }}"
+
+# ---------------------------------------------------------------
+# 8a. Istio Telemetry CR — activate the `opentelemetry` provider so the
+# gateway proxy actually emits spans. Without it, the EnvoyFilter above
+# wires the HCM but Istio's runtime stays silent and only upstream
+# services (limitador, wasm-shim) appear in Tempo.
+# ---------------------------------------------------------------
+- name: Apply Istio Telemetry CR for gateway tracing
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'telemetry-istio-tracing.yml.j2') | from_yaml }}"
+
+# ---------------------------------------------------------------
+# 8b. req035 — EnvoyFilter for OpenTelemetry access logging (errors only).
+#
+# Captures every request with status >= observability_access_logs_min_status
+# (default 400) and streams it to the same OTel Collector as a `logs` signal.
+# Toggle with OBSERVABILITY_ACCESS_LOGS_ENABLED=false.
+# ---------------------------------------------------------------
+- name: Apply EnvoyFilter for OpenTelemetry access logs (gateway errors)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'envoyfilter-otel-access-logs.yml.j2') | from_yaml }}"
+  when: observability_access_logs_enabled
+
+- name: Remove EnvoyFilter for access logs when disabled
+  kubernetes.core.k8s:
+    state: absent
+    api_version: networking.istio.io/v1alpha3
+    kind: EnvoyFilter
+    namespace: "{{ observability_envoyfilter_namespace }}"
+    name: otel-access-logs
+  when: not observability_access_logs_enabled
+
+# ---------------------------------------------------------------
+# 8c. req066 — EnvoyFilter for JSON audit access log (stdout, all traffic).
+#
+# Emits a structured JSON line per request to the gateway pod stdout,
+# enabling audit and traceability via `oc logs`. Complements the OTLP
+# error log (8b) — this one captures 100% of traffic with identity fields.
+# Toggle with OBSERVABILITY_AUDIT_LOG_ENABLED=false.
+# ---------------------------------------------------------------
+- name: Apply EnvoyFilter for JSON audit access log (stdout)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'envoyfilter-access-log-json.yml.j2') | from_yaml }}"
+  when: observability_audit_log_enabled
+
+- name: Remove EnvoyFilter for audit access log when disabled
+  kubernetes.core.k8s:
+    state: absent
+    api_version: networking.istio.io/v1alpha3
+    kind: EnvoyFilter
+    namespace: "{{ observability_envoyfilter_namespace }}"
+    name: access-log-json
+  when: not observability_audit_log_enabled
+
+# ---------------------------------------------------------------
+# 8.5 EnvoyFilter — echo W3C traceparent back to client on response
+# ---------------------------------------------------------------
+# Adds three response headers (x-trace-id, x-parent-span-id,
+# x-trace-parent) when the client sent a `traceparent` on the request.
+# Lets the caller correlate its own request log line with the chain
+# recorded in Tempo without having to instrument trace propagation
+# end-to-end. No-op when the client doesn't send traceparent.
+# Toggle with OBSERVABILITY_TRACE_RESPONSE_HEADERS_ENABLED=false.
+# ---------------------------------------------------------------
+- name: Apply EnvoyFilter that echoes W3C traceparent into response headers
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'envoyfilter-trace-response-headers.yml.j2') | from_yaml }}"
+  when: observability_trace_response_headers_enabled
+
+- name: Remove EnvoyFilter for trace response headers when disabled
+  kubernetes.core.k8s:
+    state: absent
+    api_version: networking.istio.io/v1alpha3
+    kind: EnvoyFilter
+    namespace: "{{ observability_envoyfilter_namespace }}"
+    name: trace-response-headers
+  when: not observability_trace_response_headers_enabled
+
+# ---------------------------------------------------------------
+# 9. Kuadrant CR — observability patch (merge, additive)
+# ---------------------------------------------------------------
+- name: Patch Kuadrant CR with observability settings
+  kubernetes.core.k8s:
+    state: patched
+    api_version: kuadrant.io/v1beta1
+    kind: Kuadrant
+    namespace: "{{ observability_kuadrant_namespace }}"
+    name: "{{ observability_kuadrant_instance }}"
+    definition:
+      spec:
+        observability:
+          enable: true
+          dataPlane:
+            defaultLevels:
+              - debug: "true"
+            httpHeaderIdentifier: x-request-id
+          tracing:
+            defaultEndpoint: "rpc://{{ observability_collector_name }}-collector.{{ observability_collector_namespace }}.svc.cluster.local:4317"
+            insecure: true
+    merge_type: merge
+
+# ---------------------------------------------------------------
+# 10. UIPlugin — Distributed Tracing (COO console integration)
+# ---------------------------------------------------------------
+- name: Apply the UIPlugin for Distributed Tracing
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'uiplugin-distributed-tracing.yml.j2') | from_yaml }}"
+
+- name: Wait for the UIPlugin deployment to be available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ observability_coo_namespace }}"
+    name: "{{ observability_uiplugin_name }}"
+  register: observability_uiplugin_deploy
+  changed_when: false
+  failed_when: false
+  until:
+    - observability_uiplugin_deploy.resources | length == 1
+    - (observability_uiplugin_deploy.resources[0].status.availableReplicas | default(0)) >= 1
+  retries: 30
+  delay: 10
+
+- name: Gateway tracing wired up
+  ansible.builtin.debug:
+    msg: >-
+      Tracing ativo no gateway {{ observability_envoyfilter_gateway_name }}
+      ({{ observability_tracing_telemetry_namespace }}/{{ observability_tracing_telemetry_name }},
+      provider={{ observability_tracing_telemetry_provider }},
+      sampling={{ observability_tracing_sampling }}%).
+      Spans devem aparecer em Tempo como rootServiceName={{ observability_envoyfilter_service_name }}.

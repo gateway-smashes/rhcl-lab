@@ -1,0 +1,86 @@
+# RHDH app-config — OIDC (Keycloak/RHBK), permissions/RBAC, catalog rules,
+# and in-cluster Kubernetes access for the Kuadrant backend plugin.
+#
+# EDIT before applying:
+#   - auth.providers.oidc.*.metadataUrl → your Keycloak realm well-known
+#   - auth.providers.oidc.*.clientId / clientSecret (env refs below)
+#
+# The reference posture below follows the Kuadrant quickstart (guest provider
+# enabled, auth.environment=development). For a production install switch
+# auth.environment to `production`, remove the guest provider, and tighten
+# rbac-policy.csv (see 04-rbac-policy.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rhdh-app-config
+  namespace: rhcl-developer-hub
+data:
+  app-config.yaml: |
+    app:
+      title: ACME — Internal Developer Hub
+    backend:
+      auth:
+        dangerouslyDisableDefaultAuthPolicy: false
+
+    # Render the OIDC sign-in card. Without this RHDH shows its built-in
+    # `github` provider, which the backend doesn't register →
+    # "No auth provider registered for github".
+    signInPage: oidc
+
+    # --- Authentication: corporate IDP (Keycloak / RHBK) -----------------
+    auth:
+      environment: production
+      # OIDC keeps OAuth flow state in a session cookie — without a
+      # session secret the backend errors "authentication requires
+      # session support". Inject AUTH_SESSION_SECRET via the OIDC secret.
+      session:
+        secret: ${AUTH_SESSION_SECRET}
+      providers:
+        oidc:
+          production:
+            metadataUrl: ${OIDC_ISSUER}/.well-known/openid-configuration
+            clientId: ${OIDC_CLIENT_ID}
+            clientSecret: ${OIDC_CLIENT_SECRET}
+            prompt: auto
+            # Map Keycloak groups → RHDH ownership so rbac-policy.csv can
+            # bind groups (api-consumers/owners/admins) to roles.
+            signIn:
+              resolvers:
+                # PoC/demo: sign in without a matching catalog User entity
+                # (no Keycloak user ingestion). Without this the login
+                # fails "unable to resolve user identity". Pair with
+                # explicit user→role bindings in 04-rbac-policy.yaml.
+                - resolver: preferredUsernameMatchingUserEntityName
+                  dangerouslyAllowSignInWithoutUserInCatalog: true
+
+    # --- Authorization: permission framework + RBAC ----------------------
+    permission:
+      enabled: true
+      rbac:
+        policies-csv-file: /opt/app-root/etc/rbac-policy.csv
+        policyFileReload: true
+
+    # --- Software catalog: allow the Kuadrant kinds ----------------------
+    catalog:
+      rules:
+        - allow: [Component, System, API, APIProduct, Resource, Location]
+
+    # --- Kubernetes: in-cluster, for the Kuadrant backend plugin ---------
+    # NOTE: the Kuadrant backend plugin REQUIRES an explicit
+    # `serviceAccountToken` (authProvider: serviceAccount alone makes it
+    # crash-loop). Mint one and expose it as env K8S_SA_TOKEN:
+    #   TOKEN=$(oc create token default -n rhcl-developer-hub --duration=8760h)
+    #   oc -n rhcl-developer-hub create secret generic rhdh-k8s-token \
+    #     --from-literal=K8S_SA_TOKEN="$TOKEN"
+    # then add `- name: rhdh-k8s-token` to the Backstage CR extraEnvs.secrets.
+    kubernetes:
+      serviceLocatorMethod:
+        type: multiTenant
+      clusterLocatorMethods:
+        - type: config
+          clusters:
+            - name: local-cluster
+              url: https://kubernetes.default.svc
+              authProvider: serviceAccount
+              skipTLSVerify: true
+              serviceAccountToken: ${K8S_SA_TOKEN}

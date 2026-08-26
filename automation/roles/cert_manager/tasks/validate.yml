@@ -1,0 +1,106 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Query the cert-manager namespace
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Namespace
+    name: "{{ cert_manager_namespace }}"
+  register: cert_manager_namespace_info
+  changed_when: false
+
+- name: Assert that the cert-manager namespace exists
+  ansible.builtin.assert:
+    that:
+      - cert_manager_namespace_info.resources | length == 1
+    fail_msg: "Namespace {{ cert_manager_namespace }} does not exist."
+
+- name: Query the cert-manager Subscription
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ cert_manager_namespace }}"
+    name: "{{ cert_manager_subscription_name }}"
+  register: cert_manager_subscription
+  changed_when: false
+
+- name: Assert that the cert-manager Subscription exists
+  ansible.builtin.assert:
+    that:
+      - cert_manager_subscription.resources | length == 1
+      - cert_manager_subscription.resources[0].spec.name == cert_manager_operator_name
+      - cert_manager_subscription.resources[0].status.currentCSV is defined
+    fail_msg: "cert-manager Subscription is missing or not reconciled."
+
+- name: Query the cert-manager CSV
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ cert_manager_namespace }}"
+    name: "{{ cert_manager_subscription.resources[0].status.currentCSV }}"
+  register: cert_manager_csv
+  changed_when: false
+
+- name: Assert that the cert-manager CSV succeeded
+  ansible.builtin.assert:
+    that:
+      - cert_manager_csv.resources | length == 1
+      - cert_manager_csv.resources[0].status.phase == "Succeeded"
+    fail_msg: "cert-manager CSV did not reach Succeeded."
+
+- name: Query cert-manager pods
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ cert_manager_namespace }}"
+  register: cert_manager_pods
+  changed_when: false
+
+- name: Query cert-manager deployments
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ cert_manager_namespace }}"
+  register: cert_manager_deployments
+  changed_when: false
+
+- name: Build cert-manager workload matches
+  ansible.builtin.set_fact:
+    cert_manager_core_pods: >-
+      {{
+        cert_manager_pods.resources
+        | selectattr('metadata.name', 'search', 'cert-manager|cainjector|webhook')
+        | list
+      }}
+    cert_manager_running_core_pods: >-
+      {{
+        cert_manager_pods.resources
+        | selectattr('metadata.name', 'search', 'cert-manager|cainjector|webhook')
+        | selectattr('status.phase', 'equalto', 'Running')
+        | list
+      }}
+    cert_manager_core_deployments: >-
+      {{
+        cert_manager_deployments.resources
+        | selectattr('metadata.name', 'search', 'cert-manager|cainjector|webhook')
+        | list
+      }}
+    cert_manager_available_core_deployments: >-
+      {{
+        cert_manager_deployments.resources
+        | selectattr('metadata.name', 'search', 'cert-manager|cainjector|webhook')
+        | selectattr('status.availableReplicas', 'defined')
+        | list
+      }}
+
+- name: Assert that core cert-manager workloads are present and available
+  ansible.builtin.assert:
+    that:
+      - cert_manager_core_pods | length >= 3
+      - cert_manager_running_core_pods | length >= 3
+      - cert_manager_core_deployments | length >= 3
+      - cert_manager_available_core_deployments | length >= 3
+    fail_msg: "cert-manager workloads are missing or not available in namespace {{ cert_manager_namespace }}."

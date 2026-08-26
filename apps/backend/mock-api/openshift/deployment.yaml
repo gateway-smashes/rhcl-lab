@@ -1,0 +1,89 @@
+# Mock API — replace image tag and namespace as needed.
+# oc apply -n <namespace> -f openshift/deployment.yaml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mock-api-config
+data:
+  PORT: "8080"
+  HTTP_STATUS: "200"
+  CONTENT_TYPE: "text/plain; charset=utf-8"
+  RESPONSE_BODY: "ok"
+  DELAY_MS: "0"
+  CORS_ENABLED: "false"
+  LOG_LEVEL: "info"
+  # RESPONSE_HEADERS: '{"X-Example":"1"}'
+  # ACCESS_CONTROL_ALLOW_ORIGIN: "*"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mock-api
+  template:
+    metadata:
+      labels:
+        app: mock-api
+    spec:
+      containers:
+        - name: mock-api
+          image: quay.io/jsimas/mock-api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: mock-api-config
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "32Mi"
+            limits:
+              memory: "128Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock-api
+spec:
+  selector:
+    app: mock-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+  type: ClusterIP
+# Optional: expose outside the cluster
+# ---
+# apiVersion: route.openshift.io/v1
+# kind: Route
+# metadata:
+#   name: mock-api
+# spec:
+#   to:
+#     kind: Service
+#     name: mock-api
+#   port:
+#     targetPort: http
+#   tls:
+#     termination: edge

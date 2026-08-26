@@ -1,0 +1,35 @@
+---
+- name: Validate supported DNS provider
+  ansible.builtin.assert:
+    that:
+      - rhcl_dns_provider in ["aws", "azure", "gcp"]
+    fail_msg: "rhcl_dns_provider must be one of aws, azure, or gcp."
+
+- name: Validate AWS DNS credentials
+  ansible.builtin.assert:
+    that:
+      - rhcl_dns_aws_access_key_id | length > 0
+      - rhcl_dns_aws_secret_access_key | length > 0
+      - rhcl_dns_aws_region | length > 0
+    fail_msg: >-
+      AWS DNS credentials require rhcl_dns_aws_access_key_id,
+      rhcl_dns_aws_secret_access_key, and rhcl_dns_aws_region.
+  when: rhcl_dns_provider == "aws"
+
+- name: Validate Azure DNS credentials
+  ansible.builtin.assert:
+    that:
+      - (rhcl_dns_azure_json | length > 0) or (rhcl_dns_azure_json_file | length > 0)
+    fail_msg: >-
+      Azure DNS credentials require rhcl_dns_azure_json or rhcl_dns_azure_json_file.
+  when: rhcl_dns_provider == "azure"
+
+- name: Validate GCP DNS credentials
+  ansible.builtin.assert:
+    that:
+      - rhcl_dns_gcp_project_id | length > 0
+      - (rhcl_dns_gcp_google | length > 0) or (rhcl_dns_gcp_google_file | length > 0)
+    fail_msg: >-
+      GCP DNS credentials require rhcl_dns_gcp_project_id and either
+      rhcl_dns_gcp_google or rhcl_dns_gcp_google_file.
+  when: rhcl_dns_provider == "gcp"

@@ -1,0 +1,36 @@
+# PodMonitor — scrape the MCP Gateway's istio-proxy merged-metrics endpoint
+# (port "metrics" = 15020, /stats/prometheus) so istio_requests_total for the
+# MCP gateway actually reaches Prometheus.
+#
+# WHY THIS IS NEEDED: without a scrape the MCP gateway emits the series but
+# nothing collects it, so the gateway never appears in the Grafana "Gateway"
+# dashboard variable — label_values(istio_requests_total, source_workload) —
+# and every MCP throughput panel (Grafana + console plugin) reads "No data".
+# (Symptom: the Gateway filter lists only the apps gateway, never the MCP one.)
+#
+# COMPANION to the apps-gateway PodMonitor in roles/grafana. That one targets
+# openshift-ingress and is collected by the *platform* Prometheus (the ns
+# carries openshift.io/cluster-monitoring=true). The MCP gateway runs in a
+# user namespace, so this one is collected by *user-workload monitoring*
+# (enabled by the `monitoring` role) — platform Prometheus ignores non
+# openshift-* namespaces. thanos-querier federates both, so the Grafana thanos
+# datasource and the console plugin see the MCP gateway metrics either way.
+#
+# WHY A PodMonitor (not a ServiceMonitor): the gateway Service exposes only
+# 80/443/15021 — not the 15020 metrics port — so the scrape must target the
+# pods directly.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ mcp_gateway_gateway_podmonitor_name }}
+  namespace: {{ mcp_gateway_gateway_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+spec:
+  selector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: {{ mcp_gateway_gateway_name }}
+  podMetricsEndpoints:
+    - port: metrics
+      path: /stats/prometheus
+      interval: 30s

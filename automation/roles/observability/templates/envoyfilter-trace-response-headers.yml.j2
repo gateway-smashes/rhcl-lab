@@ -1,0 +1,68 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: trace-response-headers
+  namespace: {{ observability_envoyfilter_namespace }}
+spec:
+  workloadSelector:
+    labels:
+      gateway.networking.k8s.io/gateway-name: {{ apps_connectivity_gateway_name }}
+  configPatches:
+{% for ctx in ['SIDECAR_INBOUND', 'GATEWAY'] %}
+    - applyTo: HTTP_FILTER
+      match:
+        context: {{ ctx }}
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+              subFilter:
+                name: envoy.filters.http.router
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.lua
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+            default_source_code:
+              inline_string: |
+                -- Echo W3C trace context back to the client on every response
+                -- so the caller can correlate its request log line with the
+                -- trace recorded in Tempo. We stash the inbound `traceparent`
+                -- in stream dynamic metadata during the request phase and
+                -- re-emit it on the response phase as three headers:
+                --
+                --   x-trace-id        — full trace id (32 hex chars). Same
+                --                       across every span in the chain.
+                --   x-parent-span-id  — the span id the caller sent (16 hex
+                --                       chars). Matches what the caller has in
+                --                       its own request log.
+                --   x-trace-parent    — the original W3C traceparent string.
+                --
+                -- When the client doesn't send `traceparent`, no headers are
+                -- emitted — Tempo still records the trace via the gateway's
+                -- own span, the client just can't correlate without
+                -- instrumenting.
+                function envoy_on_request(request_handle)
+                  local tp = request_handle:headers():get("traceparent")
+                  if tp then
+                    request_handle:streamInfo():dynamicMetadata():set(
+                      "envoy.lua", "traceparent", tp)
+                  end
+                end
+                function envoy_on_response(response_handle)
+                  local meta = response_handle:streamInfo():dynamicMetadata():get("envoy.lua")
+                  if not meta then return end
+                  local tp = meta["traceparent"]
+                  if not tp then return end
+                  local parts = {}
+                  for p in string.gmatch(tp, "([^-]+)") do
+                    table.insert(parts, p)
+                  end
+                  if #parts >= 3 then
+                    response_handle:headers():add("x-trace-id", parts[2])
+                    response_handle:headers():add("x-parent-span-id", parts[3])
+                  end
+                  response_handle:headers():add("x-trace-parent", tp)
+                end
+{% endfor %}

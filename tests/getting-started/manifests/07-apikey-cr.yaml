@@ -1,0 +1,31 @@
+# Getting started — Passo 6b/6: APIKey CR (request/aprovação no dev portal)
+#
+# ISTO NÃO É a chave que autentica o request. A chave real vive no
+# Secret do arquivo anterior (06-apikey-secret.yaml).
+#
+# O APIKey CR é o objeto de "requisição de acesso" que aparece no dev
+# portal. Ele:
+#   1. Aparece na lista "My API keys" do usuário no portal
+#   2. Aparece no card de subscribers do APIProduct pro owner
+#   3. Vincula o consumer (via requestedBy.userId) ao APIProduct
+#   4. Em produção, tem status={pending, approved, rejected} controlado
+#      pelo owner ou auto-approved (approvalMode do APIProduct)
+#
+# Autenticação em runtime ignora este CR — o Authorino só olha os
+# Secrets que dão match no selector da AuthPolicy. O CR é UI + governança.
+apiVersion: devportal.kuadrant.io/v1alpha1
+kind: APIKey
+metadata:
+  name: banking-lite-onboarding
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-getting-started
+spec:
+  apiProductRef:
+    name: banking-lite
+  secretRef:
+    name: banking-lite-onboarding-key
+  planTier: demo
+  requestedBy:
+    email: onboarding-user@example.com
+    userId: onboarding-user

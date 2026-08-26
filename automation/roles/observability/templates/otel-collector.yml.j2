@@ -1,0 +1,139 @@
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: {{ observability_collector_name }}
+  namespace: {{ observability_collector_namespace }}
+spec:
+  mode: deployment
+  serviceAccount: {{ observability_collector_service_account }}
+  observability:
+    metrics: {}
+  config:
+    extensions:
+      bearertokenauth:
+        filename: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_percentage: 50
+        spike_limit_percentage: 30
+      k8sattributes: {}
+      resourcedetection:
+        detectors: [openshift]
+      batch: {}
+{% if observability_access_logs_enabled %}
+
+      # ─── req035: gateway error-access-log pipeline ────────────────────
+      # Defence in depth — drops anything below 400 that slipped past the
+      # EnvoyFilter's status_code_filter. Config drift on the data plane
+      # side should never cause a full traffic capture at the Collector.
+      filter/errors:
+        error_mode: ignore
+        logs:
+          log_record:
+            - 'attributes["response_code"] == nil or attributes["response_code"] < 400'
+
+      # Drop sensitive headers / fields BEFORE they reach any exporter.
+      # Compliance starts at the first processor, not at the SIEM.
+      attributes/scrub:
+        actions:
+          - { key: authorization,  action: delete }
+          - { key: cookie,         action: delete }
+          - { key: set-cookie,     action: delete }
+          - { key: api-key,        action: delete }
+          - { key: x-api-key,      action: delete }
+
+      # Cluster + gateway identity. Multi-cluster aggregator can shard on
+      # these. signal.kind discriminates this stream from app logs.
+      resource/rhcl-tag:
+        attributes:
+          - { key: cluster.name, value: "{{ observability_cluster_name }}", action: insert }
+          - { key: gateway.name, value: "{{ observability_envoyfilter_gateway_name }}", action: insert }
+          - { key: signal.kind,  value: gateway-error-access-log, action: insert }
+{% endif %}
+
+    exporters:
+      otlp/{{ observability_tempostack_tenant_name }}:
+        endpoint: {{ observability_tempostack_namespace }}-{{ observability_tempostack_name }}-gateway.{{ observability_tempostack_namespace }}.svc.cluster.local:8090
+        tls:
+          insecure: false
+          ca_file: "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
+        auth:
+          authenticator: bearertokenauth
+        headers:
+          X-Scope-OrgID: "{{ observability_tempostack_tenant_name }}"
+{% if observability_access_logs_enabled %}
+
+      # req035 — append-only JSON Lines audit file on emptyDir.
+      # POC-friendly: `oc exec ... -- tail -F /var/log/rhcl-errors.json`.
+      # Production should swap this for otlphttp/loki or otlphttp/splunk
+      # (templated below as commented blocks).
+      file/audit:
+        path: {{ observability_access_logs_path }}
+        rotation:
+          max_megabytes: {{ observability_access_logs_rotation_max_megabytes | int }}
+          max_days: {{ observability_access_logs_rotation_max_days | int }}
+          max_backups: {{ observability_access_logs_rotation_max_backups | int }}
+        format: json
+{% if observability_access_logs_loki_enabled %}
+
+      otlphttp/loki:
+        endpoint: {{ observability_access_logs_loki_endpoint | string | to_json }}
+        tls:
+          ca_file: "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
+{% endif %}
+{% if observability_access_logs_splunk_enabled %}
+
+      otlphttp/splunk:
+        endpoint: {{ observability_access_logs_splunk_endpoint | string | to_json }}
+        headers:
+          Authorization: "Splunk ${env:SPLUNK_HEC_TOKEN}"
+{% endif %}
+{% endif %}
+
+    service:
+      extensions: [bearertokenauth]
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, resourcedetection, batch]
+          exporters: [otlp/{{ observability_tempostack_tenant_name }}]
+{% if observability_access_logs_enabled %}
+        # req035 — gateway error-access-log stream
+        logs:
+          receivers: [otlp]
+          processors:
+            - memory_limiter
+            - filter/errors
+            - attributes/scrub
+            - resource/rhcl-tag
+            - k8sattributes
+            - batch
+          exporters:
+            - file/audit
+{% if observability_access_logs_loki_enabled %}
+            - otlphttp/loki
+{% endif %}
+{% if observability_access_logs_splunk_enabled %}
+            - otlphttp/splunk
+{% endif %}
+
+  # req035 — emptyDir for the file/audit exporter. Single-replica PoC;
+  # for HA / durability swap to a PVC.
+  volumes:
+    - name: rhcl-errors-log
+      emptyDir:
+        sizeLimit: 1Gi
+  volumeMounts:
+    - name: rhcl-errors-log
+      mountPath: /var/log
+{% endif %}

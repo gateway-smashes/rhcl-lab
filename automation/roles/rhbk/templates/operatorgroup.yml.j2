@@ -1,0 +1,9 @@
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: {{ rhbk_operatorgroup_name }}
+  namespace: {{ rhbk_namespace }}
+spec:
+  # RHBK operator supports OwnNamespace/SingleNamespace only.
+  targetNamespaces:
+    - {{ rhbk_namespace }}

@@ -1,0 +1,58 @@
+# Hello World backend for REQ 030 — standalone test app (not banking-api-v1).
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-world
+  namespace: req030-apps
+  labels:
+    app: hello-world
+    app.kubernetes.io/part-of: rhcl-req030-interceptor
+    rhcl-lab/requirement: req030
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hello-world
+  template:
+    metadata:
+      labels:
+        app: hello-world
+    spec:
+      containers:
+        - name: hello-world
+          image: docker.io/testcontainers/helloworld:1.3.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-world
+  namespace: req030-apps
+  labels:
+    app: hello-world
+    app.kubernetes.io/part-of: rhcl-req030-interceptor
+    rhcl-lab/requirement: req030
+spec:
+  selector:
+    app: hello-world
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP

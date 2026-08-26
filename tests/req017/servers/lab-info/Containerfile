@@ -1,0 +1,12 @@
+FROM registry.access.redhat.com/ubi9/python-312:latest
+
+WORKDIR /app
+USER 0
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt \
+ && chmod -R g=u /app
+USER 1001
+
+COPY server.py /app/server.py
+EXPOSE 8080
+CMD ["python", "/app/server.py"]

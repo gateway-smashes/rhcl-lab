@@ -1,0 +1,8 @@
+# Namespace for RHCL lab MCP servers (req 017).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rhcl-mcp-lab
+  labels:
+    rhcl-lab/requirement: req017-mcp-catalog
+    opendatahub.io/dashboard: "true"

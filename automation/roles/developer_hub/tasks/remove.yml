@@ -1,0 +1,98 @@
+---
+- name: Skip developer_hub remove when disabled
+  ansible.builtin.meta: end_play
+  when: not (developer_hub_enabled | bool)
+
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Unset internalDeveloperHubUrl on the console ConfigMap
+  kubernetes.core.k8s_json_patch:
+    api_version: v1
+    kind: ConfigMap
+    name: "{{ developer_hub_console_config_name }}"
+    namespace: "{{ developer_hub_console_config_namespace }}"
+    patch:
+      - op: remove
+        path: /data/internalDeveloperHubUrl
+  failed_when: false
+
+# Same reason as install: the served API versions depend on the operator
+# build, so deleting through a hardcoded one fails on clusters that never had
+# it. Resolve from the CRD; fall back to v1alpha1, which every build serves.
+- name: Read the Backstage CRD to resolve its API version
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: backstages.rhdh.redhat.com
+  register: developer_hub_backstage_crd
+  changed_when: false
+  failed_when: false
+
+- name: Delete the Backstage instance
+  kubernetes.core.k8s:
+    state: absent
+    api_version: >-
+      rhdh.redhat.com/{{
+        ((((developer_hub_backstage_crd.resources | default([])
+            | map(attribute='spec.versions') | flatten
+            | selectattr('served') | selectattr('storage')
+            | map(attribute='name') | list) + ['']) | first) | default('v1alpha1', true))
+      }}
+    kind: Backstage
+    name: "{{ developer_hub_instance_name }}"
+    namespace: "{{ developer_hub_namespace }}"
+  failed_when: false
+
+- name: Delete RHDH ConfigMaps + OIDC secret
+  kubernetes.core.k8s:
+    state: absent
+    api_version: v1
+    kind: "{{ item.kind }}"
+    name: "{{ item.name }}"
+    namespace: "{{ developer_hub_namespace }}"
+  loop:
+    - { kind: ConfigMap, name: dynamic-plugins-rhdh }
+    - { kind: ConfigMap, name: rhdh-app-config }
+    - { kind: ConfigMap, name: rbac-policies }
+    - { kind: Secret, name: rhdh-oidc }
+    - { kind: Secret, name: rhdh-k8s-token }
+
+- name: Delete cluster RBAC
+  kubernetes.core.k8s:
+    state: absent
+    api_version: rbac.authorization.k8s.io/v1
+    kind: "{{ item.kind }}"
+    name: rhdh-kuadrant
+  loop:
+    - { kind: ClusterRoleBinding }
+    - { kind: ClusterRole }
+
+- name: Remove the RHDH namespace
+  kubernetes.core.k8s:
+    state: absent
+    api_version: v1
+    kind: Namespace
+    name: "{{ developer_hub_namespace }}"
+
+# The operator + its namespace are left in place by default (other
+# Backstage instances may use it). Set DEVELOPER_HUB_REMOVE_OPERATOR=true
+# to also uninstall the operator.
+- name: Remove RHDH operator (opt-in)
+  when: lookup('ansible.builtin.env', 'DEVELOPER_HUB_REMOVE_OPERATOR') | default('false', true) | bool
+  block:
+    - name: Delete operator Subscription + OperatorGroup
+      kubernetes.core.k8s:
+        state: absent
+        api_version: operators.coreos.com/v1alpha1
+        kind: Subscription
+        name: rhdh
+        namespace: "{{ developer_hub_operator_namespace }}"
+    - name: Delete operator namespace
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: Namespace
+        name: "{{ developer_hub_operator_namespace }}"

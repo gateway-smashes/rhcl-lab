@@ -1,0 +1,11 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: {{ observability_tempo_subscription_name }}
+  namespace: {{ observability_tempo_namespace }}
+spec:
+  channel: {{ observability_tempo_channel }}
+  installPlanApproval: Automatic
+  name: {{ observability_tempo_operator_name }}
+  source: {{ observability_tempo_source }}
+  sourceNamespace: {{ observability_tempo_source_namespace }}

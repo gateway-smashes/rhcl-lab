@@ -1,0 +1,25 @@
+# Istio Telemetry CR — enable distributed tracing on the gateway proxy.
+#
+# The EnvoyFilter `otel-tracing` (see envoyfilter-otel-tracing.yml.j2) wires
+# the HTTP connection manager to the OTel Collector at the raw Envoy layer,
+# but Istio's runtime ALSO needs an explicit Telemetry CR selecting the
+# `opentelemetry` provider before the gateway pod actually emits spans.
+# Without this CR the gateway stays silent and only the upstream services
+# (limitador, wasm-shim) show up in Tempo.
+#
+# The provider name "opentelemetry" is the default OTel provider name
+# configured by the openshift-gateway-controller Istio CR — keep it in sync
+# with `spec.values.meshConfig.extensionProviders[].name` if that ever
+# changes.
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata:
+  name: {{ observability_tracing_telemetry_name }}
+  namespace: {{ observability_tracing_telemetry_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+spec:
+  tracing:
+    - providers:
+        - name: {{ observability_tracing_telemetry_provider }}
+      randomSamplingPercentage: {{ observability_tracing_sampling }}

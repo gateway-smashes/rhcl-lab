@@ -1,0 +1,10 @@
+---
+- name: Validate cert-manager Operator
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  roles:
+    - role: cert_manager
+      vars:
+        component_action: validate

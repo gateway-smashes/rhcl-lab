@@ -1,0 +1,118 @@
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: {{ apps_ipfilter_auth_policy_name }}
+  namespace: {{ apps_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-ipfilter-poc
+    rhcl.poc/item: "72"
+    rhcl.poc/mode: {{ apps_ipfilter_acl_mode }}
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: {{ apps_ipfilter_route_name }}
+  rules:
+    authentication:
+      cors-preflight:
+        when:
+          - predicate: "request.method == 'OPTIONS'"
+        anonymous: {}
+      public-ipfilter:
+        anonymous: {}
+    authorization:
+{% if apps_ipfilter_acl_mode == 'allow-list' %}
+      ip-allow-list:
+        when:
+          - predicate: "request.method != 'OPTIONS'"
+        opa:
+          rego: |
+            package ip_acl
+
+            import future.keywords.if
+            import future.keywords.in
+
+            allowed_cidrs := {{ apps_ipfilter_allowed_cidrs | to_json }}
+
+            default allow := false
+
+            client_ip := ip if {
+              xff := input.context.request.http.headers["x-forwarded-for"]
+              xff != ""
+              first := split(xff, ",")[0]
+              ip := trim_space(first)
+              ip != ""
+            } else := ip if {
+              ip := input.context.source.address.socketAddress.address
+            }
+
+            allow if {
+              some cidr in allowed_cidrs
+              net.cidr_contains(cidr, client_ip)
+            }
+{% else %}
+      ip-deny-list:
+        when:
+          - predicate: "request.method != 'OPTIONS'"
+        opa:
+          rego: |
+            package ip_acl
+
+            import future.keywords.if
+            import future.keywords.in
+
+            denied_cidrs := {{ apps_ipfilter_denied_cidrs | to_json }}
+
+            default allow := false
+
+            client_ip := ip if {
+              xff := input.context.request.http.headers["x-forwarded-for"]
+              xff != ""
+              first := split(xff, ",")[0]
+              ip := trim_space(first)
+              ip != ""
+            } else := ip if {
+              ip := input.context.source.address.socketAddress.address
+            }
+
+            denied_match if {
+              some cidr in denied_cidrs
+              net.cidr_contains(cidr, client_ip)
+            }
+
+            allow if not denied_match
+{% endif %}
+  response:
+    success:
+      headers:
+        Access-Control-Allow-Origin:
+          value: {{ apps_ipfilter_cors_allow_origin | string | to_json }}
+        Access-Control-Allow-Methods:
+          value: "GET,POST,OPTIONS"
+        Access-Control-Allow-Headers:
+          value: "accept,content-type,x-requested-with,x-forwarded-for"
+        Access-Control-Expose-Headers:
+          value: "x-rhcl-policy,x-rhcl-policy-mode"
+        Access-Control-Max-Age:
+          value: "86400"
+        x-rhcl-policy:
+          value: {{ apps_ipfilter_auth_policy_name | string | to_json }}
+        x-rhcl-policy-mode:
+          value: {{ apps_ipfilter_acl_mode | string | to_json }}
+    unauthorized:
+      code: 403
+      message:
+{% if apps_ipfilter_acl_mode == 'allow-list' %}
+        value: "Forbidden: source IP not in ipfilter allow-list"
+{% else %}
+        value: "Forbidden: source IP matches ipfilter deny-list"
+{% endif %}
+      headers:
+        Access-Control-Allow-Origin:
+          value: {{ apps_ipfilter_cors_allow_origin | string | to_json }}
+        Access-Control-Allow-Headers:
+          value: "accept,content-type,x-requested-with,x-forwarded-for"
+        x-rhcl-policy:
+          value: {{ apps_ipfilter_auth_policy_name | string | to_json }}
+        x-rhcl-policy-mode:
+          value: {{ apps_ipfilter_acl_mode | string | to_json }}

@@ -1,0 +1,10 @@
+---
+- import_playbook: apps-remove.yml
+- import_playbook: observability-remove.yml
+- import_playbook: monitoring-remove.yml
+- import_playbook: letsencrypt-remove.yml
+- import_playbook: dns-remove.yml
+- import_playbook: coredns-remove.yml
+- import_playbook: rhcl-remove.yml
+- import_playbook: cert_manager-remove.yml
+- import_playbook: gateway_api-remove.yml

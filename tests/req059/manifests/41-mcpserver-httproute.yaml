@@ -1,0 +1,31 @@
+# Backend MCP discovery route: attaches to listener `mcps`, targets banking-api /mcp.
+#
+#   export RHCL_ZONE_ROOT_DOMAIN=sandbox2314.opentlc.com
+#   envsubst < tests/req059/manifests/41-mcpserver-httproute.yaml | oc apply -f -
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: banking-api-mcp-server
+  namespace: mcp-gateway
+  labels:
+    mcp-server: "true"
+    rhcl-lab/requirement: req059-mcp-operator
+spec:
+  parentRefs:
+    - name: rhcl-mcp-gateway
+      namespace: mcp-gateway
+      sectionName: mcps
+  hostnames:
+    - banking-api-mcp-server.${RHCL_ZONE_ROOT_DOMAIN}
+    - rhcl-mcp-gateway-istio.mcp-gateway.svc.cluster.local
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /mcp
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: banking-api-v1
+          namespace: rhcl-apps
+          port: 8080

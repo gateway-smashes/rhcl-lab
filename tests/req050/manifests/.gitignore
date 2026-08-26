@@ -1,0 +1,5 @@
+# Generated PKI (private keys, CRL, OCSP responses) — never commit
+certs/
+# openssl serial-file leftovers
+*.srl
+.srl

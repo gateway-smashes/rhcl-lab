@@ -1,0 +1,64 @@
+{# req066 — EnvoyFilter that emits a structured JSON access log line per
+   request to the gateway pod stdout. Captures 100 % of traffic (no filter)
+   with audit-relevant fields: consumer identity, auth denial reason,
+   TLS details, W3C traceparent, and business flow trace ID.
+
+   Complements the OTLP error-only log from req035 (step 8b). Both
+   EnvoyFilters coexist — they add independent entries to the
+   HttpConnectionManager.access_log[] list.
+
+   Toggle with OBSERVABILITY_AUDIT_LOG_ENABLED=false.
+#}
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: access-log-json
+  namespace: {{ observability_envoyfilter_namespace }}
+spec:
+  workloadSelector:
+    labels:
+      gateway.networking.k8s.io/gateway-name: {{ observability_envoyfilter_gateway_name }}
+  configPatches:
+    - applyTo: NETWORK_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+      patch:
+        operation: MERGE
+        value:
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+            access_log:
+              - name: envoy.access_loggers.stdout
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                  log_format:
+                    json_format:
+                      timestamp: "%START_TIME%"
+                      method: "%REQ(:METHOD)%"
+                      path: "%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%"
+                      protocol: "%PROTOCOL%"
+                      response_code: "%RESPONSE_CODE%"
+                      response_flags: "%RESPONSE_FLAGS%"
+                      bytes_received: "%BYTES_RECEIVED%"
+                      bytes_sent: "%BYTES_SENT%"
+                      duration_ms: "%DURATION%"
+                      upstream_service_time_ms: "%RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)%"
+                      client_ip: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%"
+                      x_forwarded_for: "%REQ(X-FORWARDED-FOR)%"
+                      user_agent: "%REQ(USER-AGENT)%"
+                      request_id: "%REQ(X-REQUEST-ID)%"
+                      authority: "%REQ(:AUTHORITY)%"
+                      upstream_host: "%UPSTREAM_HOST%"
+                      upstream_cluster: "%UPSTREAM_CLUSTER%"
+                      upstream_transport_failure_reason: "%UPSTREAM_TRANSPORT_FAILURE_REASON%"
+                      route_name: "%ROUTE_NAME%"
+                      traceparent: "%REQ(TRACEPARENT)%"
+                      downstream_tls_version: "%DOWNSTREAM_TLS_VERSION%"
+                      downstream_tls_cipher: "%DOWNSTREAM_TLS_CIPHER%"
+                      consumer_id: "%REQ(X-CONSUMER-ID)%"
+                      auth_reason: "%RESP(X-EXT-AUTH-REASON)%"
+                      flow_trace_id: "%REQ(X-FLOW-TRACE-ID)%"

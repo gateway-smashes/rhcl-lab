@@ -1,0 +1,10 @@
+---
+- name: Install RHCL
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  roles:
+    - role: rhcl
+      vars:
+        rhcl_action: install

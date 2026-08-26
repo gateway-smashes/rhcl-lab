@@ -1,0 +1,106 @@
+# Patches AuthPolicy/banking-api-connectivity-apikey so anonymous access covers
+# all OpenAI mock paths under /api/v1 (models + chat/completions).
+#
+# No extra HTTPRoute is required: banking-api-connectivity already matches
+# PathPrefix /api/v1.
+#Auto
+#   oc apply -f tests/req033/manifests/20-authpolicy-connectivity-openai-access.yaml
+#
+# Identical copy for req 60: tests/req060/manifests/10-authpolicy-connectivity-openai-access.yaml
+#
+# Re-applies the full policy (same shape as apps install). Adjust secret
+# selector labels if your lab uses a different API key secret name.
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: banking-api-connectivity-apikey
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-req033-openai
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: banking-api-connectivity
+  rules:
+    authentication:
+      cors-preflight:
+        when:
+          - predicate: "request.method == 'OPTIONS'"
+        anonymous: {}
+      public-echo:
+        when:
+          - predicate: "request.path.startsWith('/api/echo') || request.path.startsWith('/api/lb-test')"
+        anonymous: {}
+      public-ws:
+        when:
+          - predicate: "request.path.startsWith('/ws')"
+        anonymous: {}
+      ai-mock:
+        when:
+          - predicate: "request.path.startsWith('/api/v1/models') || request.path.startsWith('/api/v1/chat/completions') || request.path.startsWith('/api/v1/completions') || request.path.startsWith('/api/v1/embeddings') || request.path.startsWith('/api/v1/responses')"
+        anonymous: {}
+      api-key-header:
+        when:
+          - predicate: "request.method != 'OPTIONS'"
+          - predicate: "!request.path.startsWith('/api/echo') && !request.path.startsWith('/api/lb-test') && !request.path.startsWith('/ws') && !request.path.startsWith('/api/v1/models') && !request.path.startsWith('/api/v1/chat/completions') && !request.path.startsWith('/api/v1/completions') && !request.path.startsWith('/api/v1/embeddings') && !request.path.startsWith('/api/v1/responses')"
+        apiKey:
+          allNamespaces: true
+          selector:
+            matchLabels:
+              authorino.kuadrant.io/managed-by: authorino
+              app: banking-api-apikey
+        credentials:
+          customHeader:
+            name: api-key
+      api-key-query:
+        when:
+          - predicate: "request.method != 'OPTIONS'"
+          - predicate: "!request.path.startsWith('/api/echo') && !request.path.startsWith('/api/lb-test') && !request.path.startsWith('/ws') && !request.path.startsWith('/api/v1/models') && !request.path.startsWith('/api/v1/chat/completions') && !request.path.startsWith('/api/v1/completions') && !request.path.startsWith('/api/v1/embeddings') && !request.path.startsWith('/api/v1/responses')"
+        apiKey:
+          allNamespaces: true
+          selector:
+            matchLabels:
+              authorino.kuadrant.io/managed-by: authorino
+              app: banking-api-apikey
+        credentials:
+          queryString:
+            name: api-key
+    authorization:
+      cel-transfer-idempotency:
+        when:
+          - predicate: "request.method == 'POST' && request.path.startsWith('/api/v1/transfers')"
+          - predicate: "request.headers['x-cel-strict'] == 'true'"
+        opa:
+          rego: |
+            allow {
+              key := input.context.request.http.headers["x-idempotency-key"]
+              key != ""
+            }
+      cel-bot-blocking:
+        when:
+          - predicate: "request.headers['user-agent'].contains('bot')"
+          - predicate: "request.method != 'OPTIONS'"
+          - predicate: "!request.path.startsWith('/api/echo') && !request.path.startsWith('/api/lb-test')"
+        opa:
+          rego: |
+            allow = false
+    response:
+      success:
+        filters:
+          identity:
+            json:
+              properties:
+                userid:
+                  selector: auth.identity.metadata.annotations.secret\.kuadrant\.io/user-id
+                plan-id:
+                  selector: auth.identity.metadata.annotations.secret\.kuadrant\.io/plan-id
+      unauthorized:
+        code: 403
+        message:
+          value: "Forbidden: CEL expression policy denied this request (item 19)"
+        headers:
+          "x-rhcl-policy":
+            value: "cel-custom-expressions"
+          "x-rhcl-policy-item":
+            value: "19"

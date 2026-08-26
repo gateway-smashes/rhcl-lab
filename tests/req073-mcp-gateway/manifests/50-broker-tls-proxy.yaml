@@ -1,0 +1,105 @@
+# OPTIONAL — enables the console plugin's in-console MCP "try it" playground.
+#
+# The MCP gateway serves plain HTTP, but the OpenShift console dynamic-plugin
+# proxy requires the target Service to serve HTTPS. This puts a tiny nginx TLS
+# terminator ("mcp-broker-tls") in front of it, using an OpenShift serving
+# certificate, and forwards — WITH the mcp listener Host header — to the Istio
+# gateway (so the MCP Router forwards tools/call), streaming (SSE) unbuffered.
+#
+# IMPORTANT: set the Host header below to your gateway's mcp listener hostname
+# (mcp.<apps-domain>), e.g. via envsubst before applying.
+#
+# The ConsolePlugin CR's `mcp-broker` proxy alias points at this Service:8443
+# (custom_console role adds it; or patch it live — see the README).
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mcp-broker-tls-nginx
+  namespace: gateway-system
+data:
+  nginx.conf: |
+    worker_processes 1;
+    error_log /dev/stderr warn;
+    pid /tmp/nginx.pid;
+    events { worker_connections 1024; }
+    http {
+      client_body_temp_path /tmp/cb; proxy_temp_path /tmp/px;
+      fastcgi_temp_path /tmp/fc; uwsgi_temp_path /tmp/uw; scgi_temp_path /tmp/sc;
+      server {
+        listen 8443 ssl;
+        ssl_certificate     /etc/tls/tls.crt;
+        ssl_certificate_key /etc/tls/tls.key;
+        location / {
+          # Route through the MCP GATEWAY (Istio gateway + MCP Router ext_proc),
+          # NOT the broker Service directly. The router forwards tools/call to
+          # the backend server; the broker alone only aggregates tools/list and
+          # answers tools/call with "broker doesn't forward tool calls".
+          proxy_pass http://mcp-gateway-istio.gateway-system.svc.cluster.local:8080;
+          # Must match the gateway's "mcp" listener hostname (== gateway.publicHost).
+          proxy_set_header Host mcp.apps.CHANGE-ME.example.com;
+          proxy_http_version 1.1;
+          proxy_set_header Connection "";
+          proxy_buffering off;
+          proxy_read_timeout 3600s;
+          chunked_transfer_encoding on;
+        }
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-broker-tls
+  namespace: gateway-system
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: mcp-broker-tls-cert
+  labels:
+    app: mcp-broker-tls
+spec:
+  selector:
+    app: mcp-broker-tls
+  ports:
+    - name: https
+      port: 8443
+      targetPort: 8443
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-broker-tls
+  namespace: gateway-system
+  labels:
+    app: mcp-broker-tls
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mcp-broker-tls
+  template:
+    metadata:
+      labels:
+        app: mcp-broker-tls
+    spec:
+      containers:
+        - name: nginx
+          image: nginxinc/nginx-unprivileged:stable-alpine
+          ports:
+            - containerPort: 8443
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+            - name: tls
+              mountPath: /etc/tls
+              readOnly: true
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { cpu: 100m, memory: 128Mi }
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: mcp-broker-tls-nginx
+        - name: tls
+          secret:
+            secretName: mcp-broker-tls-cert

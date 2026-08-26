@@ -1,0 +1,35 @@
+# Extra CatalogSource pinned at the v4.18 redhat-operators index — the last
+# index that ships Kuadrant / RHCL 1.3.x. Used to install rhcl-operator v1.3.x
+# even on OCP 4.20/4.21 clusters whose default `redhat-operators` catalog has
+# already moved to v1.4.x.
+#
+# Why we need this: Kuadrant 1.4 generates Envoy WASM configs that include
+# `allow_on_headers_stop_iteration`. The Istio version shipped with the
+# OpenShift gateway controller on 4.20 doesn't understand that field and
+# rejects the listener, crashing every gateway pod. v1.3.4 doesn't emit that
+# field and works out-of-the-box.
+#
+# `grpcPodConfig.extractContent` is REQUIRED here: the v4.18 index image is
+# ~1.9 GB and its registry-server can't bring the gRPC port up inside the
+# default 1s startup probe on a cold container — the pod ends up in a
+# CrashLoop. Setting extractContent makes OLM unpack the catalog metadata
+# once and serve it from a slim "opm" sidecar, sidestepping the race.
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: {{ rhcl_pin_catalog_name }}
+  namespace: {{ rhcl_pin_catalog_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+spec:
+  sourceType: grpc
+  image: {{ rhcl_pin_catalog_image }}
+  displayName: RHCL pinned (v4.18 index)
+  publisher: Red Hat
+  grpcPodConfig:
+    extractContent:
+      cacheDir: /tmp/cache
+      catalogDir: /configs
+  updateStrategy:
+    registryPoll:
+      interval: 30m

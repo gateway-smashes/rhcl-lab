@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RHCL Lab — Item 4: Resiliência do Control Plane</title>
+<style>
+  :root {
+    --rh-red: #EE0000;
+    --rh-red-dark: #A30000;
+    --rh-black: #151515;
+    --rh-gray-100: #F5F5F5;
+    --rh-gray-200: #E0E0E0;
+    --rh-gray-300: #C7C7C7;
+    --rh-gray-700: #4D4D4D;
+    --rh-success: #3E8635;
+    --rh-warn: #F0AB00;
+    --rh-danger: #C9190B;
+    --rh-info: #2B9AF3;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: "Red Hat Display", "Red Hat Text", -apple-system, BlinkMacSystemFont,
+            "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: var(--sans); color: var(--rh-black);
+         background: var(--rh-gray-100); line-height: 1.45; }
+  header.rh-header {
+    background: var(--rh-black); color: white;
+    padding: 16px 32px; display: flex; align-items: center; gap: 16px;
+  }
+  header.rh-header .logo {
+    width: 32px; height: 32px; background: var(--rh-red); border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 18px;
+  }
+  header.rh-header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header.rh-header .subtitle { color: var(--rh-gray-300); font-size: 13px; }
+  main { padding: 24px 32px; max-width: 1200px; margin: 0 auto; }
+  .card {
+    background: white; border: 1px solid var(--rh-gray-200);
+    border-radius: 6px; padding: 20px; margin-bottom: 20px;
+  }
+  .card h2 {
+    margin: 0 0 12px; font-size: 16px; font-weight: 600;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card h3 { margin: 18px 0 8px; font-size: 14px; font-weight: 600; }
+  .card h2 .badge {
+    background: var(--rh-red); color: white; font-size: 11px;
+    padding: 2px 8px; border-radius: 999px; font-weight: 600;
+  }
+  .card h2 .badge.muted { background: var(--rh-gray-700); }
+  .card p { margin: 0 0 12px; color: var(--rh-gray-700); font-size: 14px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--rh-gray-700); font-weight: 500; }
+  input[type=text], input[type=number], select {
+    font-family: var(--sans); font-size: 14px;
+    border: 1px solid var(--rh-gray-300); border-radius: 4px;
+    padding: 6px 10px; min-width: 180px;
+  }
+  input[type=text]:focus, input[type=number]:focus, select:focus {
+    outline: 2px solid var(--rh-info); border-color: var(--rh-info);
+  }
+  button {
+    font-family: var(--sans); font-size: 14px; font-weight: 600;
+    background: var(--rh-red); color: white; border: none; border-radius: 4px;
+    padding: 8px 18px; cursor: pointer; transition: background 0.15s;
+  }
+  button:hover { background: var(--rh-red-dark); }
+  button:disabled { background: var(--rh-gray-300); cursor: not-allowed; }
+  button.secondary { background: white; color: var(--rh-black);
+                     border: 1px solid var(--rh-gray-300); }
+  button.secondary:hover { background: var(--rh-gray-100); }
+  button.success { background: var(--rh-success); }
+  button.success:hover { background: #2c6427; }
+  button.warn { background: var(--rh-warn); color: var(--rh-black); }
+  button.warn:hover { background: #c98e00; }
+  pre {
+    background: var(--rh-black); color: #E0E0E0; padding: 12px 16px;
+    border-radius: 4px; font-family: var(--mono); font-size: 12px;
+    overflow-x: auto; margin: 8px 0; white-space: pre;
+  }
+  code { font-family: var(--mono); font-size: 13px;
+         background: var(--rh-gray-200); padding: 2px 6px; border-radius: 3px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px;
+           border-bottom: 1px solid var(--rh-gray-200); vertical-align: top; }
+  th { font-weight: 600; background: var(--rh-gray-100); }
+  td.mono { font-family: var(--mono); }
+  .timeline {
+    display: flex; gap: 2px; flex-wrap: wrap; margin-top: 12px;
+    background: var(--rh-gray-100); padding: 8px; border-radius: 4px;
+    min-height: 40px;
+  }
+  .tick { width: 14px; height: 24px; border-radius: 2px;
+          font-size: 9px; color: white; display: flex;
+          align-items: center; justify-content: center; }
+  .tick.ok      { background: var(--rh-success); }
+  .tick.err     { background: var(--rh-danger); }
+  .summary { display: grid;
+             grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .stat { background: var(--rh-gray-100); padding: 12px; border-radius: 4px; }
+  .stat .label { font-size: 11px; color: var(--rh-gray-700);
+                 text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat .value { font-size: 22px; font-weight: 700;
+                 color: var(--rh-black); margin-top: 4px; }
+  .stat .value.danger { color: var(--rh-danger); }
+  .stat .value.success { color: var(--rh-success); }
+  .callout {
+    padding: 12px 14px; background: var(--rh-gray-100);
+    border-left: 3px solid var(--rh-warn); border-radius: 0 4px 4px 0;
+    margin: 12px 0; font-size: 13px;
+  }
+  .callout strong { color: var(--rh-warn); }
+  .callout.info { border-left-color: var(--rh-info); }
+  .callout.info strong { color: var(--rh-info); }
+  .callout.danger { border-left-color: var(--rh-danger); }
+  .callout.danger strong { color: var(--rh-danger); }
+  .callout.success { border-left-color: var(--rh-success); }
+  .callout.success strong { color: var(--rh-success); }
+  /* Architecture diagram — CSS-only, no images */
+  .arch {
+    display: grid; grid-template-columns: 1fr auto 1fr; gap: 16px;
+    margin: 16px 0; align-items: center;
+  }
+  .arch .plane {
+    background: var(--rh-gray-100); border-radius: 6px; padding: 12px;
+    border: 2px solid var(--rh-gray-300);
+  }
+  .arch .plane h4 {
+    margin: 0 0 8px; font-size: 13px; font-weight: 700;
+    color: var(--rh-black); text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .arch .plane ul { margin: 0; padding-left: 16px; font-size: 12px; }
+  .arch .plane li { margin-bottom: 2px; }
+  .arch .plane.cp { border-color: var(--rh-warn); }
+  .arch .plane.dp { border-color: var(--rh-success); }
+  .arch .arrow {
+    text-align: center; font-size: 12px; color: var(--rh-gray-700);
+    font-weight: 600;
+  }
+  .arch .arrow .glyph { font-size: 28px; line-height: 1; }
+  /* Live cp status pills */
+  .cp-status {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 8px; margin-top: 12px;
+  }
+  .cp-pod {
+    background: var(--rh-gray-100); border-radius: 4px;
+    padding: 8px 10px; font-size: 12px;
+    border-left: 3px solid var(--rh-gray-300);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .cp-pod.up    { border-left-color: var(--rh-success); }
+  .cp-pod.down  { border-left-color: var(--rh-danger);
+                  background: #fbecec; }
+  .cp-pod .name { font-family: var(--mono); font-size: 12px; }
+  .cp-pod .ready { font-weight: 600; font-size: 11px; }
+  .cp-pod.up    .ready { color: var(--rh-success); }
+  .cp-pod.down  .ready { color: var(--rh-danger); }
+</style>
+</head>
+<body>
+
+<header class="rh-header">
+  <div class="logo">RH</div>
+  <div>
+    <h1>RHCL Lab — Resiliência do Control Plane (Item 4)</h1>
+    <div class="subtitle">RHCL PoC · Red Hat Connectivity Link</div>
+  </div>
+</header>
+
+<main>
+
+  <!-- =================================================================== -->
+  <!-- Visão geral                                                          -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2><span class="badge">Item 4</span> Resiliência do gateway à indisponibilidade do control plane</h2>
+    <p>
+      <strong>Requisito:</strong> "Os gateways devem conseguir suportar uma
+      indisponibilidade do <em>manager</em> sem interrupção de nenhuma
+      funcionalidade."
+    </p>
+    <p>
+      O Connectivity Link separa <strong>control plane</strong> (operadores que
+      reconciliam recursos) de <strong>data plane</strong> (Envoy/Authorino/Limitador
+      que atendem o tráfego). A demo mostra que derrubar todo o CP do
+      <code>kuadrant-system</code> <strong>não interrompe o tráfego</strong>.
+    </p>
+
+    <div class="arch">
+      <div class="plane cp">
+        <h4>Control Plane</h4>
+        <ul>
+          <li><code>kuadrant-operator</code></li>
+          <li><code>authorino-operator</code></li>
+          <li><code>limitador-operator</code></li>
+          <li><code>dns-operator</code></li>
+          <li>(<code>istiod</code>, <code>cert-manager</code>, <code>kube-apiserver</code>)</li>
+        </ul>
+        <p style="margin: 8px 0 0; font-size: 11px; color: var(--rh-gray-700);">
+          só necessário pra aplicar <strong>mudanças</strong>
+        </p>
+      </div>
+      <div class="arrow">
+        <div class="glyph">→</div>
+        <div>reconcilia</div>
+      </div>
+      <div class="plane dp">
+        <h4>Data Plane</h4>
+        <ul>
+          <li>Envoy do Gateway (xDS local)</li>
+          <li><code>authorino</code> (AuthConfig em memória)</li>
+          <li><code>limitador-limitador</code> (counters em memória/Redis)</li>
+        </ul>
+        <p style="margin: 8px 0 0; font-size: 11px; color: var(--rh-gray-700);">
+          processa o tráfego real
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- Configuração                                                         -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2>Configuração</h2>
+    <div class="row">
+      <div class="field">
+        <label for="host">Hostname do gateway (banking-api)</label>
+        <input type="text" id="host"
+               placeholder="banking-api-connectivity.apps.cluster.example.com" />
+      </div>
+      <div class="field">
+        <label for="path">Path</label>
+        <input type="text" id="path" value="/api/echo" />
+      </div>
+      <div class="field">
+        <label for="count">Requisições por probe</label>
+        <input type="number" id="count" value="20" min="1" max="200" />
+      </div>
+    </div>
+    <p style="margin-top: 12px;">
+      Use <code>/api/echo</code> (público, sem auth) para o probe — não depende
+      do Authorino e isola o teste para o caminho Envoy → backend.
+    </p>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- Etapa 1 — Estado inicial                                             -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2><span class="badge">1</span> Verificar estado inicial</h2>
+    <p>Confirmar que os 4 operadores do CP estão UP antes do teste.</p>
+    <pre>oc get deploy -n kuadrant-system</pre>
+    <p>Resultado esperado — todos com <code>READY 1/1</code>:</p>
+    <pre>NAME                                    READY   UP-TO-DATE   AVAILABLE
+authorino                               1/1     1            1
+authorino-operator                      1/1     1            1
+dns-operator-controller-manager         1/1     1            1
+kuadrant-console-plugin                 1/1     1            1
+kuadrant-operator-controller-manager    1/1     1            1
+limitador-limitador                     1/1     1            1
+limitador-operator-controller-manager   1/1     1            1</pre>
+
+    <h3>Probe de tráfego — antes da queda</h3>
+    <p>Dispara <em>N</em> requisições contra <code>/api/echo</code> para
+    estabelecer o baseline.</p>
+    <button id="run-baseline">Probar tráfego (baseline)</button>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- Etapa 2 — Derrubar CP                                                -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2><span class="badge">2</span> Derrubar control plane</h2>
+    <p>Escalar os 4 operadores do <code>kuadrant-system</code> para zero
+    (substitui o "manager indisponível" do requisito).</p>
+    <pre>oc scale deploy/kuadrant-operator-controller-manager   -n kuadrant-system --replicas=0
+oc scale deploy/authorino-operator                     -n kuadrant-system --replicas=0
+oc scale deploy/limitador-operator-controller-manager  -n kuadrant-system --replicas=0
+oc scale deploy/dns-operator-controller-manager        -n kuadrant-system --replicas=0</pre>
+    <p>Conferir que os 4 estão <code>READY 0/0</code>:</p>
+    <pre>oc get deploy -n kuadrant-system</pre>
+    <div class="callout">
+      <strong>Atenção</strong> — os deployments <code>authorino</code>,
+      <code>limitador-limitador</code> e <code>kuadrant-console-plugin</code>
+      são <em>data plane</em>/UI e <strong>não</strong> são escalados a zero
+      neste teste. Eles seguem servindo durante o experimento.
+    </div>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- Etapa 3 — Validar tráfego                                            -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2><span class="badge">3</span> Validar tráfego com o CP fora</h2>
+    <p>Mesmo burst contra <code>/api/echo</code>. Esperado: <strong>todos 200</strong> —
+    o tráfego segue normal porque a configuração já está materializada no
+    Envoy.</p>
+    <button id="run-during" class="warn">Probar tráfego (CP down)</button>
+    <p style="margin-top: 16px; font-size: 13px;">Via CLI:</p>
+    <pre>HOST=$(oc get httproute banking-api-connectivity -n rhcl-apps \
+  -o jsonpath='{.spec.hostnames[0]}')
+
+{ for i in $(seq 1 60); do
+    curl -sk -o /dev/null -w "%{http_code}\n" "https://$HOST/api/echo" &
+  done; wait; } | sort | uniq -c
+# Esperado: 60x 200 (zero falha)</pre>
+
+    <p style="margin-top: 16px;">Testar uma transferência (POST):</p>
+    <pre>curl -sk -X POST "https://$HOST/api/v1/transfers" \
+  -H 'content-type: application/json' \
+  -d '{"fromBank":"Example Bank","toBank":"EXTERNAL","amount":500}' \
+  | jq .status
+# Esperado: "SENT_EXTERNAL"</pre>
+
+    <p style="margin-top: 16px;">Testar via frontend (Red Bank):</p>
+    <ol style="font-size: 14px; color: var(--rh-gray-700);">
+      <li>Acesse o Red Bank no browser (a URL não muda).</li>
+      <li>Refresh — os dados de conta devem carregar normalmente.</li>
+      <li>Faça uma Transfer — deve processar com sucesso.</li>
+      <li>O card de WebSocket deve atualizar
+        <code>PENDING → PROCESSING → COMPLETED</code>.</li>
+    </ol>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- Etapa 4 — Restaurar                                                  -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2><span class="badge">4</span> Restaurar o control plane</h2>
+    <p>Escalar os 4 operadores de volta para 1.</p>
+    <pre>oc scale deploy/kuadrant-operator-controller-manager   -n kuadrant-system --replicas=1
+oc scale deploy/authorino-operator                     -n kuadrant-system --replicas=1
+oc scale deploy/limitador-operator-controller-manager  -n kuadrant-system --replicas=1
+oc scale deploy/dns-operator-controller-manager        -n kuadrant-system --replicas=1</pre>
+    <p>Conferir que voltaram saudáveis:</p>
+    <pre>oc get deploy -n kuadrant-system</pre>
+    <button id="run-restore" class="success">Probar tráfego (após restore)</button>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- Resultado agregado                                                   -->
+  <!-- =================================================================== -->
+  <div class="card" id="results" style="display:none;">
+    <h2>Resultado do último probe</h2>
+    <div class="summary" id="summary"></div>
+    <div class="timeline" id="timeline"></div>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- Aprofundamento — control plane não é uma coisa                       -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2>Aprofundamento — "control plane" não é uma coisa, são várias</h2>
+    <p>
+      O teste acima cobre os 4 operadores do Kuadrant. A pergunta de
+      resiliência completa exige separar <strong>todos</strong> os
+      componentes que podem ser classificados como CP — cada um falha de
+      forma diferente.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Componente</th>
+          <th>Camada</th>
+          <th>Função</th>
+          <th>Único responsável por…</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><code>istiod</code></td><td>Istio CP</td><td>Programa Envoy via xDS</td><td>Aplicar mudanças em HTTPRoute/Gateway/AuthPolicy</td></tr>
+        <tr><td><code>kuadrant-operator</code></td><td>Kuadrant CP</td><td>Reconcilia Kuadrant CR</td><td>Mudanças na config do produto</td></tr>
+        <tr><td><code>authorino-operator</code></td><td>Kuadrant CP</td><td>Traduz AuthPolicy → AuthConfig</td><td>Propagar novas políticas de auth</td></tr>
+        <tr><td><code>limitador-operator</code></td><td>Kuadrant CP</td><td>Reconcilia Limitador CR</td><td>Trocar storage backend (Redis ↔ memória)</td></tr>
+        <tr><td><code>dns-operator</code></td><td>Kuadrant CP</td><td>Reconcilia DNSRecord</td><td>Atualizar registros DNS / failover</td></tr>
+        <tr><td><code>Authorino</code> (serviço)</td><td><strong>Data plane</strong></td><td>Servidor gRPC ext_authz</td><td>Decisão allow/deny por request</td></tr>
+        <tr><td><code>Limitador</code> (serviço)</td><td><strong>Data plane</strong></td><td>Servidor gRPC ratelimit</td><td>Contadores e decisão 429</td></tr>
+        <tr><td>Envoy do Gateway</td><td><strong>Data plane</strong></td><td>Proxy reverso</td><td>Atender o tráfego em si</td></tr>
+        <tr><td><code>kube-apiserver</code></td><td>OCP CP</td><td>API do K8s</td><td>Tudo que envolve criar/alterar recursos</td></tr>
+        <tr><td><code>cert-manager</code></td><td>OCP CP</td><td>Emite/renova TLS</td><td>Renovação automática antes do <code>notAfter</code></td></tr>
+      </tbody>
+    </table>
+    <div class="callout info">
+      <strong>Headline</strong> — o Connectivity Link herda o padrão
+      Envoy/Istio: o data plane sobrevive a quedas do control plane. Os
+      Envoys do gateway, o Authorino e o Limitador continuam atendendo
+      tráfego com a <strong>última configuração conhecida</strong> mesmo se
+      todo o CP cair. Isso é arquitetural, não acidental.
+    </div>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- O que continua funcionando                                           -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2>O que continua funcionando durante uma queda de CP</h2>
+    <table>
+      <thead>
+        <tr><th>Cenário</th><th>Tráfego segue normal?</th><th>Por quê</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>istiod</code> cai</td><td><strong style="color:var(--rh-success)">Sim</strong></td><td>Envoys têm cache xDS local</td></tr>
+        <tr><td><code>kuadrant-operator</code> cai</td><td><strong style="color:var(--rh-success)">Sim</strong></td><td>Authorino/Limitador já provisionados continuam</td></tr>
+        <tr><td><code>authorino-operator</code> cai</td><td><strong style="color:var(--rh-success)">Sim</strong></td><td><code>AuthConfig</code>s já traduzidos vivem em memória no Authorino</td></tr>
+        <tr><td><code>limitador-operator</code> cai</td><td><strong style="color:var(--rh-success)">Sim</strong></td><td>Pod do Limitador segue com a config carregada</td></tr>
+        <tr><td><code>dns-operator</code> cai</td><td><strong style="color:var(--rh-success)">Sim</strong></td><td>DNS já publicado segue resolvendo</td></tr>
+        <tr><td><code>cert-manager</code> cai</td><td><strong style="color:var(--rh-success)">Sim (curto prazo)</strong></td><td>Certificados atuais válidos até <code>notAfter</code></td></tr>
+        <tr><td><code>kube-apiserver</code> cai</td><td><strong style="color:var(--rh-success)">Sim (sem mudanças)</strong></td><td>Pods rodando seguem rodando; só não dá pra criar/alterar nada</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- O que degrada                                                        -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2>O que degrada — categorias</h2>
+
+    <h3>A — Degradação imediata (em segundos)</h3>
+    <ul style="font-size:14px;color:var(--rh-gray-700);">
+      <li><strong>Mudanças param de propagar</strong>: novas
+        <code>AuthPolicy</code>/<code>RateLimitPolicy</code>/<code>HTTPRoute</code>
+        ficam pendentes no etcd até o CP voltar.</li>
+      <li><strong>Scaling automático para</strong>: HPA depende do
+        <code>kube-apiserver</code>. Se a carga subir, não há scale-up.</li>
+      <li><strong>Pod restarts são fatais</strong>: se um pod do data plane
+        morrer durante a queda do <code>kube-apiserver</code>, o scheduler
+        não agenda substituto.</li>
+    </ul>
+
+    <h3>B — Degradação por tempo (relógio)</h3>
+    <ul style="font-size:14px;color:var(--rh-gray-700);">
+      <li><strong>Cert-manager parado</strong>: renovação não acontece →
+        eventualmente Routes com TLS expiram (cert-manager renova com
+        ~30 dias de folga, então a tolerância é alta).</li>
+      <li><strong>JWKS cache do Authorino</strong>: se o Keycloak/OAuth
+        também estiver down, eventualmente o TTL expira e JWT começa a
+        falhar.</li>
+      <li><strong>Metadata externa do Authorino</strong>: chamadas a
+        serviços externos para enrichment têm cache TTL.</li>
+    </ul>
+
+    <h3>C — Degradação por contrato (rate limit / Redis)</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Modo do Limitador</th>
+          <th>Redis cai</th>
+          <th>Comportamento</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>in-memory</code></td>
+          <td>N/A</td>
+          <td>Sem Redis — contadores morrem com o pod do Limitador.</td>
+        </tr>
+        <tr>
+          <td><code>redis-cached</code></td>
+          <td>Down</td>
+          <td>Cache local por site → contadores divergem (over-admite).</td>
+        </tr>
+        <tr>
+          <td><code>redis</code> puro</td>
+          <td>Down</td>
+          <td>Cada check vai pro Redis → <code>failure_mode</code> decide
+            entre fail-open e fail-closed.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      A postura precisa ser <strong>decidida explicitamente por API</strong>:
+      "fail-open" é o padrão pragmático (não derruba a app por causa de Redis
+      indisponível, perde temporariamente a proteção); "fail-closed" preserva
+      o limite mesmo que custe o SLA.
+    </p>
+
+    <h3>D — Degradação especial: Authorino <code>failureMode</code></h3>
+    <p>O Envoy chama Authorino via ext_authz. Se o serviço Authorino estiver
+    <strong>completamente down</strong>:</p>
+    <ul style="font-size:14px;color:var(--rh-gray-700);">
+      <li>Default Kuadrant: <code>failureModeAllow: false</code> → request é
+        <strong>negado</strong> (fail-closed).</li>
+      <li>APIs auth-protegidas ficam indisponíveis durante a queda.</li>
+      <li>O oposto (fail-open) deixaria APIs autenticadas servirem
+        <strong>sem auth</strong> — geralmente inaceitável em banco.</li>
+    </ul>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- Recomendações                                                        -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2>Recomendações de produção</h2>
+
+    <h3>Reduzir a probabilidade</h3>
+    <ul style="font-size:14px;color:var(--rh-gray-700);">
+      <li><strong>HA dos operadores</strong>: default
+        <code>replicas: 1</code>. Em prod, subir
+        <code>kuadrant-operator</code>, <code>authorino-operator</code>,
+        <code>limitador-operator</code> pra <code>replicas: 2</code> com
+        leader election (suportam).</li>
+      <li><strong>HA do <code>istiod</code></strong>: já vem com
+        <code>replicas: 2</code> no OSSM 3 produção.</li>
+      <li><strong>HA do data plane</strong>: Limitador e Authorino aceitam
+        scale horizontal. Recomendar <code>replicas: 3+</code> em prod.</li>
+      <li><strong>HA do Redis</strong>: trocar o <code>emptyDir</code> da
+        PoC por Redis Enterprise / ElastiCache / Sentinel.</li>
+      <li><strong>HA do Keycloak/OAuth</strong>: cluster Keycloak com 2+
+        instâncias atrás de LB; PostgreSQL replicado.</li>
+    </ul>
+
+    <h3>Reduzir o impacto</h3>
+    <ul style="font-size:14px;color:var(--rh-gray-700);">
+      <li><strong>Monitoring agressivo nos operadores</strong>
+        — <code>kuadrant_operator_reconcile_errors_total</code> é um proxy
+        direto de "CP saudável".</li>
+      <li><strong>Políticas via GitOps</strong> (ArgoCD) — se o etcd voltar
+        zerado, restauração é minutos, não horas.</li>
+      <li><strong>Pre-staged config</strong>: data plane com
+        <code>imagePullPolicy: IfNotPresent</code> e imagens
+        local-cacheadas.</li>
+      <li><strong>Decisão de failure mode por API</strong>: endpoints
+        críticos (Pix, transferência) fail-closed; endpoints de leitura
+        (saldo) fail-open por SLA.</li>
+    </ul>
+
+    <h3>Reduzir o tempo de recuperação</h3>
+    <ul style="font-size:14px;color:var(--rh-gray-700);">
+      <li><strong>Runbook por componente</strong> — cada operador tem
+        comandos de health/reset documentados.</li>
+      <li><strong>CR backups</strong> automatizados (Velero) — RTO ditado
+        pelo tempo do <code>oc apply</code> do snapshot.</li>
+    </ul>
+  </div>
+
+</main>
+
+<script>
+  // -------------------------------------------------------------------
+  // Host pre-fill via /env.json apiHost (catalog-injected via
+  // APPS_CONNECTIVITY_ROUTE_HOSTNAME). Falls back to window.location.host.
+  // -------------------------------------------------------------------
+  (async function() {
+    let apiHost = '';
+    try {
+      const r = await fetch('/env.json', { cache: 'no-store' });
+      if (r.ok) apiHost = ((await r.json()) || {}).apiHost || '';
+    } catch (_) { /* env.json missing — fall back */ }
+    const fallback = window.location.host;
+    const useHost = apiHost
+      || (fallback && !fallback.startsWith('localhost') && !fallback.startsWith('127.') ? fallback : '');
+    const el = document.getElementById('host');
+    if (el && !el.value) el.value = useHost;
+  })();
+
+  function url(path) {
+    const host = document.getElementById('host').value.trim();
+    if (!host) throw new Error('Hostname obrigatório');
+    return 'https://' + host + path;
+  }
+
+  // Generic burst — N requests with low concurrency (this page favours
+  // *observation* of resilience over throughput; small concurrency lets the
+  // operator watch the timeline fill up).
+  async function burst(target, count, results) {
+    const concurrency = 5;
+    let done = 0;
+    async function worker() {
+      while (done < count) {
+        const i = done++;
+        if (i >= count) return;
+        const t0 = performance.now();
+        try {
+          const r = await fetch(target);
+          results.push({ code: r.status, ms: performance.now() - t0, t: Date.now() });
+        } catch (e) {
+          results.push({ code: 0, ms: performance.now() - t0, t: Date.now() });
+        }
+      }
+    }
+    await Promise.all(Array.from({length: concurrency}, () => worker()));
+  }
+
+  function render(results, headerLabel) {
+    const card = document.getElementById('results');
+    card.style.display = '';
+    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    results.sort((a, b) => a.t - b.t);
+
+    const total = results.length;
+    const ok = results.filter(r => r.code === 200).length;
+    const err = total - ok;
+    const avgMs = total ? Math.round(results.reduce((a, r) => a + r.ms, 0) / total) : 0;
+    document.getElementById('summary').innerHTML = `
+      <div class="stat"><div class="label">${headerLabel}</div><div class="value">${total} req</div></div>
+      <div class="stat"><div class="label">200 OK</div><div class="value success">${ok}</div></div>
+      <div class="stat"><div class="label">Falhas</div><div class="value ${err>0?'danger':''}">${err}</div></div>
+      <div class="stat"><div class="label">Latência média</div><div class="value">${avgMs}ms</div></div>
+    `;
+    document.getElementById('timeline').innerHTML = results.map(r => {
+      const cls = r.code === 200 ? 'ok' : 'err';
+      const label = r.code === 200 ? '✓' : (r.code || '!');
+      return `<div class="tick ${cls}" title="${r.code} (${Math.round(r.ms)}ms)">${label}</div>`;
+    }).join('');
+  }
+
+  // Three buttons, same shape — different label for the result card so the
+  // operator can tell which probe filled the latest result block.
+  function bindProbe(id, label) {
+    document.getElementById(id).addEventListener('click', async (ev) => {
+      const btn = ev.target;
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Running…';
+      try {
+        const target = url(document.getElementById('path').value);
+        const count = +document.getElementById('count').value;
+        const results = [];
+        await burst(target, count, results);
+        render(results, label);
+      } catch (e) {
+        alert(e.message);
+      }
+      btn.disabled = false; btn.textContent = orig;
+    });
+  }
+  bindProbe('run-baseline', 'Baseline (CP up)');
+  bindProbe('run-during',   'CP down');
+  bindProbe('run-restore',  'Pós-restore');
+</script>
+
+</body>
+</html>

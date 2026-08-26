@@ -1,0 +1,66 @@
+apiVersion: infrastructure.opendatahub.io/v1
+kind: HardwareProfile
+metadata:
+  name: {{ ocp_ai_gpu_hardware_profile_name }}
+  namespace: {{ ocp_ai_applications_namespace }}
+  annotations:
+    opendatahub.io/display-name: {{ ocp_ai_gpu_hardware_profile_display_name }}
+    opendatahub.io/description: {{ ocp_ai_gpu_hardware_profile_description }}
+    opendatahub.io/disabled: "false"
+    opendatahub.io/managed: "false"
+    # Valid enum values in RHOAI 3.4: workbench, model-serving (see HardwareProfileFeatureVisibility).
+    opendatahub.io/dashboard-feature-visibility: '["workbench","model-serving"]'
+    opendatahub.io/recommended-accelerators: '["nvidia.com/gpu"]'
+spec:
+  identifiers:
+    - identifier: cpu
+      displayName: CPU
+      resourceType: CPU
+      minCount: {{ ocp_ai_gpu_hardware_profile_cpu_min }}
+      defaultCount: {{ ocp_ai_gpu_hardware_profile_cpu_default }}
+      maxCount: {{ ocp_ai_gpu_hardware_profile_cpu_max }}
+    - identifier: memory
+      displayName: Memory
+      resourceType: Memory
+      minCount: {{ ocp_ai_gpu_hardware_profile_memory_min }}
+      defaultCount: {{ ocp_ai_gpu_hardware_profile_memory_default }}
+      maxCount: {{ ocp_ai_gpu_hardware_profile_memory_max }}
+    - identifier: nvidia.com/gpu
+      displayName: NVIDIA GPU
+      resourceType: Accelerator
+      minCount: {{ ocp_ai_gpu_hardware_profile_gpu_min }}
+      defaultCount: {{ ocp_ai_gpu_hardware_profile_gpu_default }}
+      maxCount: {{ ocp_ai_gpu_hardware_profile_gpu_max }}
+{% if ocp_ai_gpu_hardware_profile_scheduling_type == 'Queue' %}
+  scheduling:
+    type: Queue
+    kueue:
+      localQueueName: {{ ocp_ai_gpu_hardware_profile_kueue_local_queue }}
+{% if ocp_ai_gpu_hardware_profile_kueue_priority_class | length > 0 %}
+      priorityClass: {{ ocp_ai_gpu_hardware_profile_kueue_priority_class }}
+{% endif %}
+{% elif ocp_ai_gpu_hardware_profile_scheduling_type == 'Node' %}
+  scheduling:
+    type: Node
+    node:
+{% if ocp_ai_gpu_hardware_profile_node_selector | length > 0 %}
+      nodeSelector:
+{% for key, value in ocp_ai_gpu_hardware_profile_node_selector.items() %}
+        {{ key }}: "{{ value }}"
+{% endfor %}
+{% endif %}
+{% if ocp_ai_gpu_hardware_profile_tolerations | length > 0 %}
+      tolerations:
+{% for tol in ocp_ai_gpu_hardware_profile_tolerations %}
+        - key: {{ tol.key }}
+          operator: {{ tol.operator | default('Equal') }}
+          effect: {{ tol.effect | default('NoSchedule') }}
+{% if tol.value is defined %}
+          value: "{{ tol.value }}"
+{% endif %}
+{% if tol.tolerationSeconds is defined %}
+          tolerationSeconds: {{ tol.tolerationSeconds }}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endif %}

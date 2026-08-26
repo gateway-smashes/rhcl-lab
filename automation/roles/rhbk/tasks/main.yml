@@ -1,0 +1,15 @@
+---
+- name: Validate rhbk role action
+  ansible.builtin.assert:
+    that:
+      - (component_action | default(rhbk_action | default('install'))) in ["install", "remove", "validate", "reapply_roles"]
+    fail_msg: "Requested rhbk action must be install, remove, validate, or reapply_roles."
+
+- name: Skip RHBK when disabled
+  ansible.builtin.debug:
+    msg: "RHBK disabled (rhbk_enabled=false) — skipping Keycloak install/validate."
+  when: not (rhbk_enabled | bool)
+
+- name: Run rhbk action
+  ansible.builtin.include_tasks: "{{ component_action | default(rhbk_action | default('install')) }}.yml"
+  when: rhbk_enabled | bool

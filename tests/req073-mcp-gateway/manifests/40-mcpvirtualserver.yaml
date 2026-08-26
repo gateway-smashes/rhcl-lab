@@ -1,0 +1,15 @@
+# Optional — a "virtual" MCP server that exposes only a curated subset of the
+# federated tools. Useful to give one agent context just the tools it needs.
+# Tool names are the ALREADY-PREFIXED names (prefix from the MCPServerRegistration
+# above). Adjust the list to whatever `tools/list` actually reports for your
+# server. `tools` is required and must have at least one entry.
+apiVersion: mcp.kuadrant.io/v1alpha1
+kind: MCPVirtualServer
+metadata:
+  name: everything-basics
+  namespace: mcp-test
+spec:
+  description: "A minimal virtual server — just echo and add."
+  tools:
+    - everything_echo
+    - everything_add

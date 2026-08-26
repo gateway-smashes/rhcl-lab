@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ apps_ledger_name }}
+  namespace: {{ apps_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-banking-poc
+    rhcl.poc/item: "38"
+  annotations:
+    image.openshift.io/triggers: |-
+      [{"from":{"kind":"ImageStreamTag","name":"{{ apps_ledger_image_name }}:latest","namespace":"{{ apps_namespace }}"},"fieldPath":"spec.template.spec.containers[?(@.name==\"{{ apps_ledger_name }}\")].image"}]
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: {{ apps_ledger_name }}
+  template:
+    metadata:
+      labels:
+        app: {{ apps_ledger_name }}
+{% if apps_otel_instrumentation_enabled %}
+      # Mesmo mecanismo do banking-api: o OpenTelemetry Operator injeta o agente
+      # Java, que CONTINUA o trace propagado pelo banking-api (header W3C
+      # `traceparent`) e cria o span server do ledger-api — sem código de
+      # instrumentação. É a propagação ponta a ponta via configuração RHCL/OTel.
+      annotations:
+        instrumentation.opentelemetry.io/inject-java: "true"
+        instrumentation.opentelemetry.io/container-names: {{ apps_ledger_name }}
+{% endif %}
+    spec:
+      containers:
+        - name: {{ apps_ledger_name }}
+          image: image-registry.openshift-image-registry.svc:5000/{{ apps_namespace }}/{{ apps_ledger_image_name }}:latest
+          imagePullPolicy: Always
+          env:
+            - name: APP_INSTANCE_NAME
+              value: {{ apps_ledger_name }}
+{% if apps_otel_instrumentation_enabled %}
+            # service.name distinto no Tempo (separa ledger-api de banking-api).
+            - name: OTEL_SERVICE_NAME
+              value: {{ apps_ledger_name }}
+{% endif %}
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20

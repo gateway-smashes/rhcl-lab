@@ -1,0 +1,9 @@
+---
+- name: Validate apps role action
+  ansible.builtin.assert:
+    that:
+      - (component_action | default(rhcl_action)) in ["install", "remove", "validate", "build"]
+    fail_msg: "Requested apps action must be install, remove, validate, or build."
+
+- name: Run apps action
+  ansible.builtin.include_tasks: "{{ component_action | default(rhcl_action) }}.yml"

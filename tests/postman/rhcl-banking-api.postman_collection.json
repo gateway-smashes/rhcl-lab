@@ -1,0 +1,420 @@
+{
+  "info": {
+    "name": "RHCL Banking API (Gateway)",
+    "description": "Endpoints da banking-api expostos pelo Kuadrant Gateway. Autenticação via API key no header `api-key`. Configure as variáveis de ambiente `gateway_host` e `api_key` antes de executar.",
+    "_postman_id": "rhcl-banking-api-collection",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "gateway_host",
+      "value": "banking-api-connectivity.apps.cluster-qrqbr.qrqbr.sandbox1142.opentlc.com",
+      "description": "Hostname do gateway (sem scheme). Substitua pelo domínio do seu cluster."
+    },
+    {
+      "key": "api_key",
+      "value": "change-me",
+      "description": "Valor da API key configurada no Secret do Authorino (APPS_CONNECTIVITY_APIKEY_VALUE)."
+    }
+  ],
+  "item": [
+    {
+      "name": "Banking — Contas",
+      "item": [
+        {
+          "name": "GET /api/v1/accounts/summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "api-key", "value": "{{api_key}}" },
+              { "key": "x-flow-trace-id", "value": "postman-{{$randomUUID}}" },
+              { "key": "x-client-app", "value": "postman" }
+            ],
+            "url": {
+              "raw": "https://{{gateway_host}}/api/v1/accounts/summary",
+              "protocol": "https",
+              "host": ["{{gateway_host}}"],
+              "path": ["api", "v1", "accounts", "summary"]
+            },
+            "description": "Resumo das contas — backend v1. Retorna saldo, investimentos e features disponíveis."
+          }
+        },
+        {
+          "name": "GET /api/v2/accounts/summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "api-key", "value": "{{api_key}}" },
+              { "key": "x-flow-trace-id", "value": "postman-{{$randomUUID}}" },
+              { "key": "x-client-app", "value": "postman" }
+            ],
+            "url": {
+              "raw": "https://{{gateway_host}}/api/v2/accounts/summary",
+              "protocol": "https",
+              "host": ["{{gateway_host}}"],
+              "path": ["api", "v2", "accounts", "summary"]
+            },
+            "description": "Resumo das contas — backend v2. Inclui `scheduledTransfers: true` nas features."
+          }
+        },
+        {
+          "name": "POST /api/v1/accounts/reset",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "api-key", "value": "{{api_key}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-flow-trace-id", "value": "postman-{{$randomUUID}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bankName\": \"Example Bank\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "https://{{gateway_host}}/api/v1/accounts/reset",
+              "protocol": "https",
+              "host": ["{{gateway_host}}"],
+              "path": ["api", "v1", "accounts", "reset"]
+            },
+            "description": "Reseta o saldo de uma conta bancária específica no backend v1. Requer `bankName` no body."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Banking — Transferências",
+      "item": [
+        {
+          "name": "POST /api/v1/transfers",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "api-key", "value": "{{api_key}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-flow-trace-id", "value": "postman-{{$randomUUID}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"Example Bank\",\n  \"to\": \"Beta Bank\",\n  \"amount\": 150.00\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "https://{{gateway_host}}/api/v1/transfers",
+              "protocol": "https",
+              "host": ["{{gateway_host}}"],
+              "path": ["api", "v1", "transfers"]
+            },
+            "description": "Realiza uma transferência — backend v1. Retorna status `RECEIVED`."
+          }
+        },
+        {
+          "name": "POST /api/v2/transfers",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "api-key", "value": "{{api_key}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-flow-trace-id", "value": "postman-{{$randomUUID}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"Example Bank\",\n  \"to\": \"Beta Bank\",\n  \"amount\": 150.00\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "https://{{gateway_host}}/api/v2/transfers",
+              "protocol": "https",
+              "host": ["{{gateway_host}}"],
+              "path": ["api", "v2", "transfers"]
+            },
+            "description": "Realiza uma transferência — backend v2. Retorna status `AUTHORIZED`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Echo",
+      "item": [
+        {
+          "name": "GET /api/echo",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "api-key", "value": "{{api_key}}" },
+              { "key": "x-flow-trace-id", "value": "postman-{{$randomUUID}}" },
+              { "key": "x-custom-header", "value": "hello-from-postman" }
+            ],
+            "url": {
+              "raw": "https://{{gateway_host}}/api/echo",
+              "protocol": "https",
+              "host": ["{{gateway_host}}"],
+              "path": ["api", "echo"]
+            },
+            "description": "Retorna todos os headers, query params e cookies recebidos. Útil para inspecionar o que o gateway encaminha."
+          }
+        },
+        {
+          "name": "POST /api/echo",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "api-key", "value": "{{api_key}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-flow-trace-id", "value": "postman-{{$randomUUID}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hello\": \"world\",\n  \"test\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "https://{{gateway_host}}/api/echo",
+              "protocol": "https",
+              "host": ["{{gateway_host}}"],
+              "path": ["api", "echo"]
+            },
+            "description": "Ecoa o body e headers recebidos. Inclui `x-echo-instance` e `x-echo-method` nos response headers."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Whoami",
+      "item": [
+        {
+          "name": "GET /api/whoami",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "api-key", "value": "{{api_key}}" },
+              { "key": "x-flow-trace-id", "value": "postman-{{$randomUUID}}" }
+            ],
+            "url": {
+              "raw": "https://{{gateway_host}}/api/whoami",
+              "protocol": "https",
+              "host": ["{{gateway_host}}"],
+              "path": ["api", "whoami"]
+            },
+            "description": "Retorna identidade do caller inferida pelo backend (headers propagados pelo gateway/Authorino)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "TLS Info",
+      "item": [
+        {
+          "name": "GET /api/tls/info",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "api-key", "value": "{{api_key}}" }],
+            "url": {
+              "raw": "https://{{gateway_host}}/api/tls/info",
+              "protocol": "https",
+              "host": ["{{gateway_host}}"],
+              "path": ["api", "tls", "info"]
+            },
+            "description": "Informações sobre o certificado TLS e protocolo negociado na conexão com o backend."
+          }
+        }
+      ]
+    },
+    {
+      "name": "AI Completions",
+      "item": [
+        {
+          "name": "GET /api/v1/models",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "https://{{gateway_host}}/api/v1/models",
+              "protocol": "https",
+              "host": ["{{gateway_host}}"],
+              "path": ["api", "v1", "models"]
+            },
+            "description": "OpenAI-compatible model list (mock banking-mock-gpt)."
+          }
+        },
+        {
+          "name": "POST /api/v1/chat/completions (JSON)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-consumer-id", "value": "postman" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"banking-mock-gpt\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Qual é o saldo total das minhas contas?\" }\n  ],\n  \"stream\": false\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "https://{{gateway_host}}/api/v1/chat/completions",
+              "protocol": "https",
+              "host": ["{{gateway_host}}"],
+              "path": ["api", "v1", "chat", "completions"]
+            },
+            "description": "Mock OpenAI chat completion (JSON). Via banking-api-connectivity HTTPRoute."
+          }
+        },
+        {
+          "name": "POST /api/v1/chat/completions (SSE)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept", "value": "text/event-stream" },
+              { "key": "x-consumer-id", "value": "postman" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"banking-mock-gpt\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Resuma minha situação financeira.\" }\n  ],\n  \"stream\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "https://{{gateway_host}}/api/v1/chat/completions",
+              "protocol": "https",
+              "host": ["{{gateway_host}}"],
+              "path": ["api", "v1", "chat", "completions"]
+            },
+            "description": "Mock OpenAI chat completion (SSE streaming)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Test Endpoints",
+      "item": [
+        {
+          "name": "GET /api/test/mode",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "api-key", "value": "{{api_key}}" }],
+            "url": {
+              "raw": "https://{{gateway_host}}/api/test/mode",
+              "protocol": "https",
+              "host": ["{{gateway_host}}"],
+              "path": ["api", "test", "mode"]
+            },
+            "description": "Retorna o modo de falha atual do backend (normal, chaos) e o fail rate configurado."
+          }
+        },
+        {
+          "name": "POST /api/test/mode",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "api-key", "value": "{{api_key}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"chaos\",\n  \"failRate\": 0.5\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "https://{{gateway_host}}/api/test/mode",
+              "protocol": "https",
+              "host": ["{{gateway_host}}"],
+              "path": ["api", "test", "mode"]
+            },
+            "description": "Define o modo de falha do backend. `mode`: `normal` | `chaos`. `failRate`: 0.0–1.0."
+          }
+        },
+        {
+          "name": "GET /api/test/flaky",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "api-key", "value": "{{api_key}}" }],
+            "url": {
+              "raw": "https://{{gateway_host}}/api/test/flaky?failRate=0.5",
+              "protocol": "https",
+              "host": ["{{gateway_host}}"],
+              "path": ["api", "test", "flaky"],
+              "query": [
+                {
+                  "key": "failRate",
+                  "value": "0.5",
+                  "description": "Probabilidade de falha (0.0–1.0)"
+                }
+              ]
+            },
+            "description": "Endpoint com falha aleatória. Retorna 200 ou 500 com base no `failRate`."
+          }
+        },
+        {
+          "name": "GET /api/test/echo-error",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "api-key", "value": "{{api_key}}" }],
+            "url": {
+              "raw": "https://{{gateway_host}}/api/test/echo-error?status=503&delay=500",
+              "protocol": "https",
+              "host": ["{{gateway_host}}"],
+              "path": ["api", "test", "echo-error"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "503",
+                  "description": "HTTP status a retornar"
+                },
+                {
+                  "key": "delay",
+                  "value": "500",
+                  "description": "Delay em ms antes de responder"
+                },
+                {
+                  "key": "size",
+                  "value": null,
+                  "description": "Tamanho do payload de resposta em bytes",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Retorna o status HTTP especificado após o delay. Útil para testar circuit breakers e timeouts."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth — Validação",
+      "item": [
+        {
+          "name": "GET sem API key (401 esperado)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "x-flow-trace-id", "value": "postman-{{$randomUUID}}" }
+            ],
+            "url": {
+              "raw": "https://{{gateway_host}}/api/v1/accounts/summary",
+              "protocol": "https",
+              "host": ["{{gateway_host}}"],
+              "path": ["api", "v1", "accounts", "summary"]
+            },
+            "description": "Valida que o gateway retorna 401 quando a API key está ausente."
+          }
+        },
+        {
+          "name": "GET com API key inválida (401 esperado)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "api-key", "value": "chave-errada" },
+              { "key": "x-flow-trace-id", "value": "postman-{{$randomUUID}}" }
+            ],
+            "url": {
+              "raw": "https://{{gateway_host}}/api/v1/accounts/summary",
+              "protocol": "https",
+              "host": ["{{gateway_host}}"],
+              "path": ["api", "v1", "accounts", "summary"]
+            },
+            "description": "Valida que o Authorino rejeita API keys inválidas com 401."
+          }
+        }
+      ]
+    }
+  ]
+}

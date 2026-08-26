@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ apps_backend_tls_route_service_ca_configmap_name }}
+  namespace: {{ apps_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-backend-tls-poc
+    rhcl.poc/item: "47"
+data:
+  ca.crt: |
+{{ apps_backend_tls_route_service_ca_pem | indent(4, true) }}

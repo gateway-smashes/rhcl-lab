@@ -1,0 +1,24 @@
+apiVersion: devportal.kuadrant.io/v1alpha1
+kind: APIProduct
+metadata:
+  name: {{ apps_connectivity_apiproduct_name }}
+  namespace: {{ apps_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-banking-poc
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: {{ apps_connectivity_route_name }}
+  displayName: {{ apps_connectivity_apiproduct_display_name | string | to_json }}
+  description: {{ apps_connectivity_apiproduct_description | string | to_json }}
+  version: {{ apps_connectivity_apiproduct_version | string | to_json }}
+  approvalMode: {{ apps_connectivity_apiproduct_approval_mode }}
+  publishStatus: {{ apps_connectivity_apiproduct_publish_status }}
+  tags:
+{% for tag in apps_connectivity_apiproduct_tags %}
+    - {{ tag | string | to_json }}
+{% endfor %}
+  contact:
+    team: {{ apps_connectivity_apiproduct_contact_team | string | to_json }}
+    email: {{ apps_connectivity_apiproduct_contact_email | string | to_json }}

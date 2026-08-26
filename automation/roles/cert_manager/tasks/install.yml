@@ -1,0 +1,175 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+# OLM install gated by cert_manager_install_operator. Skip in environments
+# where cert-manager is managed centrally; downstream Issuers / Certificates
+# still get applied either way.
+- name: Ensure the cert-manager namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ cert_manager_namespace }}"
+    state: present
+  when: cert_manager_install_operator | bool
+
+- name: Query existing OperatorGroups in the cert-manager namespace
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    namespace: "{{ cert_manager_namespace }}"
+  register: cert_manager_existing_ogs
+  changed_when: false
+  when: cert_manager_install_operator | bool
+
+- name: Remove pre-existing OperatorGroups with a different name
+  kubernetes.core.k8s:
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    namespace: "{{ cert_manager_namespace }}"
+    name: "{{ item.metadata.name }}"
+    state: absent
+  loop: "{{ cert_manager_existing_ogs.resources | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  when:
+    - cert_manager_install_operator | bool
+    - item.metadata.name != cert_manager_operatorgroup_name
+
+- name: Ensure the cert-manager OperatorGroup exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'operatorgroup.yml.j2') | from_yaml }}"
+  when: cert_manager_install_operator | bool
+
+- name: Ensure the cert-manager Subscription exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'subscription.yml.j2') | from_yaml }}"
+  when: cert_manager_install_operator | bool
+
+- name: Wait for the cert-manager subscription to report a current CSV
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ cert_manager_namespace }}"
+    name: "{{ cert_manager_subscription_name }}"
+  register: cert_manager_subscription
+  changed_when: false
+  failed_when: false
+  until:
+    - cert_manager_subscription.resources | length == 1
+    - cert_manager_subscription.resources[0].status.currentCSV is defined
+  retries: 60
+  delay: 10
+  when: cert_manager_install_operator | bool
+
+- name: Wait for the cert-manager CSV to succeed
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ cert_manager_namespace }}"
+    name: "{{ cert_manager_subscription.resources[0].status.currentCSV }}"
+  register: cert_manager_csv
+  changed_when: false
+  failed_when: false
+  until:
+    - cert_manager_csv.resources | length == 1
+    - cert_manager_csv.resources[0].status.phase == "Succeeded"
+  retries: 60
+  delay: 10
+  when: cert_manager_install_operator | bool
+
+# Use `oc get crd` via the command module rather than kubernetes.core.k8s_info.
+# The Python kubernetes-client on the customer's controller node raises
+# `ResourceField.__init__() got multiple values for argument 'self'`
+# whether we pass `name=` or not — so we drop the Python client entirely
+# for this check. `oc get crd <X> --ignore-not-found -o name` returns an
+# empty stdout when the CRD is missing (and exit 0), so a single
+# `failed_when: stdout == ''` catches the missing case cleanly.
+- name: Probe required cert-manager CRDs (CERT_MANAGER_INSTALL_OPERATOR=false)
+  ansible.builtin.command:
+    cmd: "oc get crd {{ item }} --ignore-not-found -o name"
+  register: cert_manager_crd_probe
+  changed_when: false
+  loop:
+    - certificates.cert-manager.io
+    - clusterissuers.cert-manager.io
+  when: not (cert_manager_install_operator | bool)
+
+- name: Verify required cert-manager CRDs are present
+  ansible.builtin.assert:
+    that:
+      - (item.stdout | default('') | length) > 0
+    fail_msg: >-
+      CERT_MANAGER_INSTALL_OPERATOR=false but the required CRD
+      '{{ item.item }}' is missing on the cluster. Install cert-manager
+      manually first, or set CERT_MANAGER_INSTALL_OPERATOR=true.
+    quiet: true
+  loop: "{{ cert_manager_crd_probe.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: not (cert_manager_install_operator | bool)
+
+# The CertManager operand CR + override args below only exist when the
+# Red Hat OpenShift cert-manager operator manages the controller. In
+# customer environments that ship cert-manager upstream (or any non-Red Hat
+# managed install), there's no `operator.openshift.io/v1alpha1/CertManager`
+# CR to patch — skip when we didn't install it ourselves.
+- name: Wait for the CertManager operand CR to be created by the operator
+  kubernetes.core.k8s_info:
+    api_version: operator.openshift.io/v1alpha1
+    kind: CertManager
+    name: cluster
+  register: cert_manager_operand
+  changed_when: false
+  failed_when: false
+  until: cert_manager_operand.resources | length == 1
+  retries: 30
+  delay: 10
+  when: cert_manager_install_operator | bool
+
+- name: Build cert-manager controller overrideArgs
+  ansible.builtin.set_fact:
+    cert_manager_override_args: >-
+      {{
+        ['--dns01-recursive-nameservers=' ~ cert_manager_dns01_recursive_nameservers]
+        + (['--dns01-recursive-nameservers-only'] if cert_manager_dns01_recursive_nameservers_only else [])
+      }}
+  when: cert_manager_install_operator | bool
+
+- name: Configure cert-manager DNS-01 recursive nameservers
+  kubernetes.core.k8s:
+    state: patched
+    api_version: operator.openshift.io/v1alpha1
+    kind: CertManager
+    name: cluster
+    merge_type: merge
+    definition:
+      spec:
+        controllerConfig:
+          overrideArgs: "{{ cert_manager_override_args }}"
+        unsupportedConfigOverrides: null
+  when: cert_manager_install_operator | bool
+
+- name: Wait for cert-manager controller to roll out with new args
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: cert-manager
+    name: cert-manager
+  register: cert_manager_deployment
+  changed_when: false
+  failed_when: false
+  until:
+    - cert_manager_deployment.resources | length == 1
+    - (cert_manager_deployment.resources[0].status.readyReplicas | default(0)) | int >= 1
+    - >-
+      cert_manager_override_args | difference(
+        cert_manager_deployment.resources[0].spec.template.spec.containers[0].args | default([])
+      ) | length == 0
+  retries: 30
+  delay: 10
+  when: cert_manager_install_operator | bool

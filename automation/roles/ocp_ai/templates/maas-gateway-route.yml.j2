@@ -1,0 +1,22 @@
+# OpenShift Route for the MaaS gateway (dashboard discovers https://maas.<apps-domain>/maas-api).
+# Required when the gateway Service is ClusterIP (default). Skip when using a dedicated
+# LoadBalancer listener hostname (OCP_AI_MAAS_GATEWAY_HOSTNAME).
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ ocp_ai_maas_gateway_name }}
+  namespace: {{ ocp_ai_maas_gateway_namespace }}
+  labels:
+    app.kubernetes.io/part-of: models-as-a-service
+spec:
+  host: {{ ocp_ai_maas_route_hostname }}
+  port:
+    targetPort: 443
+  tls:
+    termination: reencrypt
+    insecureEdgeTerminationPolicy: Redirect
+  to:
+    kind: Service
+    name: {{ ocp_ai_maas_gateway_name }}-data-science-gateway-class
+    weight: 100
+  wildcardPolicy: None

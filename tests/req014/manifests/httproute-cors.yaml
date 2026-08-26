@@ -1,0 +1,59 @@
+# HTTPRoute para demonstrar CORS no gateway (REQ 14).
+#
+# Como aplicar (substitui ${RHCL_ZONE_ROOT_DOMAIN} pelo valor exportado):
+#   export RHCL_ZONE_ROOT_DOMAIN=apps.cluster1.poc.rhcl.com.br   # ajuste para seu lab
+#   envsubst < tests/req014/manifests/httproute-cors.yaml | oc apply -f -
+#
+# A rota fica anexada ao Gateway wildcard `*.${RHCL_ZONE_ROOT_DOMAIN}` criado
+# pelo playbook (rhcl-apps-gateway em openshift-ingress) e expõe
+# /api/v1/cors com Access-Control-Allow-* injetados via ResponseHeaderModifier.
+#
+# O backend rejeita Origins fora de *.${RHCL_ZONE_ROOT_DOMAIN} (CORS filter do
+# Quarkus retorna 403). Quando o teste chama o backend diretamente a partir de
+# outra origem, o navegador vê o 403 e bloqueia. Quando o mesmo endpoint é
+# chamado via cors.${RHCL_ZONE_ROOT_DOMAIN}, este HTTPRoute remove o cabeçalho
+# `Origin` antes de fazer o proxy (assim o backend trata como same-origin e
+# retorna 200) e o gateway é quem injeta os Access-Control-Allow-* na resposta.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: banking-api-cors
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-req14-cors
+spec:
+  parentRefs:
+    - name: rhcl-apps-gateway
+      namespace: openshift-ingress
+  hostnames:
+    - cors.${RHCL_ZONE_ROOT_DOMAIN}
+  rules:
+    # /api/v1/cors -> backend retorna sem CORS; o gateway adiciona os
+    # Access-Control-Allow-* na resposta para liberar o navegador.
+    - matches:
+        - path:
+            type: Exact
+            value: /api/v1/cors
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove:
+              - Origin
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+              - name: Access-Control-Allow-Origin
+                value: "*"
+              - name: Access-Control-Allow-Methods
+                value: "GET, POST, OPTIONS"
+              - name: Access-Control-Allow-Headers
+                value: "Authorization, Content-Type, Accept, X-Requested-With"
+              - name: Access-Control-Expose-Headers
+                value: "x-instance, x-flow-trace-id"
+              - name: Access-Control-Max-Age
+                value: "600"
+              - name: Vary
+                value: "Origin"
+      backendRefs:
+        - name: banking-api-v1
+          port: 8080

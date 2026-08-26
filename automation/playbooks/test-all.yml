@@ -1,0 +1,8 @@
+---
+- import_playbook: gateway_api-test.yml
+- import_playbook: cert_manager-test.yml
+- import_playbook: rhcl-test.yml
+- import_playbook: coredns-test.yml
+- import_playbook: monitoring-test.yml
+- import_playbook: observability-test.yml
+- import_playbook: apps-test.yml

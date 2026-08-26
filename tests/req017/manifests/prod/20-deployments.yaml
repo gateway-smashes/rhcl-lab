@@ -1,0 +1,133 @@
+# Deployments for RHCL lab MCP servers — Quay images (no in-cluster build).
+#
+#   export MCP_QUAY_REPO=quay.io/rh_ee_tavelino/mcp
+#   export MCP_IMAGE_TAG=latest
+#   envsubst < 20-deployments.yaml | oc apply -f -
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rhcl-lab-info-mcp
+  namespace: rhcl-mcp-lab
+  labels:
+    app: rhcl-lab-info-mcp
+    rhcl-lab/requirement: req017-mcp-catalog
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rhcl-lab-info-mcp
+  template:
+    metadata:
+      labels:
+        app: rhcl-lab-info-mcp
+        rhcl-lab/requirement: req017-mcp-catalog
+      annotations:
+        openshift.io/container.mcp.image: ${MCP_QUAY_REPO}:rhcl-lab-info-mcp-${MCP_IMAGE_TAG}
+    spec:
+      containers:
+        - name: mcp
+          image: ${MCP_QUAY_REPO}:rhcl-lab-info-mcp-${MCP_IMAGE_TAG}
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rhcl-text-tools-mcp
+  namespace: rhcl-mcp-lab
+  labels:
+    app: rhcl-text-tools-mcp
+    rhcl-lab/requirement: req017-mcp-catalog
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rhcl-text-tools-mcp
+  template:
+    metadata:
+      labels:
+        app: rhcl-text-tools-mcp
+        rhcl-lab/requirement: req017-mcp-catalog
+      annotations:
+        openshift.io/container.mcp.image: ${MCP_QUAY_REPO}:rhcl-text-tools-mcp-${MCP_IMAGE_TAG}
+    spec:
+      containers:
+        - name: mcp
+          image: ${MCP_QUAY_REPO}:rhcl-text-tools-mcp-${MCP_IMAGE_TAG}
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rhcl-time-tools-mcp
+  namespace: rhcl-mcp-lab
+  labels:
+    app: rhcl-time-tools-mcp
+    rhcl-lab/requirement: req017-mcp-catalog
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rhcl-time-tools-mcp
+  template:
+    metadata:
+      labels:
+        app: rhcl-time-tools-mcp
+        rhcl-lab/requirement: req017-mcp-catalog
+      annotations:
+        openshift.io/container.mcp.image: ${MCP_QUAY_REPO}:rhcl-time-tools-mcp-${MCP_IMAGE_TAG}
+    spec:
+      containers:
+        - name: mcp
+          image: ${MCP_QUAY_REPO}:rhcl-time-tools-mcp-${MCP_IMAGE_TAG}
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

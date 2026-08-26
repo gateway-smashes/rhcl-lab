@@ -1,0 +1,27 @@
+# TLSPolicy — drives cert-manager to issue and rotate the serving certificate
+# referenced by the HTTPS listener of the target Gateway.
+#
+# Important for REQ 55:
+#   The TLSPolicy spec does NOT expose minVersion/maxVersion or cipher suite
+#   selectors. The negotiated TLS protocol (1.2 / 1.3) and ciphers are
+#   controlled by the Istio/Envoy data plane defaults, which already accept
+#   TLS 1.2 and TLS 1.3 and reject TLS 1.0/1.1.
+#
+# Reference:
+#   https://docs.kuadrant.io/1.0.x/kuadrant-operator/doc/user-guides/tls/gateway-tls/
+apiVersion: kuadrant.io/v1
+kind: TLSPolicy
+metadata:
+  name: req55-tls-policy
+  namespace: req55-gateway
+  labels:
+    app.kubernetes.io/part-of: rhcl-req55-tls
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: req55-gateway
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: req55-selfsigned

@@ -1,0 +1,36 @@
+# PodMonitor — scrape the Gateway API gateway's istio-proxy merged metrics
+# endpoint (port "metrics" = 15020, /stats/prometheus) so istio_requests_total
+# (carrying the Telemetry CR's request_url_path / route_name /
+# request_headers_x_consumer_id tagOverrides) actually reaches Prometheus.
+#
+# WHY THIS IS NEEDED: the Telemetry CR only *labels* the metric; nothing
+# collects it without a scrape. The gateway emits the series, but with no
+# PodMonitor Prometheus never sees it and every dashboard panel — Grafana and
+# the console plugin alike — goes blank. (Symptom: count(istio_requests_total)
+# is empty on thanos while bank_ai_tokens_total, scraped by the banking-api
+# ServiceMonitor, is present.)
+#
+# WHY A PodMonitor (not a ServiceMonitor): the gateway Service exposes only
+# 80/443/15021 — not the 15020 metrics port — so the scrape must target the
+# pods directly.
+#
+# WHY IT LANDS IN PROMETHEUS: the gateway runs in openshift-ingress, which
+# carries openshift.io/cluster-monitoring=true, so the *platform* Prometheus
+# scrapes this PodMonitor and thanos-querier federates it for both the Grafana
+# thanos datasource and the console plugin. User-workload monitoring does not
+# scrape openshift-* namespaces, so a PodMonitor there would be ignored.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ grafana_gateway_podmonitor_name }}
+  namespace: {{ grafana_telemetry_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+spec:
+  selector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: {{ apps_connectivity_gateway_name }}
+  podMetricsEndpoints:
+    - port: metrics
+      path: /stats/prometheus
+      interval: 30s

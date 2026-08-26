@@ -1,0 +1,22 @@
+apiVersion: opendatahub.io/v1alpha
+kind: OdhDashboardConfig
+metadata:
+  name: odh-dashboard-config
+  namespace: {{ ocp_ai_applications_namespace }}
+spec:
+  dashboardConfig:
+    genAiStudio: {{ ocp_ai_dashboard_gen_ai_studio | bool | lower }}
+    modelAsService: {{ ocp_ai_dashboard_model_as_service | bool | lower }}
+    maasAuthPolicies: {{ ocp_ai_dashboard_maas_auth_policies | bool | lower }}
+    aiAssetCustomEndpoints: {{ ocp_ai_dashboard_ai_asset_custom_endpoints | bool | lower }}
+{% if ocp_ai_dashboard_ai_asset_custom_endpoints | bool %}
+  genAiStudioConfig:
+    aiAssetCustomEndpoints:
+      externalProviders: {{ ocp_ai_dashboard_ai_asset_external_providers | bool | lower }}
+      clusterDomains: {{ ocp_ai_dashboard_ai_asset_cluster_domains | to_json }}
+{% endif %}
+{% if ocp_ai_gpu_hardware_profile_enabled | bool %}
+  hardwareProfileOrder:
+    - {{ ocp_ai_gpu_hardware_profile_name }}
+    - default-profile
+{% endif %}

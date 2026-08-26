@@ -1,0 +1,9 @@
+---
+- name: Validate cert_manager role action
+  ansible.builtin.assert:
+    that:
+      - (component_action | default(rhcl_action)) in ["install", "remove", "validate"]
+    fail_msg: "Requested cert_manager action must be install, remove, or validate."
+
+- name: Run cert_manager action
+  ansible.builtin.include_tasks: "{{ component_action | default(rhcl_action) }}.yml"

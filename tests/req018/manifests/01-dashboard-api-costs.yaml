@@ -1,0 +1,37 @@
+# req018 — Grafana dashboard "RHCL API Costs" (standalone deploy).
+#
+# The CR references the ConfigMap `rhcl-api-costs-json` (created from the
+# neighbouring dashboard-api-costs.json) — keeping the JSON out of this
+# YAML makes it trivial to update the dashboard without hand-escaping a
+# 14 KB blob. Apply order:
+#
+#   1. oc create configmap rhcl-api-costs-json \
+#        --from-file=dashboard.json=./dashboard-api-costs.json \
+#        -n rhcl-grafana
+#   2. oc apply -f 01-dashboard-api-costs.yaml
+#
+# Requires: Grafana Operator + a GrafanaInstance labelled
+# `dashboards: rhcl` already installed in the target cluster
+# (playbooks/grafana-install.yml provisions these, or install the
+# operator manually and label the Grafana CR).
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: rhcl-api-costs
+  namespace: rhcl-grafana
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+    rhcl.poc/req: req018
+spec:
+  # Instance selector must match a GrafanaInstance in the same cluster.
+  # `dashboards: rhcl` is what the lab's grafana role sets. Change here
+  # if the customer's Grafana instance uses a different label.
+  instanceSelector:
+    matchLabels:
+      dashboards: rhcl
+  # Re-sync every 5 min so a `configmap edit` propagates without
+  # bouncing the Grafana pod.
+  resyncPeriod: 5m
+  configMapRef:
+    name: rhcl-api-costs-json
+    key: dashboard.json

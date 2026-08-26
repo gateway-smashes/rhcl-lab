@@ -1,0 +1,354 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Query the applications namespace
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Namespace
+    name: "{{ apps_namespace }}"
+  register: apps_namespace_info
+  changed_when: false
+
+- name: Assert that the applications namespace exists
+  ansible.builtin.assert:
+    that:
+      - apps_namespace_info.resources | length == 1
+    fail_msg: "Namespace {{ apps_namespace }} does not exist."
+
+- name: Query application ImageStreams
+  kubernetes.core.k8s_info:
+    api_version: image.openshift.io/v1
+    kind: ImageStream
+    namespace: "{{ apps_namespace }}"
+  register: apps_imagestreams
+  changed_when: false
+
+- name: Assert that application ImageStreams exist
+  ansible.builtin.assert:
+    that:
+      - (apps_imagestreams.resources | selectattr('metadata.name', 'equalto', apps_backend_image_name) | list | length) == 1
+      - (apps_imagestreams.resources | selectattr('metadata.name', 'equalto', apps_frontend_image_name) | list | length) == 1
+      - (not apps_ipfilter_enabled) or (apps_imagestreams.resources | selectattr('metadata.name', 'equalto', apps_ipfilter_image_name) | list | length) == 1
+      - (not apps_rhoai_enabled) or (apps_imagestreams.resources | selectattr('metadata.name', 'equalto', apps_rhoai_backend_image_name) | list | length) == 1
+      - (not apps_rhoai_enabled) or (apps_imagestreams.resources | selectattr('metadata.name', 'equalto', apps_rhoai_frontend_image_name) | list | length) == 1
+    fail_msg: "Application ImageStreams are missing from namespace {{ apps_namespace }}."
+
+- name: Query application BuildConfigs
+  kubernetes.core.k8s_info:
+    api_version: build.openshift.io/v1
+    kind: BuildConfig
+    namespace: "{{ apps_namespace }}"
+  register: apps_buildconfigs
+  changed_when: false
+
+- name: Assert that application BuildConfigs exist
+  ansible.builtin.assert:
+    that:
+      - (apps_buildconfigs.resources | selectattr('metadata.name', 'equalto', apps_backend_image_name) | list | length) == 1
+      - (apps_buildconfigs.resources | selectattr('metadata.name', 'equalto', apps_frontend_image_name) | list | length) == 1
+      - (not apps_ipfilter_enabled) or (apps_image_source == 'quay') or (apps_buildconfigs.resources | selectattr('metadata.name', 'equalto', apps_ipfilter_image_name) | list | length) == 1
+      - (not apps_rhoai_enabled) or (apps_image_source == 'quay') or (apps_buildconfigs.resources | selectattr('metadata.name', 'equalto', apps_rhoai_backend_image_name) | list | length) == 1
+      - (not apps_rhoai_enabled) or (apps_image_source == 'quay') or (apps_buildconfigs.resources | selectattr('metadata.name', 'equalto', apps_rhoai_frontend_image_name) | list | length) == 1
+    fail_msg: "Application BuildConfigs are missing from namespace {{ apps_namespace }}."
+
+- name: Query application Deployments
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ apps_namespace }}"
+  register: apps_deployments
+  changed_when: false
+
+- name: Assert that Deployments are available
+  ansible.builtin.assert:
+    that:
+      - (apps_deployments.resources | selectattr('metadata.name', 'equalto', apps_backend_primary_name) | list | length) == 1
+      - (apps_deployments.resources | selectattr('metadata.name', 'equalto', apps_backend_secondary_name) | list | length) == 1
+      - (apps_deployments.resources | selectattr('metadata.name', 'equalto', apps_frontend_name) | list | length) == 1
+      - (not apps_ipfilter_enabled) or (apps_deployments.resources | selectattr('metadata.name', 'equalto', apps_ipfilter_name) | list | length) == 1
+      - (not apps_rhoai_enabled) or (apps_deployments.resources | selectattr('metadata.name', 'equalto', apps_rhoai_backend_name) | list | length) == 1
+      - (not apps_rhoai_enabled) or (apps_deployments.resources | selectattr('metadata.name', 'equalto', apps_rhoai_frontend_name) | list | length) == 1
+      - (apps_deployments.resources | selectattr('metadata.name', 'equalto', apps_backend_primary_name) | map(attribute='status.availableReplicas') | first | default(0) | int) >= 1
+      - (apps_deployments.resources | selectattr('metadata.name', 'equalto', apps_backend_secondary_name) | map(attribute='status.availableReplicas') | first | default(0) | int) >= 1
+      - (apps_deployments.resources | selectattr('metadata.name', 'equalto', apps_frontend_name) | map(attribute='status.availableReplicas') | first | default(0) | int) >= 1
+      - (not apps_ipfilter_enabled) or (apps_deployments.resources | selectattr('metadata.name', 'equalto', apps_ipfilter_name) | map(attribute='status.availableReplicas') | first | default(0) | int) >= 1
+      - (not apps_rhoai_enabled) or (apps_deployments.resources | selectattr('metadata.name', 'equalto', apps_rhoai_backend_name) | map(attribute='status.availableReplicas') | first | default(0) | int) >= 1
+      - (not apps_rhoai_enabled) or (apps_deployments.resources | selectattr('metadata.name', 'equalto', apps_rhoai_frontend_name) | map(attribute='status.availableReplicas') | first | default(0) | int) >= 1
+      - (not apps_ledger_enabled) or (apps_deployments.resources | selectattr('metadata.name', 'equalto', apps_ledger_name) | list | length) == 1
+      - (not apps_ledger_enabled) or (apps_deployments.resources | selectattr('metadata.name', 'equalto', apps_ledger_name) | map(attribute='status.availableReplicas') | first | default(0) | int) >= 1
+    fail_msg: "One or more application Deployments are missing or unavailable."
+
+- name: Query application routes
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    namespace: "{{ apps_namespace }}"
+  register: apps_routes
+  changed_when: false
+
+- name: Assert that application routes exist
+  ansible.builtin.assert:
+    that:
+      - (apps_routes.resources | selectattr('metadata.name', 'equalto', apps_backend_primary_name) | list | length) == 1
+      - (apps_routes.resources | selectattr('metadata.name', 'equalto', apps_backend_secondary_name) | list | length) == 1
+      - (apps_routes.resources | selectattr('metadata.name', 'equalto', apps_frontend_name) | list | length) == 1
+      - (not apps_rhoai_enabled) or (apps_routes.resources | selectattr('metadata.name', 'equalto', apps_rhoai_frontend_name) | list | length) == 1
+      - (not apps_ledger_enabled) or (apps_routes.resources | selectattr('metadata.name', 'equalto', apps_ledger_name) | list | length) == 1
+    fail_msg: "One or more application routes are missing from namespace {{ apps_namespace }}."
+
+- name: Query connectivity gateway
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: Gateway
+    namespace: "{{ apps_connectivity_gateway_namespace }}"
+    name: "{{ apps_connectivity_gateway_name }}"
+  register: apps_connectivity_gateway
+  changed_when: false
+  when: apps_connectivity_link_enabled
+
+- name: Query connectivity HTTPRoute
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_connectivity_route_name }}"
+  register: apps_connectivity_httproute
+  changed_when: false
+  when: apps_connectivity_link_enabled
+
+- name: Query frontend connectivity HTTPRoute
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_connectivity_frontend_route_name }}"
+  register: apps_connectivity_frontend_httproute
+  changed_when: false
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_frontend_route_enabled
+
+- name: Query IP filter connectivity HTTPRoute
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_ipfilter_route_name }}"
+  register: apps_ipfilter_httproute
+  changed_when: false
+  when:
+    - apps_connectivity_link_enabled
+    - apps_ipfilter_enabled
+
+- name: Query IP filter auth policy
+  kubernetes.core.k8s_info:
+    api_version: kuadrant.io/v1
+    kind: AuthPolicy
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_ipfilter_auth_policy_name }}"
+  register: apps_ipfilter_auth_policy
+  changed_when: false
+  when:
+    - apps_connectivity_link_enabled
+    - apps_ipfilter_enabled
+    - apps_ipfilter_auth_policy_enabled
+
+- name: Query frontend connectivity auth policy
+  kubernetes.core.k8s_info:
+    api_version: kuadrant.io/v1
+    kind: AuthPolicy
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_connectivity_frontend_auth_policy_name }}"
+  register: apps_connectivity_frontend_auth_policy
+  changed_when: false
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_frontend_route_enabled
+    - apps_connectivity_frontend_auth_policy_enabled
+
+- name: Query connectivity rate limit policy
+  kubernetes.core.k8s_info:
+    api_version: kuadrant.io/v1
+    kind: RateLimitPolicy
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_connectivity_ratelimit_policy_name }}"
+  register: apps_connectivity_ratelimit_policy
+  changed_when: false
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_ratelimit_enabled
+
+- name: Query connectivity gateway deny-all auth policy
+  kubernetes.core.k8s_info:
+    api_version: kuadrant.io/v1
+    kind: AuthPolicy
+    namespace: "{{ apps_connectivity_gateway_namespace }}"
+    name: "{{ apps_connectivity_gateway_deny_all_policy_name }}"
+  register: apps_connectivity_gateway_deny_all_policy
+  changed_when: false
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_gateway_deny_all_enabled
+
+- name: Query connectivity TLS policy
+  kubernetes.core.k8s_info:
+    api_version: kuadrant.io/v1
+    kind: TLSPolicy
+    namespace: "{{ apps_connectivity_gateway_namespace }}"
+    name: "{{ apps_connectivity_tls_policy_name }}"
+  register: apps_connectivity_tls_policy
+  changed_when: false
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_tls_enabled
+
+- name: Query connectivity TLS secret
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    namespace: "{{ apps_connectivity_gateway_namespace }}"
+    name: "{{ apps_connectivity_tls_secret_name }}"
+  register: apps_connectivity_tls_secret
+  changed_when: false
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_tls_enabled
+
+- name: Assert that connectivity link resources exist
+  ansible.builtin.assert:
+    that:
+      - apps_connectivity_gateway.resources | length == 1
+      - apps_connectivity_httproute.resources | length == 1
+    fail_msg: "Connectivity link Gateway or HTTPRoute is missing."
+  when: apps_connectivity_link_enabled
+
+- name: Assert that frontend connectivity resources exist
+  ansible.builtin.assert:
+    that:
+      - apps_connectivity_frontend_httproute.resources | length == 1
+      - >-
+        (apps_connectivity_gateway.resources[0].spec.listeners | default([])
+        | selectattr('name', 'equalto', apps_connectivity_frontend_listener_name)
+        | list | length) == 1
+      - >-
+        (not apps_connectivity_frontend_auth_policy_enabled)
+        or apps_connectivity_frontend_auth_policy.resources | length == 1
+    fail_msg: "Frontend connectivity HTTPRoute, listener, or allow AuthPolicy is missing."
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_frontend_route_enabled
+
+- name: Assert that IP filter connectivity resources exist
+  ansible.builtin.assert:
+    that:
+      - apps_ipfilter_httproute.resources | length == 1
+      - >-
+        (
+          apps_connectivity_listener_wildcard_enabled
+          or
+          (apps_connectivity_gateway.resources[0].spec.listeners | default([])
+          | selectattr('name', 'equalto', apps_ipfilter_http_listener_name)
+          | list | length) == 1
+        )
+      - >-
+        (not apps_ipfilter_auth_policy_enabled)
+        or apps_ipfilter_auth_policy.resources | length == 1
+    fail_msg: "IP filter HTTPRoute, listener, or AuthPolicy is missing."
+  when:
+    - apps_connectivity_link_enabled
+    - apps_ipfilter_enabled
+
+- name: Query backend TLS demo HTTPRoute
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_backend_tls_route_name }}"
+  register: apps_backend_tls_httproute
+  changed_when: false
+  when:
+    - apps_connectivity_link_enabled
+    - apps_backend_tls_route_enabled
+
+- name: Query backend TLS demo BackendTLSPolicy
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: BackendTLSPolicy
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_backend_tls_route_policy_name }}"
+  register: apps_backend_tls_backend_tls_policy
+  changed_when: false
+  when:
+    - apps_connectivity_link_enabled
+    - apps_backend_tls_route_enabled
+
+- name: Assert that backend TLS demo resources exist
+  ansible.builtin.assert:
+    that:
+      - apps_backend_tls_httproute.resources | length == 1
+      - apps_backend_tls_backend_tls_policy.resources | length == 1
+      - >-
+        (
+          apps_connectivity_listener_wildcard_enabled
+          or
+          (apps_connectivity_gateway.resources[0].spec.listeners | default([])
+          | selectattr('name', 'equalto', apps_backend_tls_http_listener_name)
+          | list | length) == 1
+        )
+    fail_msg: "Backend TLS demo HTTPRoute, BackendTLSPolicy, or listener is missing."
+  when:
+    - apps_connectivity_link_enabled
+    - apps_backend_tls_route_enabled
+
+- name: Assert that connectivity rate limit policy exists
+  ansible.builtin.assert:
+    that:
+      - apps_connectivity_ratelimit_policy.resources | length == 1
+      - (apps_connectivity_ratelimit_policy.resources[0].spec.limits['global'].rates[0].limit | int) == (apps_connectivity_ratelimit_limit | int)
+      - apps_connectivity_ratelimit_policy.resources[0].spec.limits['global'].rates[0].window == apps_connectivity_ratelimit_window
+    fail_msg: "Connectivity link RateLimitPolicy is missing or does not match the expected limit."
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_ratelimit_enabled
+
+- name: Assert that connectivity deny-all auth policy exists
+  ansible.builtin.assert:
+    that:
+      - apps_connectivity_gateway_deny_all_policy.resources | length == 1
+    fail_msg: "Connectivity gateway deny-all AuthPolicy is missing."
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_gateway_deny_all_enabled
+
+- name: Assert that connectivity TLS resources exist
+  ansible.builtin.assert:
+    that:
+      - apps_connectivity_tls_policy.resources | length == 1
+      - apps_connectivity_tls_secret.resources | length == 1
+      - (apps_connectivity_tls_secret.resources[0].data['tls.crt'] | default('')) | length > 0
+      - (apps_connectivity_tls_secret.resources[0].data['tls.key'] | default('')) | length > 0
+      - (apps_connectivity_gateway.resources[0].spec.listeners | selectattr('protocol', 'equalto', 'HTTPS') | list | length) >= 1
+    fail_msg: "Connectivity TLSPolicy, TLS secret, or HTTPS listener is missing."
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_tls_enabled
+
+- name: Query application pods
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ apps_namespace }}"
+  register: apps_pods
+  changed_when: false
+
+- name: Assert that application pods are running
+  ansible.builtin.assert:
+    that:
+      - (apps_pods.resources | selectattr('metadata.name', 'search', apps_backend_primary_name) | selectattr('status.phase', 'equalto', 'Running') | list | length) >= 1
+      - (apps_pods.resources | selectattr('metadata.name', 'search', apps_backend_secondary_name) | selectattr('status.phase', 'equalto', 'Running') | list | length) >= 1
+      - (apps_pods.resources | selectattr('metadata.name', 'search', apps_frontend_name) | selectattr('status.phase', 'equalto', 'Running') | list | length) >= 1
+      - (not apps_ipfilter_enabled) or (apps_pods.resources | selectattr('metadata.name', 'search', apps_ipfilter_name) | selectattr('status.phase', 'equalto', 'Running') | list | length) >= 1
+    fail_msg: "One or more application pods are missing or not running in namespace {{ apps_namespace }}."

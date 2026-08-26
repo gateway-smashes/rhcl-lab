@@ -1,0 +1,15 @@
+apiVersion: keda.sh/v1alpha1
+kind: KedaController
+metadata:
+  name: {{ ocp_ai_cma_keda_name }}
+  namespace: {{ ocp_ai_cma_namespace }}
+spec:
+  admissionWebhooks:
+    logEncoder: console
+    logLevel: info
+  metricsServer:
+    logLevel: "0"
+  operator:
+    logEncoder: console
+    logLevel: info
+  watchNamespace: ""

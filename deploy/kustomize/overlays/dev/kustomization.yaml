@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: red-bank-dev
+
+resources:
+  - namespace.yaml
+  - ../../base
+
+images:
+  - name: quay.io/hodrigohamalho/red-bank-backend
+    newName: quay.io/hodrigohamalho/red-bank-backend
+    newTag: dev
+  - name: quay.io/hodrigohamalho/red-bank-frontend
+    newName: quay.io/hodrigohamalho/red-bank-frontend
+    newTag: dev

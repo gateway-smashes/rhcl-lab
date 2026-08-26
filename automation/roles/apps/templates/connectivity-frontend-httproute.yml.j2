@@ -1,0 +1,25 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ apps_connectivity_frontend_route_name }}
+  namespace: {{ apps_namespace }}
+spec:
+  parentRefs:
+    - name: {{ apps_connectivity_gateway_name }}
+      namespace: {{ apps_connectivity_gateway_namespace }}
+      sectionName: {{ apps_connectivity_frontend_listener_name }}
+{% if apps_connectivity_frontend_https_enabled %}
+    - name: {{ apps_connectivity_gateway_name }}
+      namespace: {{ apps_connectivity_gateway_namespace }}
+      sectionName: {{ apps_connectivity_frontend_https_listener_name }}
+{% endif %}
+  hostnames:
+    - {{ apps_connectivity_frontend_route_hostname_resolved | to_json }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: {{ apps_frontend_name }}
+          port: 8080

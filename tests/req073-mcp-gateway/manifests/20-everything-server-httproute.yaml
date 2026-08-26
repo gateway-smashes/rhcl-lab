@@ -1,0 +1,26 @@
+# Route the broker/router uses to reach the backend MCP server. It attaches to
+# the MCP Gateway's `mcps` listener (wildcard *.mcp.local). The hostname is
+# internal-only — clients never resolve it; the Envoy MCP Router picks the
+# backend by parsing the MCP request. Source: Kuadrant/mcp-gateway
+# config/test-servers/everything-server-httproute.yaml.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: everything-server-route
+  namespace: mcp-test
+  labels:
+    mcp-server: "true"
+spec:
+  parentRefs:
+    - name: mcp-gateway
+      namespace: gateway-system
+  hostnames:
+    - everything-server.mcp.local
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: everything-server
+          port: 9090

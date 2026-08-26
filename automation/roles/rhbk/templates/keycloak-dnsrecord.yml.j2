@@ -1,0 +1,21 @@
+# DNS override (optional): when *.{{ rhcl_zone_root_domain }} is a wildcard pointing
+# at the Kuadrant gateway LB, a specific record for the Keycloak host is needed so
+# it reaches the ROUTER (where the operator-managed Route lives). A specific record
+# wins over the wildcard. Reuses the same Kuadrant DNS provider secret as the gateway.
+apiVersion: kuadrant.io/v1alpha1
+kind: DNSRecord
+metadata:
+  name: {{ rhbk_dns_record_name }}
+  namespace: {{ rhbk_dns_record_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-req71-oidc-jwt
+spec:
+  rootHost: {{ rhbk_hostname }}
+  providerRef:
+    name: {{ rhbk_dns_provider_secret }}
+  endpoints:
+    - dnsName: {{ rhbk_hostname }}
+      recordTTL: 60
+      recordType: {{ 'A' if (rhbk_router_lb_dns_target | regex_search('^([0-9]{1,3}\\.){3}[0-9]{1,3}$')) else 'CNAME' }}
+      targets:
+        - {{ rhbk_router_lb_dns_target }}

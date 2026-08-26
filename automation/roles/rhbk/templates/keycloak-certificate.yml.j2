@@ -1,0 +1,18 @@
+# Trusted (Let's Encrypt) cert for the Keycloak hostname, so Authorino validates
+# the OIDC issuer over TLS without extra CA config. Keycloak serves it directly
+# and the operator's Route is passthrough.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ rhbk_tls_secret_name }}
+  namespace: {{ rhbk_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-req71-oidc-jwt
+spec:
+  secretName: {{ rhbk_tls_secret_name }}
+  dnsNames:
+    - {{ rhbk_hostname }}
+  issuerRef:
+    name: {{ rhbk_tls_issuer_name }}
+    kind: {{ rhbk_tls_issuer_kind }}
+    group: cert-manager.io

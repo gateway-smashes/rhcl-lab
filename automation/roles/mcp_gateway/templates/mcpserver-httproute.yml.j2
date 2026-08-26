@@ -1,0 +1,28 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ mcp_gateway_server_registration_route_name }}
+  namespace: {{ mcp_gateway_namespace }}
+  labels:
+    mcp-server: "true"
+spec:
+  parentRefs:
+    - name: {{ mcp_gateway_gateway_name }}
+      namespace: {{ mcp_gateway_gateway_namespace }}
+      sectionName: {{ mcp_gateway_server_listener_name }}
+  hostnames:
+    - {{ mcp_gateway_server_route_hostname_resolved | to_json }}
+{% if mcp_gateway_compat_service_enabled %}
+    - "{{ mcp_gateway_compat_service_name }}.{{ mcp_gateway_gateway_namespace }}.svc.cluster.local"
+{% endif %}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ mcp_gateway_path | to_json }}
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: {{ mcp_gateway_server_backend_service_name }}
+          namespace: {{ mcp_gateway_server_backend_service_namespace }}
+          port: {{ mcp_gateway_server_backend_service_port }}

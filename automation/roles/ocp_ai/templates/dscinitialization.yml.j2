@@ -1,0 +1,13 @@
+apiVersion: dscinitialization.opendatahub.io/v2
+kind: DSCInitialization
+metadata:
+  name: {{ ocp_ai_dsci_name }}
+spec:
+  applicationsNamespace: {{ ocp_ai_applications_namespace }}
+  monitoring:
+    managementState: {{ ocp_ai_monitoring_state }}
+    metrics: {}
+    namespace: {{ ocp_ai_monitoring_namespace }}
+  trustedCABundle:
+    customCABundle: ""
+    managementState: {{ ocp_ai_trusted_ca_bundle_state }}

@@ -1,0 +1,48 @@
+apiVersion: console.openshift.io/v1
+kind: ConsolePlugin
+metadata:
+  name: {{ custom_console_plugin_name }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-custom-console
+spec:
+  displayName: "{{ custom_console_display_name }}"
+  backend:
+    type: Service
+    service:
+      name: {{ custom_console_name }}
+      namespace: {{ custom_console_namespace }}
+      port: {{ custom_console_service_port }}
+      basePath: /
+  # Proxy declaration for the DNS Prober companion. Without this the
+  # plugin has to hit the prober's Route directly, which is cross-origin
+  # from the console frame and gets caught by the browser's fetch/CORS
+  # rules — even with credentials:'omit' the request fails with
+  # "Failed to fetch". Declaring the Service here makes the console
+  # itself proxy to it: the plugin calls
+  # `/api/proxy/plugin/{{ custom_console_plugin_name }}/dns-prober/...`
+  # which is same-origin, no CORS involved.
+  proxy:
+    - alias: dns-prober
+      authorization: None
+      endpoint:
+        type: Service
+        service:
+          name: dns-prober
+          namespace: {{ custom_console_namespace }}
+          # HTTPS port — the ConsolePlugin CRD requires "the Service
+          # must use HTTPS". The prober serves TLS on 8443 using the
+          # cert minted by service.beta.openshift.io/serving-cert-secret-name.
+          port: 8443
+    # MCP broker — powers the in-console "try it" playground (tools/list,
+    # tools/call). The broker serves HTTP, but the console proxy requires
+    # HTTPS, so this targets a serving-cert TLS front in front of mcp-broker
+    # (see tests/req073 manifests/50-broker-tls-proxy.yaml). The plugin calls
+    # /api/proxy/plugin/{{ custom_console_plugin_name }}/mcp-broker/mcp .
+    - alias: mcp-broker
+      authorization: None
+      endpoint:
+        type: Service
+        service:
+          name: {{ custom_console_mcp_broker_service | default('mcp-broker-tls') }}
+          namespace: {{ custom_console_mcp_broker_namespace | default('mcp-system') }}
+          port: {{ custom_console_mcp_broker_port | default(8443) }}

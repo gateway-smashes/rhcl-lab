@@ -1,0 +1,326 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Delete DataScienceCluster
+  kubernetes.core.k8s:
+    api_version: datasciencecluster.opendatahub.io/v2
+    kind: DataScienceCluster
+    name: "{{ ocp_ai_dsc_name }}"
+    state: absent
+    wait: true
+    wait_timeout: 180
+  ignore_errors: true
+
+- name: Delete DSCInitialization
+  kubernetes.core.k8s:
+    api_version: dscinitialization.opendatahub.io/v2
+    kind: DSCInitialization
+    name: "{{ ocp_ai_dsci_name }}"
+    state: absent
+    wait: true
+    wait_timeout: 180
+  ignore_errors: true
+
+- name: Delete Models as a Service Gateway
+  kubernetes.core.k8s:
+    api_version: gateway.networking.k8s.io/v1
+    kind: Gateway
+    namespace: "{{ ocp_ai_maas_gateway_namespace }}"
+    name: "{{ ocp_ai_maas_gateway_name }}"
+    state: absent
+  when: ocp_ai_maas_gateway_enabled | bool
+  ignore_errors: true
+
+- name: Delete Models as a Service Gateway config
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: ConfigMap
+    namespace: "{{ ocp_ai_maas_gateway_namespace }}"
+    name: "{{ ocp_ai_maas_gateway_config_name }}"
+    state: absent
+  when: ocp_ai_maas_gateway_enabled | bool
+  ignore_errors: true
+
+- name: Delete Models as a Service lab database Deployment
+  kubernetes.core.k8s:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ ocp_ai_applications_namespace }}"
+    name: "{{ ocp_ai_maas_db_deployment_name }}"
+    state: absent
+  when: ocp_ai_maas_database_enabled | bool
+  ignore_errors: true
+
+- name: Delete Models as a Service lab database Service
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Service
+    namespace: "{{ ocp_ai_applications_namespace }}"
+    name: "{{ ocp_ai_maas_db_service_name }}"
+    state: absent
+  when: ocp_ai_maas_database_enabled | bool
+  ignore_errors: true
+
+- name: Delete Models as a Service lab database Secrets
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Secret
+    namespace: "{{ ocp_ai_applications_namespace }}"
+    name: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ ocp_ai_maas_db_secret_name }}"
+    - "{{ ocp_ai_maas_db_config_secret_name }}"
+  when: ocp_ai_maas_database_enabled | bool
+  ignore_errors: true
+
+- name: Delete LeaderWorkerSetOperator CR
+  kubernetes.core.k8s:
+    api_version: operator.openshift.io/v1
+    kind: LeaderWorkerSetOperator
+    namespace: "{{ ocp_ai_lws_namespace }}"
+    name: cluster
+    state: absent
+  when: ocp_ai_llmd_enabled | bool
+  ignore_errors: true
+
+- name: Delete JobSetOperator CR
+  kubernetes.core.k8s:
+    api_version: operator.openshift.io/v1
+    kind: JobSetOperator
+    name: cluster
+    state: absent
+  when: ocp_ai_jobset_enabled | bool
+  ignore_errors: true
+
+- name: Delete Kueue cluster CR
+  kubernetes.core.k8s:
+    api_version: kueue.openshift.io/v1
+    kind: Kueue
+    name: "{{ ocp_ai_kueue_cr_name }}"
+    state: absent
+  when: ocp_ai_kueue_operator_enabled | bool
+  ignore_errors: true
+
+- name: Delete Custom Metrics Autoscaler KedaController
+  kubernetes.core.k8s:
+    api_version: keda.sh/v1alpha1
+    kind: KedaController
+    namespace: "{{ ocp_ai_cma_namespace }}"
+    name: "{{ ocp_ai_cma_keda_name }}"
+    state: absent
+  when: ocp_ai_cma_enabled | bool
+  ignore_errors: true
+
+- name: Delete GPU ClusterPolicy
+  kubernetes.core.k8s:
+    api_version: nvidia.com/v1
+    kind: ClusterPolicy
+    name: "{{ ocp_ai_gpu_clusterpolicy_name }}"
+    state: absent
+  when: ocp_ai_gpu_enabled | bool
+
+- name: Delete NodeFeatureDiscovery instance
+  kubernetes.core.k8s:
+    api_version: nfd.openshift.io/v1
+    kind: NodeFeatureDiscovery
+    namespace: "{{ ocp_ai_nfd_namespace }}"
+    name: "{{ ocp_ai_nfd_instance_name }}"
+    state: absent
+  when: ocp_ai_gpu_enabled | bool
+
+- name: Delete OpenShift AI Subscription
+  kubernetes.core.k8s:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ ocp_ai_operator_namespace }}"
+    name: "{{ ocp_ai_subscription_name }}"
+    state: absent
+  when: ocp_ai_remove_operators | bool
+
+- name: Delete Leader Worker Set Subscription
+  kubernetes.core.k8s:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ ocp_ai_lws_namespace }}"
+    name: "{{ ocp_ai_lws_subscription_name }}"
+    state: absent
+  when:
+    - ocp_ai_remove_operators | bool
+    - ocp_ai_llmd_enabled | bool
+
+- name: Delete JobSet Subscription
+  kubernetes.core.k8s:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ ocp_ai_jobset_namespace }}"
+    name: "{{ ocp_ai_jobset_subscription_name }}"
+    state: absent
+  when:
+    - ocp_ai_remove_operators | bool
+    - ocp_ai_jobset_enabled | bool
+
+- name: Delete Kueue Subscription
+  kubernetes.core.k8s:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ ocp_ai_kueue_namespace }}"
+    name: "{{ ocp_ai_kueue_subscription_name }}"
+    state: absent
+  when:
+    - ocp_ai_remove_operators | bool
+    - ocp_ai_kueue_operator_enabled | bool
+
+- name: Delete Custom Metrics Autoscaler Subscription
+  kubernetes.core.k8s:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ ocp_ai_cma_namespace }}"
+    name: "{{ ocp_ai_cma_subscription_name }}"
+    state: absent
+  when:
+    - ocp_ai_remove_operators | bool
+    - ocp_ai_cma_enabled | bool
+
+- name: Delete GPU Operator Subscription
+  kubernetes.core.k8s:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ ocp_ai_gpu_namespace }}"
+    name: "{{ ocp_ai_gpu_subscription_name }}"
+    state: absent
+  when:
+    - ocp_ai_remove_operators | bool
+    - ocp_ai_gpu_enabled | bool
+
+- name: Delete NFD Subscription
+  kubernetes.core.k8s:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ ocp_ai_nfd_namespace }}"
+    name: "{{ ocp_ai_nfd_subscription_name }}"
+    state: absent
+  when:
+    - ocp_ai_remove_operators | bool
+    - ocp_ai_gpu_enabled | bool
+
+- name: Query OpenShift AI CSV copies
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    label_selectors:
+      - "operators.coreos.com/{{ ocp_ai_operator_name }}.{{ ocp_ai_operator_namespace }}"
+  register: ocp_ai_csv_copies
+  changed_when: false
+  when: ocp_ai_remove_operators | bool
+
+- name: Delete OpenShift AI CSV copies
+  kubernetes.core.k8s:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ item.metadata.namespace }}"
+    name: "{{ item.metadata.name }}"
+    state: absent
+    wait: true
+    wait_timeout: 180
+  loop: "{{ ocp_ai_csv_copies.resources | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.namespace }}/{{ item.metadata.name }}"
+  when: ocp_ai_remove_operators | bool
+  ignore_errors: true
+
+- name: Query OpenShift AI mutating webhooks
+  kubernetes.core.k8s_info:
+    api_version: admissionregistration.k8s.io/v1
+    kind: MutatingWebhookConfiguration
+  register: ocp_ai_mutating_webhooks
+  changed_when: false
+  when: ocp_ai_remove_operators | bool
+
+- name: Delete OpenShift AI mutating webhooks
+  kubernetes.core.k8s:
+    api_version: admissionregistration.k8s.io/v1
+    kind: MutatingWebhookConfiguration
+    name: "{{ item.metadata.name }}"
+    state: absent
+  loop: "{{ ocp_ai_mutating_webhooks.resources | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  when:
+    - ocp_ai_remove_operators | bool
+    - "'opendatahub.io' in item.metadata.name"
+  ignore_errors: true
+
+- name: Query OpenShift AI validating webhooks
+  kubernetes.core.k8s_info:
+    api_version: admissionregistration.k8s.io/v1
+    kind: ValidatingWebhookConfiguration
+  register: ocp_ai_validating_webhooks
+  changed_when: false
+  when: ocp_ai_remove_operators | bool
+
+- name: Delete OpenShift AI validating webhooks
+  kubernetes.core.k8s:
+    api_version: admissionregistration.k8s.io/v1
+    kind: ValidatingWebhookConfiguration
+    name: "{{ item.metadata.name }}"
+    state: absent
+  loop: "{{ ocp_ai_validating_webhooks.resources | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  when:
+    - ocp_ai_remove_operators | bool
+    - "'opendatahub.io' in item.metadata.name"
+  ignore_errors: true
+
+- name: Delete model-serving namespace
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ ocp_ai_model_serving_namespace }}"
+    state: absent
+    wait: true
+    wait_timeout: 300
+  when:
+    - ocp_ai_remove_namespaces | bool
+    - ocp_ai_create_model_serving_namespace | bool
+
+- name: Delete OpenShift AI application and operator namespaces
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ item }}"
+    state: absent
+    wait: true
+    wait_timeout: 300
+  loop:
+    - "{{ ocp_ai_applications_namespace }}"
+    - "{{ ocp_ai_operator_namespace }}"
+  when:
+    - ocp_ai_remove_namespaces | bool
+    - ocp_ai_remove_operators | bool
+  ignore_errors: true
+
+- name: Delete optional OpenShift AI prerequisite operator namespaces
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ item }}"
+    state: absent
+    wait: true
+    wait_timeout: 300
+  loop: >-
+    {{
+      ([ocp_ai_lws_namespace] if (ocp_ai_llmd_enabled | bool) else [])
+      + ([ocp_ai_jobset_namespace] if (ocp_ai_jobset_enabled | bool) else [])
+      + ([ocp_ai_kueue_namespace] if (ocp_ai_kueue_operator_enabled | bool) else [])
+      + ([ocp_ai_cma_namespace] if (ocp_ai_cma_enabled | bool) else [])
+      + ([ocp_ai_gpu_namespace, ocp_ai_nfd_namespace] if (ocp_ai_gpu_enabled | bool) else [])
+    }}
+  when:
+    - ocp_ai_remove_namespaces | bool
+    - ocp_ai_remove_operators | bool
+  ignore_errors: true

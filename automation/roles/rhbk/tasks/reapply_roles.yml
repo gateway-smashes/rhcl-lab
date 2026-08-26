@@ -1,0 +1,142 @@
+---
+# Re-sync realm roles + user role assignments on an EXISTING Keycloak realm.
+#
+# Why this exists.
+#   The Keycloak operator only honors `KeycloakRealmImport` on the *first*
+#   apply (its status flips to Done=True and subsequent edits to the CR
+#   are silently ignored). So editing `rhbk_realm_roles` / `rhbk_users`
+#   in group_vars and re-running `playbooks/rhbk-install.yml` does not
+#   actually propagate to a cluster where the realm already exists.
+#
+# This task uses kcadm.sh inside the Keycloak pod to:
+#   1. Ensure every role in `rhbk_realm_roles` exists (idempotent — if a
+#      role is already there the create is skipped, not error).
+#   2. Ensure every user in `rhbk_users` has the listed `realmRoles`
+#      assigned (idempotent — kcadm.sh add-roles is a no-op on duplicates).
+#
+# We deliberately do NOT remove roles or assignments that exist in the
+# realm but are absent from group_vars. The PoC tweaks Keycloak by hand
+# during demos and we don't want a stray `--tags reapply_roles` to nuke
+# that state.
+
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Discover a ready Keycloak pod
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ rhbk_namespace }}"
+    label_selectors:
+      - "app=keycloak"
+  register: rhbk_keycloak_pods
+  failed_when: false
+  changed_when: false
+
+- name: Pick the first running Keycloak pod
+  ansible.builtin.set_fact:
+    rhbk_kc_pod: >-
+      {{
+        (rhbk_keycloak_pods.resources | default([])
+          | selectattr('status.phase', 'equalto', 'Running')
+          | list
+          | first
+        ).metadata.name
+        if (rhbk_keycloak_pods.resources | default([])
+            | selectattr('status.phase', 'equalto', 'Running')
+            | list | length) > 0
+        else ''
+      }}
+
+- name: Fail when no Keycloak pod is reachable
+  ansible.builtin.fail:
+    msg: >-
+      Could not find a Running Keycloak pod in namespace
+      '{{ rhbk_namespace }}'. The reapply_roles task needs the operator
+      to have brought the StatefulSet up at least once.
+  when: rhbk_kc_pod | length == 0
+
+- name: Resolve Keycloak external host (Route)
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    namespace: "{{ rhbk_namespace }}"
+  register: rhbk_routes
+  changed_when: false
+
+- name: Pick the first Route host
+  ansible.builtin.set_fact:
+    rhbk_kc_url: "https://{{ (rhbk_routes.resources | first).spec.host }}"
+
+# Build the kcadm.sh script once, then stream it into `bash -s` inside
+# the pod. Streaming via stdin keeps the script multi-line (no need to
+# squish newlines into `;`), and the kcadm calls themselves take less
+# than a second each so packing them into one exec avoids spawning a
+# new bash + JVM per role/user.
+- name: Render the kcadm.sh sync script
+  ansible.builtin.set_fact:
+    rhbk_reapply_script: |
+      set -eu
+      export HOME=/tmp/kc && mkdir -p "$HOME"
+      KC=/opt/keycloak/bin/kcadm.sh
+      $KC config credentials \
+        --server {{ rhbk_kc_url | quote }} \
+        --realm master \
+        --user {{ rhbk_admin_username | quote }} \
+        --password {{ rhbk_admin_password | quote }} >/dev/null
+
+      # Roles — try-create and tolerate the "already exists" message.
+      # kcadm.sh has no `--upsert` for `create roles`; parsing the JSON
+      # list would need jq which the keycloak image doesn't ship, so we
+      # let kcadm decide and only fail on a *different* error class.
+      {% for r in rhbk_realm_roles %}
+      OUT=$($KC create roles -r {{ rhbk_realm | quote }} \
+        -s name={{ r.name | quote }} \
+        -s description={{ (r.description | default('')) | quote }} 2>&1) && \
+        echo "CREATED role={{ r.name }}" || {
+        if printf '%s' "$OUT" | grep -qiE 'already exists|HTTP 409'; then
+          :  # idempotent skip
+        else
+          printf '%s\n' "$OUT" >&2
+          exit 1
+        fi
+      }
+      {% endfor %}
+
+      # User → role bindings. `add-roles` itself is silently idempotent
+      # (exit 0 whether or not the binding existed before), so to keep
+      # `changed=` honest we probe each user's current mappings and only
+      # log BOUND when the binding is actually missing.
+      {% for u in rhbk_users %}
+      USER_ID=$($KC get users -r {{ rhbk_realm | quote }} \
+        --query username={{ u.username | quote }} --fields id \
+        | tr -d ' \n",[]{}' | sed 's/id://')
+      if [ -z "$USER_ID" ]; then
+        echo "SKIP user={{ u.username }} not present (run rhbk-install first)"
+      else
+        CURRENT_ROLES=$($KC get "users/$USER_ID/role-mappings/realm" \
+          -r {{ rhbk_realm | quote }} --fields name 2>/dev/null \
+          | tr -d ' \n"[]{}' | sed 's/name://g' | tr ',:' '\n\n')
+        {% for role in u.realmRoles | default([]) %}
+        if ! printf '%s\n' "$CURRENT_ROLES" | grep -qx {{ role | quote }}; then
+          $KC add-roles -r {{ rhbk_realm | quote }} --uid "$USER_ID" \
+            --rolename {{ role | quote }} >/dev/null
+          echo "BOUND user={{ u.username }} role={{ role }}"
+        fi
+        {% endfor %}
+      fi
+      {% endfor %}
+
+- name: Re-sync realm roles + user role mappings via kcadm.sh
+  ansible.builtin.shell:
+    cmd: "oc -n {{ rhbk_namespace }} exec -i {{ rhbk_kc_pod }} -- bash -s"
+    stdin: "{{ rhbk_reapply_script }}"
+  register: rhbk_reapply
+  changed_when: "'CREATED' in rhbk_reapply.stdout or 'BOUND' in rhbk_reapply.stdout"
+
+- name: Report what changed
+  ansible.builtin.debug:
+    msg: "{{ rhbk_reapply.stdout_lines | default([]) }}"
+  when: rhbk_reapply.stdout_lines is defined

@@ -1,0 +1,72 @@
+# OpenShift Routes with TLS passthrough.
+#
+# The gateway hostnames resolve to the default OpenShift router.
+# These Routes tell the router to forward the encrypted connection
+# (unchanged) to our mTLS gateway service, preserving the full TLS/mTLS
+# handshake for our Envoy to handle.
+#
+# Usage:
+#   export RHCL_ZONE_ROOT_DOMAIN=mycluster.sandbox546.opentlc.com
+#   envsubst < tests/req051/manifests/30-passthrough-routes.yaml | oc apply -f -
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: req056-mtls-passthrough
+  namespace: req051-gateway
+  labels:
+    app.kubernetes.io/part-of: rhcl-req051-mtls
+    rhcl-lab/requirement: req051-056-mtls
+    kubernetes.io/ingress.class: nginx
+spec:
+  host: "req056-mtls.${RHCL_ZONE_ROOT_DOMAIN}"
+  port:
+    targetPort: https-single-ca
+  to:
+    kind: Service
+    name: req051-mtls-gateway-openshift-default
+    weight: 100
+  tls:
+    termination: passthrough
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: req051-mtls-passthrough
+  namespace: req051-gateway
+  labels:
+    app.kubernetes.io/part-of: rhcl-req051-mtls
+    rhcl-lab/requirement: req051-056-mtls
+    kubernetes.io/ingress.class: nginx
+spec:
+  host: "req051-mtls.${RHCL_ZONE_ROOT_DOMAIN}"
+  port:
+    # Both listeners collapse onto the single 443 service port (named after the
+    # first listener, https-single-ca); SNI selects the filter chain in Envoy.
+    targetPort: https-single-ca
+  to:
+    kind: Service
+    name: req051-mtls-gateway-openshift-default
+    weight: 100
+  tls:
+    termination: passthrough
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: req051-untrusted-passthrough
+  namespace: req051-gateway
+  labels:
+    app.kubernetes.io/part-of: rhcl-req051-mtls
+    rhcl-lab/requirement: req051-056-mtls
+spec:
+  host: "req051-untrusted.${RHCL_ZONE_ROOT_DOMAIN}"
+  port:
+    # Same shared 443 service port; SNI selects the accept-untrusted chain.
+    targetPort: https-single-ca
+  to:
+    kind: Service
+    name: req051-mtls-gateway-openshift-default
+    weight: 100
+  tls:
+    termination: passthrough

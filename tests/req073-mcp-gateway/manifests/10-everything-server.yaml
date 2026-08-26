@@ -1,0 +1,63 @@
+# Sample MCP server backend — the upstream "everything" reference server that
+# the Kuadrant MCP Gateway ships for conformance/demos. It exposes a handful of
+# MCP tools (echo, add, printEnv, …) over Streamable HTTP on :9090/mcp.
+#
+# Source: github.com/Kuadrant/mcp-gateway config/test-servers/everything-server-*.
+# Adapted for OpenShift: imagePullPolicy is IfNotPresent (the upstream manifest
+# uses Never, which only works with a KIND-preloaded image).
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mcp-test
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: everything-server
+  namespace: mcp-test
+  labels:
+    app: everything-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: everything-server
+  template:
+    metadata:
+      labels:
+        app: everything-server
+    spec:
+      containers:
+        - name: everything-server
+          image: ghcr.io/kuadrant/mcp-gateway/test-everything-server:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9090
+              name: http
+          env:
+            - name: PORT
+              value: "9090"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: everything-server
+  namespace: mcp-test
+  labels:
+    app: everything-server
+spec:
+  type: ClusterIP
+  selector:
+    app: everything-server
+  ports:
+    - name: http
+      port: 9090
+      targetPort: 9090

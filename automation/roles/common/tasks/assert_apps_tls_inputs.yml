@@ -1,0 +1,13 @@
+---
+- name: Validate connectivity TLS issuer reference
+  ansible.builtin.assert:
+    that:
+      - apps_connectivity_tls_issuer_name | length > 0
+      - apps_connectivity_tls_issuer_kind in ["ClusterIssuer", "Issuer"]
+      - apps_connectivity_tls_issuer_group | length > 0
+      - apps_connectivity_tls_secret_name | length > 0
+      - apps_connectivity_tls_policy_name | length > 0
+    fail_msg: >-
+      Connectivity TLS requires apps_connectivity_tls_issuer_name (set
+      APPS_CONNECTIVITY_TLS_ISSUER_NAME) and a valid issuer kind/group, plus
+      non-empty secret and policy names.

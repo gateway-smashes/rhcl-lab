@@ -1,0 +1,15 @@
+---
+- name: Validate tests_catalog role action
+  ansible.builtin.assert:
+    that:
+      - (component_action | default(tests_catalog_action | default('install'))) in ["install", "remove", "validate"]
+    fail_msg: "Requested tests_catalog action must be install, remove, or validate."
+
+- name: Skip tests catalog when disabled
+  ansible.builtin.debug:
+    msg: "Tests catalog disabled (tests_catalog_enabled=false) — skipping."
+  when: not (tests_catalog_enabled | bool)
+
+- name: Run tests_catalog action
+  ansible.builtin.include_tasks: "{{ component_action | default(tests_catalog_action | default('install')) }}.yml"
+  when: tests_catalog_enabled | bool

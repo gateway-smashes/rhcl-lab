@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RHCL Lab — REQ 19: Motor de Políticas com Expressões CEL</title>
+<style>
+  :root {
+    --rh-red: #EE0000;
+    --rh-red-dark: #A30000;
+    --rh-black: #151515;
+    --rh-gray-100: #F5F5F5;
+    --rh-gray-200: #E0E0E0;
+    --rh-gray-700: #4D4D4D;
+    --rh-success: #3E8635;
+    --rh-warn: #F0AB00;
+    --rh-danger: #C9190B;
+    --rh-info: #2B9AF3;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: "Red Hat Display", "Red Hat Text", -apple-system, BlinkMacSystemFont,
+            "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    color: var(--rh-black);
+    background: var(--rh-gray-100);
+    line-height: 1.45;
+  }
+  header.rh-header {
+    background: var(--rh-black);
+    color: #fff;
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 4px solid var(--rh-red);
+  }
+  header.rh-header .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 0.5px;
+    color: inherit;
+    text-decoration: none;
+  }
+  header.rh-header a.logo:hover { color: var(--rh-red); }
+  header.rh-header a.logo:focus-visible {
+    outline: 2px solid var(--rh-red);
+    outline-offset: 4px;
+    border-radius: 2px;
+  }
+  header.rh-header .logo svg { display: block; }
+  header.rh-header .title {
+    margin-left: auto;
+    font-size: 14px;
+    color: #cfcfcf;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px;
+  }
+  h1 {
+    font-size: 28px;
+    margin: 0 0 4px 0;
+    color: var(--rh-black);
+  }
+  h2 {
+    font-size: 16px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--rh-gray-700);
+    margin: 32px 0 12px 0;
+    border-bottom: 1px solid var(--rh-gray-200);
+    padding-bottom: 8px;
+  }
+  .subtitle {
+    color: var(--rh-gray-700);
+    margin: 0 0 24px 0;
+  }
+  .panel {
+    background: #fff;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 4px;
+    padding: 20px;
+  }
+  .panel + .panel { margin-top: 16px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .row + .row { margin-top: 12px; }
+  label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--rh-gray-700);
+    display: block;
+    margin-bottom: 4px;
+  }
+  input[type="text"], select {
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 8px 10px;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 3px;
+    background: #fff;
+    color: var(--rh-black);
+    flex: 1;
+    min-width: 240px;
+  }
+  input:focus, select:focus {
+    outline: 2px solid var(--rh-red);
+    outline-offset: -1px;
+    border-color: var(--rh-red);
+  }
+  button {
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    padding: 8px 16px;
+    border: 1px solid var(--rh-red);
+    background: var(--rh-red);
+    color: #fff;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  button:hover { background: var(--rh-red-dark); border-color: var(--rh-red-dark); }
+  button.secondary {
+    background: #fff;
+    color: var(--rh-black);
+    border-color: var(--rh-gray-200);
+  }
+  button.secondary:hover { background: var(--rh-gray-100); }
+  button.success {
+    background: var(--rh-success);
+    border-color: var(--rh-success);
+  }
+  button.success:hover { background: #2E6B27; border-color: #2E6B27; }
+  button.danger {
+    background: var(--rh-danger);
+    border-color: var(--rh-danger);
+  }
+  button.danger:hover { background: #9F140A; border-color: #9F140A; }
+  button.warn {
+    background: var(--rh-warn);
+    border-color: var(--rh-warn);
+    color: var(--rh-black);
+  }
+  button.warn:hover { background: #C98A00; border-color: #C98A00; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .log {
+    background: var(--rh-black);
+    color: #e8e8e8;
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 16px;
+    border-radius: 3px;
+    max-height: 480px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .log .entry { padding: 4px 0; border-bottom: 1px solid #2a2a2a; }
+  .log .entry:last-child { border-bottom: none; }
+  .log .ts { color: #6a6a6a; margin-right: 8px; }
+  .log .lvl { font-weight: 700; margin-right: 8px; }
+  .log .lvl.info    { color: var(--rh-info); }
+  .log .lvl.success { color: #6EC664; }
+  .log .lvl.warn    { color: var(--rh-warn); }
+  .log .lvl.error   { color: #F87171; }
+
+  .callout {
+    background: #FFF8E1;
+    border-left: 4px solid var(--rh-warn);
+    padding: 12px 16px;
+    font-size: 13px;
+    color: var(--rh-black);
+    margin: 16px 0;
+  }
+  .callout strong { color: var(--rh-red-dark); }
+
+  pre.scenario {
+    background: var(--rh-gray-100);
+    border: 1px solid var(--rh-gray-200);
+    padding: 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    overflow-x: auto;
+    color: var(--rh-black);
+  }
+  pre.cmd {
+    background: var(--rh-black);
+    color: #e8e8e8;
+    padding: 12px 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    border-radius: 3px;
+    overflow-x: auto;
+  }
+
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+  }
+  .stat {
+    background: var(--rh-gray-100);
+    padding: 12px;
+    border-radius: 3px;
+    border: 1px solid var(--rh-gray-200);
+  }
+  .stat .label {
+    font-size: 11px;
+    color: var(--rh-gray-700);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .stat .value {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--rh-black);
+    margin-top: 4px;
+  }
+  .stat .value.success { color: var(--rh-success); }
+  .stat .value.danger  { color: var(--rh-danger); }
+  .stat .value.warn    { color: var(--rh-warn); }
+
+  .cel-badge {
+    display: inline-block;
+    background: #E8F5E9;
+    border: 1px solid #A5D6A7;
+    color: #2E7D32;
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin: 2px;
+  }
+
+  .test-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  @media (max-width: 768px) {
+    .test-grid { grid-template-columns: 1fr; }
+  }
+
+  footer {
+    max-width: 1100px;
+    margin: 32px auto;
+    padding: 0 32px;
+    color: var(--rh-gray-700);
+    font-size: 12px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header class="rh-header">
+  <a class="logo" href="/" aria-label="Voltar para o catálogo de testes">
+    <svg width="36" height="28" viewBox="0 0 36 28" xmlns="http://www.w3.org/2000/svg" aria-label="Red Hat">
+      <path fill="#EE0000" d="M26 14c2.5 0 5 .8 5 3 0 .8-.3 1.4-.7 2H5.7c-.4-.6-.7-1.2-.7-2 0-2.2 2.5-3 5-3 0-3 3-7 8-7 2 0 3 1 4 1 1.5 0 2-1 3.5-1 1 0 2 1 2 3 0 2-1 4-1.5 4z"/>
+      <rect x="3" y="20" width="30" height="4" rx="1" fill="#151515"/>
+    </svg>
+    RHCL Lab
+  </a>
+  <div class="title">REQ 19</div>
+</header>
+
+<main>
+  <h1>Motor de Políticas com Expressões CEL</h1>
+  <p class="subtitle">
+    Demonstração de <strong>CEL (Common Expression Language)</strong> como motor de
+    expressões personalizadas no Kuadrant/RHCL. A <code>AuthPolicy</code> usa predicates
+    CEL para controle de acesso contextual na aplicação bancária.
+  </p>
+
+  <h2>Expressões CEL demonstradas</h2>
+  <div class="panel">
+    <div style="margin-bottom: 12px;">
+      <span class="cel-badge">request.method == 'POST'</span>
+      <span class="cel-badge">request.path.startsWith('/api/v1/transfers')</span>
+      <span class="cel-badge">request.headers['x-cel-strict'] == 'true'</span>
+      <span class="cel-badge">!request.headers['user-agent'].contains('bot')</span>
+      <span class="cel-badge">&& || !</span>
+    </div>
+    <pre class="scenario">
+   browser ──TLS──► Router ──► Gateway/Envoy ──ext_authz──► Authorino
+                                    │                           │
+                                    │             CEL predicates avaliam:
+                                    │               method + path + headers
+                                    │               em expressões compostas
+                                    ▼
+                               200 ou 403
+    </pre>
+    <div class="callout">
+      <strong>Pré-requisito:</strong> aplicar
+      <code>tests/req019/manifests/01-cel-custom-expressions.yaml</code>
+      no cluster. Remover a AuthPolicy de API Key existente se houver conflito.
+    </div>
+  </div>
+
+  <h2>Controls</h2>
+  <div class="panel" id="controls">
+    <div class="row">
+      <div style="flex:2; min-width:280px;">
+        <label for="host">Hostname do gateway</label>
+        <input id="host" type="text"
+               placeholder="banking-api-connectivity.apps.cluster.opentlc.com" />
+      </div>
+    </div>
+
+    <h3 style="margin: 20px 0 8px; font-size: 14px; color: var(--rh-gray-700);">AuthPolicy — Testes de Expressão CEL</h3>
+
+    <div class="test-grid">
+      <button class="success" id="testGetFree">
+        Teste 1: GET livre<br><small>read-operations (200)</small>
+      </button>
+      <button class="danger" id="testPostNoKey">
+        Teste 2: POST transfer sem key<br><small>bloqueado — sem match (403)</small>
+      </button>
+      <button class="success" id="testPostWithKey">
+        Teste 3: POST transfer com key<br><small>transfer-with-idempotency (200)</small>
+      </button>
+      <button class="success" id="testPostEcho">
+        Teste 4: POST /api/echo<br><small>test-endpoints (200)</small>
+      </button>
+      <button class="danger" id="testPostBot">
+        Teste 5: POST com user-agent bot<br><small>bloqueado — contains('bot') (403)</small>
+      </button>
+      <button class="success" id="testPostNormal">
+        Teste 6: POST com user-agent normal<br><small>other-writes-no-bots (200)</small>
+      </button>
+    </div>
+
+    <h3 style="margin: 20px 0 8px; font-size: 14px; color: var(--rh-gray-700);">RateLimitPolicy — Counter com CEL</h3>
+
+    <div class="row">
+      <div style="flex:1; min-width:200px;">
+        <label for="idempKey">x-idempotency-key (para burst test)</label>
+        <input id="idempKey" type="text" value="same-key-burst-test" />
+      </div>
+      <div style="flex:1; min-width:200px;">
+        <label for="consumerId">x-consumer-id (para read limit)</label>
+        <input id="consumerId" type="text" value="consumer-alpha" />
+      </div>
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <button class="warn" id="testRateBurst">Burst 8 transfers (limite 5/min)</button>
+      <button class="warn" id="testRateReads">Burst 65 GETs (limite 60/min)</button>
+      <button class="secondary" id="clearLogButton">Clear log</button>
+    </div>
+  </div>
+
+  <h2>Log</h2>
+  <div class="log" id="log" aria-live="polite"></div>
+
+  <h2>Stats</h2>
+  <div class="panel">
+    <div class="summary" id="summary">
+      <div class="stat"><div class="label">Total</div><div class="value" id="stat-total">0</div></div>
+      <div class="stat"><div class="label">200 OK</div><div class="value success" id="stat-ok">0</div></div>
+      <div class="stat"><div class="label">403 Forbidden</div><div class="value danger" id="stat-deny">0</div></div>
+      <div class="stat"><div class="label">429 Limited</div><div class="value warn" id="stat-limited">0</div></div>
+      <div class="stat"><div class="label">Outros</div><div class="value" id="stat-other">0</div></div>
+    </div>
+  </div>
+
+  <h2>Apply</h2>
+  <div class="panel">
+<pre class="cmd"># Remover policy existente (evitar conflito)
+oc delete authpolicy banking-api-connectivity-apikey -n rhcl-apps --ignore-not-found
+
+# Aplicar AuthPolicy com CEL
+oc apply -f tests/req019/manifests/01-cel-custom-expressions.yaml
+
+# Aplicar RateLimitPolicy com CEL
+oc apply -f tests/req019/manifests/02-cel-ratelimit-expressions.yaml
+
+# Limpeza
+oc delete -f tests/req019/manifests/ --ignore-not-found</pre>
+  </div>
+</main>
+
+<footer>
+  RHCL Lab — Red Hat Connectivity Link proof-of-concept
+</footer>
+
+<script>
+  const logEl = document.getElementById("log");
+
+  function logLine(message, level = "info") {
+    const ts = new Date().toISOString().split("T")[1].replace("Z", "");
+    const entry = document.createElement("div");
+    entry.className = "entry";
+    entry.innerHTML =
+      `<span class="ts">${ts}</span>` +
+      `<span class="lvl ${level}">${level.toUpperCase()}</span>` +
+      escapeHtml(message);
+    logEl.appendChild(entry);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+  }
+
+  function clearLog() {
+    logEl.innerHTML = "";
+    stats = { total: 0, ok: 0, deny: 0, limited: 0, other: 0 };
+    renderStats();
+  }
+
+  document.getElementById("clearLogButton").addEventListener("click", clearLog);
+
+  let stats = { total: 0, ok: 0, deny: 0, limited: 0, other: 0 };
+  function renderStats() {
+    document.getElementById("stat-total").textContent = stats.total;
+    document.getElementById("stat-ok").textContent = stats.ok;
+    document.getElementById("stat-deny").textContent = stats.deny;
+    document.getElementById("stat-limited").textContent = stats.limited;
+    document.getElementById("stat-other").textContent = stats.other;
+  }
+
+  // Pre-fill the host field from /env.json (apiHost) when the catalog
+  // image has it baked in via APPS_CONNECTIVITY_ROUTE_HOSTNAME. Falls back
+  // to window.location.host for standalone runs.
+  (async function() {
+    let apiHost = "";
+    try {
+      const r = await fetch("/env.json", { cache: "no-store" });
+      if (r.ok) apiHost = ((await r.json()) || {}).apiHost || "";
+    } catch (_) { /* env.json missing — fall back below */ }
+    const fallback = window.location.host;
+    const useHost = apiHost
+      || (fallback && !fallback.startsWith("localhost") && !fallback.startsWith("127.") ? fallback : "");
+    const el = document.getElementById("host");
+    if (el && !el.value) el.value = useHost;
+  })();
+
+  function getUrl(path) {
+    const host = document.getElementById("host").value.trim();
+    if (!host) throw new Error("Hostname obrigatório");
+    return "https://" + host + path;
+  }
+
+  async function probe(method, path, headers, body, label) {
+    const target = getUrl(path);
+    const hdrs = { ...headers };
+    logLine(`${label} → ${method} ${path}`, "info");
+    const t0 = performance.now();
+    let status = 0;
+    let policyHeader = "";
+    let bodyHint = "";
+    try {
+      const opts = { method, headers: hdrs, credentials: "omit" };
+      if (body) {
+        opts.body = JSON.stringify(body);
+        if (!hdrs["content-type"]) hdrs["content-type"] = "application/json";
+      }
+      const r = await fetch(target, opts);
+      status = r.status;
+      policyHeader = r.headers.get("x-rhcl-policy") || "";
+      try {
+        const t = await r.text();
+        bodyHint = t.length > 100 ? t.slice(0, 100) + "…" : t;
+      } catch (_) {}
+    } catch (e) {
+      logLine(`  Network error: ${e.message}`, "error");
+      stats.total++; stats.other++; renderStats();
+      return;
+    }
+    const ms = Math.round(performance.now() - t0);
+
+    stats.total++;
+    let level = "info";
+    if (status === 200) { stats.ok++; level = "success"; }
+    else if (status === 403) { stats.deny++; level = "warn"; }
+    else if (status === 429) { stats.limited++; level = "warn"; }
+    else { stats.other++; level = "error"; }
+    renderStats();
+
+    const tag = policyHeader ? ` [policy=${policyHeader}]` : "";
+    logLine(`  → ${status} (${ms} ms)${tag} ${bodyHint}`, level);
+  }
+
+  // AuthPolicy tests
+  document.getElementById("testGetFree").addEventListener("click", () => {
+    probe("GET", "/api/v1/accounts/summary", {}, null, "Teste 1: GET livre");
+  });
+
+  document.getElementById("testPostNoKey").addEventListener("click", () => {
+    probe("POST", "/api/v1/transfers",
+      { "content-type": "application/json" },
+      { fromBank: "Example Bank", toBank: "EXTERNAL", amount: 100 },
+      "Teste 2: POST transfer SEM x-idempotency-key");
+  });
+
+  document.getElementById("testPostWithKey").addEventListener("click", () => {
+    probe("POST", "/api/v1/transfers",
+      { "content-type": "application/json", "x-idempotency-key": "txn-" + Date.now() },
+      { fromBank: "Example Bank", toBank: "EXTERNAL", amount: 100 },
+      "Teste 3: POST transfer COM x-idempotency-key");
+  });
+
+  document.getElementById("testPostEcho").addEventListener("click", () => {
+    probe("POST", "/api/echo",
+      { "content-type": "application/json" },
+      { test: true },
+      "Teste 4: POST /api/echo (livre)");
+  });
+
+  document.getElementById("testPostBot").addEventListener("click", () => {
+    probe("POST", "/api/v1/chat/completions",
+      { "content-type": "application/json", "user-agent": "my-bot-scraper/1.0" },
+      { model: "test", messages: [] },
+      "Teste 5: POST com user-agent 'bot'");
+  });
+
+  document.getElementById("testPostNormal").addEventListener("click", () => {
+    probe("POST", "/api/v1/chat/completions",
+      { "content-type": "application/json", "user-agent": "Mozilla/5.0 RedHatBankApp/2.1" },
+      { model: "test", messages: [] },
+      "Teste 6: POST com user-agent normal");
+  });
+
+  // RateLimitPolicy tests
+  document.getElementById("testRateBurst").addEventListener("click", async () => {
+    const key = document.getElementById("idempKey").value.trim() || "burst-key";
+    logLine(`Rate limit burst: 8 POSTs com x-idempotency-key='${key}'`, "info");
+    for (let i = 1; i <= 8; i++) {
+      await probe("POST", "/api/v1/transfers",
+        { "content-type": "application/json", "x-idempotency-key": key },
+        { fromBank: "Example Bank", toBank: "EXT", amount: 10 },
+        `  [${i}/8]`);
+    }
+    logLine("Burst completo. Esperado: ~5x 200 + ~3x 429", "info");
+  });
+
+  document.getElementById("testRateReads").addEventListener("click", async () => {
+    const cid = document.getElementById("consumerId").value.trim() || "consumer-test";
+    logLine(`Rate limit reads: 65 GETs com x-consumer-id='${cid}'`, "info");
+    for (let i = 1; i <= 65; i++) {
+      await probe("GET", "/api/v1/accounts/summary",
+        { "x-consumer-id": cid },
+        null,
+        `  [${i}/65]`);
+    }
+    logLine("Burst completo. Esperado: ~60x 200 + ~5x 429", "info");
+  });
+
+  renderStats();
+  logLine("Ready. Aplique os manifests no cluster e use os botões para testar.", "info");
+</script>
+</body>
+</html>

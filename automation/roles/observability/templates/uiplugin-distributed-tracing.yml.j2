@@ -1,0 +1,8 @@
+apiVersion: observability.openshift.io/v1alpha1
+kind: UIPlugin
+metadata:
+  name: {{ observability_uiplugin_name }}
+spec:
+  type: DistributedTracing
+  distributedTracing:
+    timeout: "{{ observability_uiplugin_timeout }}"

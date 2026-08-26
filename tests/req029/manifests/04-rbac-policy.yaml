@@ -1,0 +1,67 @@
+# RHDH RBAC policy — maps Keycloak groups → roles → Kuadrant permissions.
+# This is the heart of "self-service through the IDP": a developer's group
+# membership (asserted by Keycloak at login) decides whether they can browse
+# products, mint keys, publish products or approve requests.
+#
+# PRODUCTION NOTE: the final line (guest → api-admin) is a dev/test
+# convenience from the Kuadrant quickstart. REMOVE it for production — with
+# auth.environment=production and the guest provider disabled it is inert,
+# but delete it so it can never grant admin to an anonymous session.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rbac-policies
+  namespace: rhcl-developer-hub
+data:
+  rbac-policy.csv: |
+    # api consumer: browses apis, requests access
+    p, role:default/api-consumer, kuadrant.apiproduct.read.all, read, allow
+    p, role:default/api-consumer, kuadrant.apiproduct.list, read, allow
+    p, role:default/api-consumer, kuadrant.apikey.create, create, allow, apiproduct:*/*
+    p, role:default/api-consumer, kuadrant.apikey.read.own, read, allow
+    p, role:default/api-consumer, kuadrant.apikey.update.own, update, allow
+    p, role:default/api-consumer, kuadrant.apikey.delete.own, delete, allow
+    p, role:default/api-consumer, catalog.entity.read, read, allow
+
+    # api owner: publishes apis they own, approves requests
+    p, role:default/api-owner, kuadrant.planpolicy.read, read, allow
+    p, role:default/api-owner, kuadrant.planpolicy.list, read, allow
+    p, role:default/api-owner, kuadrant.apiproduct.create, create, allow
+    p, role:default/api-owner, kuadrant.apiproduct.read.all, read, allow
+    p, role:default/api-owner, kuadrant.apiproduct.update.own, update, allow
+    p, role:default/api-owner, kuadrant.apiproduct.delete.own, delete, allow
+    p, role:default/api-owner, kuadrant.apiproduct.list, read, allow
+    p, role:default/api-owner, kuadrant.apikey.create, create, allow, apiproduct:*/*
+    p, role:default/api-owner, kuadrant.apikey.read.own, read, allow
+    p, role:default/api-owner, kuadrant.apikey.update.own, update, allow
+    p, role:default/api-owner, kuadrant.apikey.delete.own, delete, allow
+    p, role:default/api-owner, kuadrant.apikey.approve, update, allow
+    p, role:default/api-owner, catalog.entity.read, read, allow
+
+    # api admin: platform engineers managing all products
+    p, role:default/api-admin, kuadrant.planpolicy.read, read, allow
+    p, role:default/api-admin, kuadrant.planpolicy.list, read, allow
+    p, role:default/api-admin, kuadrant.apiproduct.create, create, allow
+    p, role:default/api-admin, kuadrant.apiproduct.read.all, read, allow
+    p, role:default/api-admin, kuadrant.apiproduct.update.all, update, allow
+    p, role:default/api-admin, kuadrant.apiproduct.delete.all, delete, allow
+    p, role:default/api-admin, kuadrant.apiproduct.list, read, allow
+    p, role:default/api-admin, kuadrant.apikey.create, create, allow, apiproduct:*/*
+    p, role:default/api-admin, kuadrant.apikey.read.all, read, allow
+    p, role:default/api-admin, kuadrant.apikey.update.all, update, allow
+    p, role:default/api-admin, kuadrant.apikey.delete.all, delete, allow
+    p, role:default/api-admin, kuadrant.apikey.approve, update, allow
+    p, role:default/api-admin, catalog.entity.read, read, allow
+
+    # assign Keycloak groups to roles (production path — once users/
+    # groups are ingested into the catalog)
+    g, group:default/api-consumers, role:default/api-consumer
+    g, group:default/api-owners, role:default/api-owner
+    g, group:default/api-admins, role:default/api-admin
+
+    # Demo/PoC: explicit user→role bindings so RBAC works while catalog
+    # user ingestion is off. The OIDC resolver yields
+    # user:default/<preferred_username>.
+    g, user:default/alice, role:default/api-admin
+    g, user:default/bob, role:default/api-consumer
+    g, user:default/carol, role:default/api-consumer

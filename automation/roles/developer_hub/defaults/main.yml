@@ -1,0 +1,163 @@
+---
+# developer_hub role — Red Hat Developer Hub (RHDH) as the Internal Developer
+# Portal for item 29 (self-service through the IDP), carrying the Kuadrant
+# Backstage plugin. Opt-in: set DEVELOPER_HUB_ENABLED=true.
+#
+# Version pin: Kuadrant Backstage plugin 0.4.0 (stable, released 2026-07-21),
+# targeting Backstage 1.42.5. Replaces the 0.4.0-dev3 pre-release the role
+# carried while 0.4.0 was unreleased.
+#
+# The frontend mount key used to be written into dynamic-plugins.yml.j2 by
+# hand, which made a version bump dangerous: the package's scalprum.name has
+# changed direction across releases (0.3.0 internal.plugin-kuadrant → 0.4.0-dev3
+# kuadrant.kuadrant-backstage-plugin-frontend → 0.4.0 back to
+# internal.plugin-kuadrant), and a mismatch unmounts the plugin silently —
+# every /kuadrant page 404s with nothing failing during install. The role now
+# reads that name from the package metadata, so bumping the version is just
+# changing the version. See tests/req029.md.
+
+developer_hub_enabled: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_ENABLED') | default('false', true) | bool }}"
+
+# --- Namespaces ---
+developer_hub_namespace: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_NAMESPACE') | default('rhcl-developer-hub', true) }}"
+developer_hub_operator_namespace: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_OPERATOR_NAMESPACE') | default('rhdh-operator', true) }}"
+
+# --- Operator ---
+developer_hub_operator_channel: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_OPERATOR_CHANNEL') | default('fast-1.6', true) }}"
+developer_hub_operator_source: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_OPERATOR_SOURCE') | default('redhat-operators', true) }}"
+developer_hub_operator_source_namespace: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_OPERATOR_SOURCE_NAMESPACE') | default('openshift-marketplace', true) }}"
+developer_hub_install_operator: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_INSTALL_OPERATOR') | default('true', true) | bool }}"
+
+# --- Backstage instance ---
+# Versão da API do CRD Backstage. Vazio = o role lê a storage version do CRD
+# instalado no cluster (recomendado: acompanha o operator que estiver lá).
+# Preencha só para fixar uma versão específica.
+developer_hub_backstage_api_version_override: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_BACKSTAGE_API_VERSION') | default('', true) }}"
+developer_hub_instance_name: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_INSTANCE_NAME') | default('rhdh', true) }}"
+developer_hub_route_subdomain: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_ROUTE_SUBDOMAIN') | default('rhdh', true) }}"
+
+# --- Route host override ---
+#
+# `developer_hub_hostname` pins the Route host to a full FQDN. Left empty, the
+# Route keeps requesting a subdomain and the ingress controller resolves
+# `<sub>.<apps-domain>`.
+developer_hub_hostname: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_HOSTNAME') | default('', true) }}"
+developer_hub_service_account: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_SERVICE_ACCOUNT') | default('default', true) }}"
+
+# --- CA interna (TLS do Keycloak assinado por CA corporativa) ---
+#
+# O backend do RHDH é Node, que mantém a PRÓPRIA lista de CAs e ignora o
+# truststore do sistema. Contra um Keycloak com certificado de CA interna o
+# login morre em /oidc/start com
+#   SELF_SIGNED_CERT_IN_CHAIN: self-signed certificate in certificate chain
+#
+# Ligado, o role cria um ConfigMap com o label
+# `config.openshift.io/inject-trusted-cabundle` (preenchido pelo Network
+# Operator com as CAs do cluster, incluindo a de `proxy/cluster .spec.trustedCA`),
+# monta em /opt/app-root/etc/ca-bundle.crt e aponta NODE_EXTRA_CA_CERTS para lá.
+#
+# Default ligado: em cluster sem CA extra o bundle traz só as CAs públicas e o
+# efeito é nulo, então não custa nada deixar ativo.
+developer_hub_trusted_ca_enabled: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_TRUSTED_CA_ENABLED') | default('true', true) | bool }}"
+developer_hub_trusted_ca_configmap: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_TRUSTED_CA_CONFIGMAP') | default('rhdh-trusted-ca', true) }}"
+# true = o role cria o ConfigMap com o label de injeção (autocontido).
+# false = apenas MONTA um ConfigMap que já existe, sem tocar nele — use quando
+# o cluster já tiver um bundle mantido por outro operator (ex.: o
+# `odh-trusted-ca-bundle` do RHOAI/ODH). Nesse caso confirme que a chave do
+# arquivo é `ca-bundle.crt`, que é o caminho em NODE_EXTRA_CA_CERTS.
+developer_hub_trusted_ca_create: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_TRUSTED_CA_CREATE') | default('true', true) | bool }}"
+
+# Label que um ingress externo usa para selecionar quais Routes ele serve.
+# Herda das mesmas vars que apps/rhbk/tests_catalog usam nos Routes que eles
+# próprios criam; aqui a Route é do operator do RHDH, então o role a rotula
+# depois. Vazio desliga (clusters que não têm esse ingress).
+developer_hub_route_ingress_class_label_key: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_ROUTE_INGRESS_CLASS_LABEL_KEY') | default(apps_openshift_route_ingress_class_label_key | default(''), true) }}"
+developer_hub_route_ingress_class_label_value: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_ROUTE_INGRESS_CLASS_LABEL_VALUE') | default(apps_openshift_route_ingress_class_label_value | default('nginx'), true) }}"
+
+# --- Storage ---
+#
+# RHDH claims two kinds of volume and NEITHER carries a storageClassName, so
+# both rely on the cluster having a default StorageClass. Where none is marked
+# default the claims sit Pending forever with "no persistent volumes available
+# for this claim and no storage class is set" — the operator never retries.
+#
+#   1. data-backstage-psql-<instance>-0  — the local PostgreSQL StatefulSet's
+#      volumeClaimTemplate. Stable name, so the role pre-creates it: a
+#      StatefulSet adopts an existing PVC instead of creating its own.
+#   2. <pod>-dynamic-plugins-root        — a generic EPHEMERAL volume on the
+#      Backstage pod. Its name carries the ReplicaSet hash and changes on every
+#      rollout, so it cannot be pre-created; the class has to be injected into
+#      the pod spec through spec.deployment.patch.
+#
+# Empty = rely on the cluster default (correct for any cluster that has one).
+developer_hub_storage_class: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_STORAGE_CLASS') | default('', true) }}"
+developer_hub_db_storage_size: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_DB_STORAGE_SIZE') | default('1Gi', true) }}"
+developer_hub_dynamic_plugins_storage_size: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_DYNAMIC_PLUGINS_STORAGE_SIZE') | default('5Gi', true) }}"
+
+# Portal branding — generic by default so a demo doesn't hard-code a
+# specific customer name. Override with DEVELOPER_HUB_APP_TITLE.
+developer_hub_app_title: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_APP_TITLE') | default('ACME — Internal Developer Hub', true) }}"
+
+# Allow OIDC sign-in without a matching User entity in the Backstage
+# catalog. true = demo posture (no Keycloak user ingestion); paired with
+# explicit user→role bindings in rbac-policy.csv. Set false + ingest
+# users/groups for production.
+developer_hub_allow_signin_without_catalog: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_ALLOW_SIGNIN_WITHOUT_CATALOG') | default('true', true) | bool }}"
+# Demo users to bind to RHDH roles (user:default/<name> → role). Comma
+# lists per role. Only used while catalog user ingestion is off.
+developer_hub_demo_admins: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_DEMO_ADMINS') | default('alice', true) }}"
+developer_hub_demo_consumers: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_DEMO_CONSUMERS') | default('bob,carol', true) }}"
+
+# --- Kuadrant Backstage plugin (pin) ---
+developer_hub_plugin_version: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_PLUGIN_VERSION') | default('0.4.0', true) }}"
+developer_hub_plugin_frontend: "@kuadrant/kuadrant-backstage-plugin-frontend"
+developer_hub_plugin_backend: "@kuadrant/kuadrant-backstage-plugin-backend-dynamic"
+
+# --- OIDC (Keycloak / RHBK). Defaults resolve from the rhbk role's vars so a
+#     stacked install-all "just works"; override for an external IdP. ---
+developer_hub_oidc_issuer: >-
+  {{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_OIDC_ISSUER')
+     | default('https://' ~ (rhbk_hostname | default('keycloak.' ~ rhcl_zone_root_domain)) ~ '/realms/' ~ (rhbk_realm | default('rhcl')), true) }}
+developer_hub_oidc_client_id: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_OIDC_CLIENT_ID') | default('developer-hub', true) }}"
+developer_hub_oidc_client_secret: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_OIDC_CLIENT_SECRET') | default('developer-hub-secret', true) }}"
+# Create/refresh the OIDC client in the in-cluster Keycloak via kcadm. Set
+# false when the IdP is external / the client is managed out of band.
+developer_hub_manage_keycloak_client: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_MANAGE_KEYCLOAK_CLIENT') | default((developer_hub_oidc_issuer is search('keycloak')) | string, true) | bool }}"
+# Derivam do role rhbk em vez de repetir os valores: com defaults próprios,
+# trocar RHBK_ADMIN_PASSWORD (ou o namespace/instância) fazia o kcadm daqui
+# continuar tentando 'redhat' em 'rhcl-keycloak' e falhar. Mesmo raciocínio do
+# issuer OIDC acima — a configuração do Keycloak tem UM dono.
+developer_hub_keycloak_namespace: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_KEYCLOAK_NAMESPACE') | default(rhbk_namespace | default('rhcl-keycloak'), true) }}"
+# O operator RHBK cria um StatefulSet com o nome do CR, então o pod é <cr>-0.
+developer_hub_keycloak_pod: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_KEYCLOAK_POD') | default((rhbk_keycloak_name | default('rhcl')) ~ '-0', true) }}"
+developer_hub_keycloak_admin_user: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_KEYCLOAK_ADMIN_USER') | default(rhbk_admin_username | default('admin'), true) }}"
+developer_hub_keycloak_admin_password: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_KEYCLOAK_ADMIN_PASSWORD') | default(rhbk_admin_password | default('redhat'), true) }}"
+
+# --- Console link wiring (custom-rhcl-console) ---
+developer_hub_wire_console_link: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_WIRE_CONSOLE_LINK') | default('true', true) | bool }}"
+developer_hub_console_config_namespace: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_CONSOLE_CONFIG_NAMESPACE') | default('custom-rhcl-console', true) }}"
+developer_hub_console_config_name: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_CONSOLE_CONFIG_NAME') | default('custom-rhcl-console-config', true) }}"
+
+# npm registry base (integrity hash lookup — no npm binary needed).
+developer_hub_npm_registry: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_NPM_REGISTRY') | default('https://registry.npmjs.org', true) }}"
+developer_hub_npm_timeout: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_NPM_TIMEOUT') | default('15', true) | int }}"
+
+# Hashes de integridade dos pacotes do plugin. Preenchidos, o role NÃO consulta
+# o registry npm — a consulta parte do CONTROLLER, e numa VDI com egress
+# restrito ela arrasta ou trava. O hash é fixo por versão do pacote, então
+# resolver a cada execução não agrega depois de conhecido.
+#
+# Para a versão pinada acima (0.4.0), resolvidos em 2026-07-22:
+#   frontend sha512-ewW/eOoHcK8MqmhyGzFQvnU8yQkvRpQxhb/GLZbAyWwWpmA/zju2qwFWXx49eBcy9RIlfO2rwS8sQC7do3dfGA==
+#   backend  sha512-OOkfAbnFxuOkBjvQMUqkd/TtP/yrXr15yQ/Xel880kdgZk39CPlQzVdOS3VXmcLa/Y9toI9nTbyCNqtXAD2C/g==
+#
+# ATENÇÃO: são atalhos para a CONSULTA, não para o download. O init container
+# `install-dynamic-plugins` continua baixando os pacotes do npm no boot do pod
+# — se o CLUSTER não tem egress para o registry, pinar o hash não resolve; é
+# preciso um mirror interno em DEVELOPER_HUB_NPM_REGISTRY.
+developer_hub_plugin_frontend_integrity: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_PLUGIN_FRONTEND_INTEGRITY') | default('', true) }}"
+developer_hub_plugin_backend_integrity: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_PLUGIN_BACKEND_INTEGRITY') | default('', true) }}"
+# Nome do módulo scalprum do frontend. Vazio = lido do metadata do pacote
+# (recomendado — acompanha a versão sozinho). Pine junto com os hashes quando
+# a consulta ao registry não for possível. Para 0.4.0: internal.plugin-kuadrant
+developer_hub_plugin_frontend_scalprum_name: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_PLUGIN_FRONTEND_SCALPRUM_NAME') | default('', true) }}"

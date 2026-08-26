@@ -1,0 +1,1340 @@
+---
+rhcl_action: "{{ lookup('ansible.builtin.env', 'RHCL_ACTION') | default('install', true) }}"
+rhcl_ocp_mode: "{{ lookup('ansible.builtin.env', 'RHCL_OCP_MODE') | default('native_gateway_api', true) }}"
+
+# Global switch — when OPERATORS_INSTALL_ENABLED=false, every role that
+# installs an operator via OLM (rhcl, observability, cert_manager, rhbk,
+# grafana, etc.) skips the OperatorGroup / Subscription / CSV-wait dance and
+# just verifies the operator's CRD is already on the cluster. Use this in
+# environments where OLM is managed centrally (the customer installs operators
+# themselves) or on iterative re-runs where the operator install already
+# happened and you only want to reconcile CRs / apps — saves several minutes.
+# Each role accepts a per-role override (e.g. RHCL_INSTALL_OPERATOR,
+# OBSERVABILITY_INSTALL_OPERATOR) for finer control.
+operators_install_enabled: "{{ lookup('ansible.builtin.env', 'OPERATORS_INSTALL_ENABLED') | default('true', true) | bool }}"
+
+rhcl_install_operator: "{{ lookup('ansible.builtin.env', 'RHCL_INSTALL_OPERATOR') | default(operators_install_enabled, true) | bool }}"
+observability_install_operator: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_INSTALL_OPERATOR') | default(operators_install_enabled, true) | bool }}"
+cert_manager_install_operator: "{{ lookup('ansible.builtin.env', 'CERT_MANAGER_INSTALL_OPERATOR') | default(operators_install_enabled, true) | bool }}"
+rhbk_install_operator: "{{ lookup('ansible.builtin.env', 'RHBK_INSTALL_OPERATOR') | default(operators_install_enabled, true) | bool }}"
+mcp_gateway_install_operator: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_INSTALL_OPERATOR') | default(operators_install_enabled, true) | bool }}"
+ocp_ai_install_operator: "{{ lookup('ansible.builtin.env', 'OCP_AI_INSTALL_OPERATOR') | default(operators_install_enabled, true) | bool }}"
+
+# Opt-in toggles for the AI playbooks. Both default to false because they're
+# heavy installs (MCP Gateway brings a preview-channel operator; OCP AI brings
+# RHOAI + GPU operator + Kueue + KEDA etc.) and aren't always wanted on every
+# cluster. Set MCP_GATEWAY_ENABLED=true to wire MCP into the install-all run.
+# Set OCP_AI_ENABLED=true to run the ocp_ai role; OCP_AI_GPU_ENABLED toggles
+# whether NVIDIA GPU Operator + ClusterPolicy + HardwareProfile are applied
+# (skip on CPU-only clusters).
+mcp_gateway_enabled: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_ENABLED') | default('false', true) | bool }}"
+ocp_ai_enabled: "{{ lookup('ansible.builtin.env', 'OCP_AI_ENABLED') | default('false', true) | bool }}"
+ocp_ai_gpu_enabled: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_ENABLED') | default('true', true) | bool }}"
+
+rhcl_namespace: "{{ lookup('ansible.builtin.env', 'RHCL_NAMESPACE') | default('kuadrant-system', true) }}"
+rhcl_operator_name: "{{ lookup('ansible.builtin.env', 'RHCL_OPERATOR_NAME') | default('rhcl-operator', true) }}"
+rhcl_operator_subscription_name: "{{ lookup('ansible.builtin.env', 'RHCL_OPERATOR_SUBSCRIPTION_NAME') | default('rhcl-operator', true) }}"
+# RHCL / Kuadrant version — default is the LATEST from the stable channel
+# (1.4.1+).
+#
+# History: Red Hat deprecated Connectivity Link 1.4.0 (gateway data plane
+# down — the wasm-shim relied on an unstable remote wasm fetch that never
+# converged, so every request through the gateway returned 000). This lab
+# pinned 1.3.4 while that was live. **1.4.1 fixes it** (validated
+# 2026-07-08 on a fresh cluster: the wasm module is now served from an
+# in-cluster service, sha256-pinned; AuthPolicy + RateLimitPolicy enforce
+# end-to-end). See docs/known-issues/rhcl-14-gateway-wasm-incompat.md.
+#
+# The pin machinery below is kept for 1.3.x parity reproductions (e.g.
+# matching a customer cluster still on 1.3). Set RHCL_PIN_V13_ENABLED=true
+# to reproduce the old behaviour; the default is now false.
+rhcl_pin_v13_enabled: "{{ lookup('ansible.builtin.env', 'RHCL_PIN_V13_ENABLED') | default('false', true) | bool }}"
+rhcl_pin_catalog_name: "{{ lookup('ansible.builtin.env', 'RHCL_PIN_CATALOG_NAME') | default('redhat-operators-v418', true) }}"
+rhcl_pin_catalog_namespace: "{{ lookup('ansible.builtin.env', 'RHCL_PIN_CATALOG_NAMESPACE') | default('openshift-marketplace', true) }}"
+rhcl_pin_catalog_image: "{{ lookup('ansible.builtin.env', 'RHCL_PIN_CATALOG_IMAGE') | default('registry.redhat.io/redhat/redhat-operator-index:v4.18', true) }}"
+rhcl_operator_channel: "{{ lookup('ansible.builtin.env', 'RHCL_OPERATOR_CHANNEL') | default('stable', true) }}"
+# When pinning, default the source to the v4.18 catalog above so OLM picks
+# 1.3.x and resolves authorino/limitador/dns deps from the same index.
+rhcl_operator_source: "{{ lookup('ansible.builtin.env', 'RHCL_OPERATOR_SOURCE') | default(rhcl_pin_catalog_name if (rhcl_pin_v13_enabled | bool) else 'redhat-operators', true) }}"
+rhcl_operator_source_namespace: "{{ lookup('ansible.builtin.env', 'RHCL_OPERATOR_SOURCE_NAMESPACE') | default('openshift-marketplace', true) }}"
+rhcl_operator_starting_csv: "{{ lookup('ansible.builtin.env', 'RHCL_OPERATOR_STARTING_CSV') | default('rhcl-operator.v1.3.4' if (rhcl_pin_v13_enabled | bool) else '', true) }}"
+rhcl_operatorgroup_name: "{{ lookup('ansible.builtin.env', 'RHCL_OPERATORGROUP_NAME') | default('kuadrant', true) }}"
+rhcl_instance_name: "{{ lookup('ansible.builtin.env', 'RHCL_INSTANCE_NAME') | default('kuadrant', true) }}"
+rhcl_console_plugin_enabled: "{{ lookup('ansible.builtin.env', 'RHCL_CONSOLE_PLUGIN_ENABLED') | default('true', true) | bool }}"
+rhcl_console_plugin_name: "{{ lookup('ansible.builtin.env', 'RHCL_CONSOLE_PLUGIN_NAME') | default('kuadrant-console-plugin', true) }}"
+# Developer portal: sobe o developer-portal-controller e reconcilia APIProducts
+# (status com planos/auth/OIDC descobertos) — necessário p/ a console customizada
+# enxergar API Products. Sem isso o APIProduct fica sem status.
+rhcl_developer_portal_enabled: "{{ lookup('ansible.builtin.env', 'RHCL_DEVELOPER_PORTAL_ENABLED') | default('true', true) | bool }}"
+
+mcp_gateway_namespace: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_NAMESPACE') | default('mcp-gateway', true) }}"
+mcp_gateway_operator_name: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_OPERATOR_NAME') | default('mcp-gateway', true) }}"
+mcp_gateway_subscription_name: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_SUBSCRIPTION_NAME') | default('mcp-gateway', true) }}"
+mcp_gateway_operatorgroup_name: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_OPERATORGROUP_NAME') | default('mcp-gateway', true) }}"
+mcp_gateway_operator_channel: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_OPERATOR_CHANNEL') | default('preview', true) }}"
+mcp_gateway_operator_source: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_OPERATOR_SOURCE') | default('redhat-operators', true) }}"
+mcp_gateway_operator_source_namespace: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_OPERATOR_SOURCE_NAMESPACE') | default('openshift-marketplace', true) }}"
+# Req 59 — dedicated Istio Gateway for MCP Gateway operator only (not rhcl-apps-gateway).
+mcp_gateway_manage_gateway: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_MANAGE_GATEWAY') | default('true', true) | bool }}"
+mcp_gateway_gateway_name: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_GATEWAY_NAME') | default('rhcl-mcp-gateway', true) }}"
+mcp_gateway_gateway_namespace: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_GATEWAY_NAMESPACE') | default('mcp-gateway', true) }}"
+mcp_gateway_gateway_podmonitor_name: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_GATEWAY_PODMONITOR_NAME') | default(mcp_gateway_gateway_name ~ '-istio-metrics', true) }}"
+mcp_gateway_gatewayclass_name: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_GATEWAYCLASS_NAME') | default(lookup('ansible.builtin.env', 'GATEWAY_API_GATEWAYCLASS_NAME') | default('openshift-default', true), true) }}"
+mcp_gateway_gateway_service_type: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_GATEWAY_SERVICE_TYPE') | default(lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_GATEWAY_SERVICE_TYPE') | default('LoadBalancer', true), true) }}"
+mcp_gateway_listener_name: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_LISTENER_NAME') | default('mcp', true) }}"
+mcp_gateway_listener_hostname: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_LISTENER_HOSTNAME') | default('', true) }}"
+mcp_gateway_hostname: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_HOSTNAME') | default('', true) }}"
+mcp_gateway_server_listener_name: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_SERVER_LISTENER_NAME') | default('mcps', true) }}"
+mcp_gateway_server_listener_hostname: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_SERVER_LISTENER_HOSTNAME') | default('', true) }}"
+mcp_gateway_port: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_PORT') | default('8080', true) | int }}"
+mcp_gateway_protocol: "HTTP"
+mcp_gateway_server_listener_protocol: "HTTP"
+mcp_gateway_extension_name: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_EXTENSION_NAME') | default('mcp-gateway', true) }}"
+mcp_gateway_http_route_management: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_HTTP_ROUTE_MANAGEMENT') | default('Enabled', true) }}"
+mcp_gateway_auto_route_name: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_AUTO_ROUTE_NAME') | default('mcp-gateway-route', true) }}"
+mcp_gateway_path: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_PATH') | default('/mcp', true) }}"
+mcp_gateway_custom_route_enabled: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_CUSTOM_ROUTE_ENABLED') | default('true', true) | bool }}"
+mcp_gateway_custom_route_name: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_CUSTOM_ROUTE_NAME') | default('mcp-gateway-route-custom', true) }}"
+mcp_gateway_custom_route_cors_enabled: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_CUSTOM_ROUTE_CORS_ENABLED') | default('true', true) | bool }}"
+mcp_gateway_custom_route_cors_allow_headers: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_CUSTOM_ROUTE_CORS_ALLOW_HEADERS') | default('Content-Type, Authorization, Accept, Origin, X-Requested-With, MCP-Session-Id, x-flow-trace-id, x-client-app, x-consumer-id', true) }}"
+mcp_gateway_custom_route_auth_policy_enabled: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_CUSTOM_ROUTE_AUTH_POLICY_ENABLED') | default('true', true) | bool }}"
+mcp_gateway_custom_route_auth_policy_name: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_CUSTOM_ROUTE_AUTH_POLICY_NAME') | default(mcp_gateway_custom_route_name ~ '-allow-public', true) }}"
+mcp_gateway_browser_route_enabled: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_BROWSER_ROUTE_ENABLED') | default('true', true) | bool }}"
+mcp_gateway_browser_route_name: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_BROWSER_ROUTE_NAME') | default(mcp_gateway_extension_name ~ '-browser', true) }}"
+mcp_gateway_cors_envoyfilter_enabled: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_CORS_ENVOYFILTER_ENABLED') | default('true', true) | bool }}"
+mcp_gateway_cors_envoyfilter_name: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_CORS_ENVOYFILTER_NAME') | default('mcp-gateway-cors', true) }}"
+mcp_gateway_cors_allow_origin: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_CORS_ALLOW_ORIGIN') | default('*', true) }}"
+mcp_gateway_cors_allow_methods: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_CORS_ALLOW_METHODS') | default('GET, POST, PUT, DELETE, OPTIONS, HEAD', true) }}"
+mcp_gateway_cors_allow_headers: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_CORS_ALLOW_HEADERS') | default('content-type, authorization, accept, origin, x-requested-with, mcp-session-id, x-flow-trace-id, x-client-app, x-consumer-id', true) }}"
+mcp_gateway_cors_expose_headers: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_CORS_EXPOSE_HEADERS') | default('mcp-session-id', true) }}"
+mcp_gateway_cors_max_age: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_CORS_MAX_AGE') | default('300', true) }}"
+mcp_gateway_gateway_service_name: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_GATEWAY_SERVICE_NAME') | default(mcp_gateway_gateway_name ~ '-' ~ mcp_gateway_gatewayclass_name, true) }}"
+mcp_gateway_compat_service_name: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_COMPAT_SERVICE_NAME') | default(mcp_gateway_gateway_name ~ '-istio', true) }}"
+mcp_gateway_compat_service_enabled: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_COMPAT_SERVICE_ENABLED') | default('true', true) | bool }}"
+mcp_gateway_private_host: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_PRIVATE_HOST') | default(mcp_gateway_compat_service_name ~ '.' ~ mcp_gateway_gateway_namespace ~ '.svc.cluster.local:' ~ (mcp_gateway_port | string), true) }}"
+mcp_gateway_server_registration_name: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_SERVER_REGISTRATION_NAME') | default('banking-api', true) }}"
+mcp_gateway_server_registration_tool_prefix: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_SERVER_REGISTRATION_TOOL_PREFIX') | default('banking_', true) }}"
+mcp_gateway_server_registration_route_name: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_SERVER_REGISTRATION_ROUTE_NAME') | default('banking-api-mcp-server', true) }}"
+# HTTPRoute and route AuthPolicies must live in mcp-gateway (same namespace as rhcl-mcp-gateway).
+mcp_gateway_server_registration_route_namespace: "{{ mcp_gateway_namespace }}"
+mcp_gateway_gateway_deny_all_enabled: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_GATEWAY_DENY_ALL_ENABLED') | default('true', true) | bool }}"
+mcp_gateway_gateway_deny_all_policy_name: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_GATEWAY_DENY_ALL_POLICY_NAME') | default(mcp_gateway_gateway_name ~ '-deny-all', true) }}"
+mcp_gateway_server_route_hostname: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_SERVER_ROUTE_HOSTNAME') | default('', true) }}"
+mcp_gateway_server_route_auth_policy_enabled: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_SERVER_ROUTE_AUTH_POLICY_ENABLED') | default('true', true) | bool }}"
+mcp_gateway_server_route_auth_policy_name: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_SERVER_ROUTE_AUTH_POLICY_NAME') | default(mcp_gateway_server_registration_route_name ~ '-allow-mcp-discovery', true) }}"
+mcp_gateway_server_backend_service_name: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_SERVER_BACKEND_SERVICE_NAME') | default(lookup('ansible.builtin.env', 'APPS_BACKEND_PRIMARY_NAME') | default('banking-api-v1', true), true) }}"
+mcp_gateway_server_backend_service_namespace: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_SERVER_BACKEND_SERVICE_NAMESPACE') | default(lookup('ansible.builtin.env', 'APPS_NAMESPACE') | default('rhcl-apps', true), true) }}"
+mcp_gateway_server_backend_service_port: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_SERVER_BACKEND_SERVICE_PORT') | default('8080', true) | int }}"
+mcp_gateway_validate_endpoint: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_VALIDATE_ENDPOINT') | default('false', true) | bool }}"
+mcp_gateway_validate_url: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_VALIDATE_URL') | default('', true) }}"
+mcp_gateway_remove_listener: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_REMOVE_LISTENER') | default('false', true) | bool }}"
+mcp_gateway_listener_update_if_exists: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_LISTENER_UPDATE_IF_EXISTS') | default('false', true) | bool }}"
+
+# Default flipped to the Sail-managed `istio` class on 2026-07-08. RHCL
+# 1.4.x's wasm-shim config still breaks the ingress-operator-managed
+# `openshift-default` gateway data plane (unknown wasm field + remote
+# fetch loop → gateway pod OOMKilled) — the exact known-issue that got
+# 1.4.0 deprecated. On the Sail data plane (OSSM 3.3.5 / Istio 1.26.4+)
+# RHCL 1.4.1 enforces correctly end-to-end (validated on cluster-mck9f).
+# Set GATEWAY_API_GATEWAYCLASS_NAME=openshift-default only for 1.3.x
+# parity clusters (pair with RHCL_PIN_V13_ENABLED=true).
+# See docs/known-issues/rhcl-14-gateway-wasm-incompat.md.
+gateway_api_gatewayclass_name: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_GATEWAYCLASS_NAME') | default('istio', true) }}"
+gateway_api_controller_name: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_CONTROLLER_NAME') | default('istio.io/gateway-controller', true) }}"
+gateway_api_controller_namespace: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_CONTROLLER_NAMESPACE') | default('openshift-ingress', true) }}"
+gateway_api_controller_deployment: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_CONTROLLER_DEPLOYMENT') | default('istiod-openshift-gateway', true) }}"
+# Espera pelo controller do gateway. O teto era 300s (30x10s) e, como a task
+# não podia falhar, um nome/namespace errado custava 5 min silenciosos por
+# execução. 18x5s = 90s: um controller saudável responde na primeira chamada
+# (o `until` só dorme quando a condição falha), e um ausente aparece rápido.
+# Suba o teto em clusters lentos; STRICT=false volta ao comportamento antigo
+# de apenas avisar e seguir.
+gateway_api_controller_wait_retries: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_CONTROLLER_WAIT_RETRIES') | default('18', true) | int }}"
+gateway_api_controller_wait_delay: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_CONTROLLER_WAIT_DELAY') | default('5', true) | int }}"
+gateway_api_controller_wait_strict: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_CONTROLLER_WAIT_STRICT') | default('true', true) | bool }}"
+
+cert_manager_namespace: "{{ lookup('ansible.builtin.env', 'CERT_MANAGER_NAMESPACE') | default('cert-manager-operator', true) }}"
+cert_manager_operator_name: "{{ lookup('ansible.builtin.env', 'CERT_MANAGER_OPERATOR_NAME') | default('openshift-cert-manager-operator', true) }}"
+cert_manager_subscription_name: "{{ lookup('ansible.builtin.env', 'CERT_MANAGER_SUBSCRIPTION_NAME') | default('openshift-cert-manager-operator', true) }}"
+cert_manager_operatorgroup_name: "{{ lookup('ansible.builtin.env', 'CERT_MANAGER_OPERATORGROUP_NAME') | default('openshift-cert-manager-operator', true) }}"
+cert_manager_channel: "{{ lookup('ansible.builtin.env', 'CERT_MANAGER_CHANNEL') | default('stable-v1', true) }}"
+cert_manager_source: "{{ lookup('ansible.builtin.env', 'CERT_MANAGER_SOURCE') | default('redhat-operators', true) }}"
+cert_manager_source_namespace: "{{ lookup('ansible.builtin.env', 'CERT_MANAGER_SOURCE_NAMESPACE') | default('openshift-marketplace', true) }}"
+cert_manager_dns01_recursive_nameservers: "{{ lookup('ansible.builtin.env', 'CERT_MANAGER_DNS01_RECURSIVE_NAMESERVERS') | default('1.1.1.1:53,8.8.8.8:53', true) }}"
+cert_manager_dns01_recursive_nameservers_only: "{{ lookup('ansible.builtin.env', 'CERT_MANAGER_DNS01_RECURSIVE_NAMESERVERS_ONLY') | default('true', true) | bool }}"
+
+rhcl_zone_root_domain: "{{ lookup('ansible.builtin.env', 'RHCL_ZONE_ROOT_DOMAIN') | default(lookup('ansible.builtin.env', 'KUADRANT_ZONE_ROOT_DOMAIN') | default('', true), true) }}"
+
+# Master toggle for the Kuadrant DNS stack (provider secret + DNSPolicy).
+# Default true. Set RHCL_DNS_ENABLED=false in environments that handle DNS
+# externally through their own automation and the cloud Route53/Azure/GCP
+# plumbing is irrelevant.
+rhcl_dns_enabled: "{{ lookup('ansible.builtin.env', 'RHCL_DNS_ENABLED') | default('true', true) | bool }}"
+rhcl_dns_provider: "{{ lookup('ansible.builtin.env', 'RHCL_DNS_PROVIDER') | default('aws', true) }}"
+rhcl_dns_namespace: "{{ lookup('ansible.builtin.env', 'RHCL_DNS_NAMESPACE') | default('api-gateway', true) }}"
+rhcl_dns_secret_name: "{{ lookup('ansible.builtin.env', 'RHCL_DNS_SECRET_NAME') | default('rhcl-dns-credentials', true) }}"
+
+rhcl_dns_aws_access_key_id: "{{ lookup('ansible.builtin.env', 'RHCL_DNS_AWS_ACCESS_KEY_ID') | default('', true) }}"
+rhcl_dns_aws_secret_access_key: "{{ lookup('ansible.builtin.env', 'RHCL_DNS_AWS_SECRET_ACCESS_KEY') | default('', true) }}"
+rhcl_dns_aws_region: "{{ lookup('ansible.builtin.env', 'RHCL_DNS_AWS_REGION') | default('', true) }}"
+rhcl_dns_aws_zone_id: "{{ lookup('ansible.builtin.env', 'RHCL_DNS_AWS_ZONE_ID') | default('', true) }}"
+
+rhcl_dns_azure_json: "{{ lookup('ansible.builtin.env', 'RHCL_DNS_AZURE_JSON') | default('', true) }}"
+rhcl_dns_azure_json_file: "{{ lookup('ansible.builtin.env', 'RHCL_DNS_AZURE_JSON_FILE') | default('', true) }}"
+
+rhcl_dns_gcp_project_id: "{{ lookup('ansible.builtin.env', 'RHCL_DNS_GCP_PROJECT_ID') | default('', true) }}"
+rhcl_dns_gcp_google: "{{ lookup('ansible.builtin.env', 'RHCL_DNS_GCP_GOOGLE') | default('', true) }}"
+rhcl_dns_gcp_google_file: "{{ lookup('ansible.builtin.env', 'RHCL_DNS_GCP_GOOGLE_FILE') | default('', true) }}"
+
+rhcl_dns_policy_enabled: "{{ lookup('ansible.builtin.env', 'RHCL_DNS_POLICY_ENABLED') | default('true', true) | bool }}"
+rhcl_dns_policy_target_gateway_name: "{{ lookup('ansible.builtin.env', 'RHCL_DNS_POLICY_TARGET_GATEWAY_NAME') | default(apps_connectivity_gateway_name, true) }}"
+rhcl_dns_policy_target_gateway_namespace: "{{ lookup('ansible.builtin.env', 'RHCL_DNS_POLICY_TARGET_GATEWAY_NAMESPACE') | default(apps_connectivity_gateway_namespace, true) }}"
+rhcl_dns_policy_name: "{{ lookup('ansible.builtin.env', 'RHCL_DNS_POLICY_NAME') | default(rhcl_dns_policy_target_gateway_name ~ '-dns', true) }}"
+rhcl_dns_policy_load_balancing_enabled: "{{ lookup('ansible.builtin.env', 'RHCL_DNS_POLICY_LOAD_BALANCING_ENABLED') | default('false', true) | bool }}"
+rhcl_dns_policy_default_geo: "{{ lookup('ansible.builtin.env', 'RHCL_DNS_POLICY_DEFAULT_GEO') | default('true', true) | bool }}"
+rhcl_dns_policy_geo: "{{ lookup('ansible.builtin.env', 'RHCL_DNS_POLICY_GEO') | default('', true) }}"
+rhcl_dns_policy_weight: "{{ lookup('ansible.builtin.env', 'RHCL_DNS_POLICY_WEIGHT') | default('120', true) | int }}"
+
+coredns_enabled: "{{ lookup('ansible.builtin.env', 'COREDNS_ENABLED') | default('false', true) | bool }}"
+coredns_namespace: "{{ lookup('ansible.builtin.env', 'COREDNS_NAMESPACE') | default('kuadrant-coredns', true) }}"
+coredns_kustomize_binary: "{{ lookup('ansible.builtin.env', 'COREDNS_KUSTOMIZE_BINARY') | default('kustomize', true) }}"
+coredns_kustomize_source: "{{ lookup('ansible.builtin.env', 'COREDNS_KUSTOMIZE_SOURCE') | default('https://github.com/Kuadrant/dns-operator/config/coredns', true) }}"
+coredns_deployment_name: "{{ lookup('ansible.builtin.env', 'COREDNS_DEPLOYMENT_NAME') | default('kuadrant-coredns', true) }}"
+coredns_service_name: "{{ lookup('ansible.builtin.env', 'COREDNS_SERVICE_NAME') | default('kuadrant-coredns', true) }}"
+coredns_configmap_name: "{{ lookup('ansible.builtin.env', 'COREDNS_CONFIGMAP_NAME') | default('kuadrant-coredns', true) }}"
+
+coredns_dns_enabled: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_ENABLED') | default('false', true) | bool }}"
+coredns_dns_source_namespace: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_SOURCE_NAMESPACE') | default(coredns_namespace, true) }}"
+coredns_dns_source_service: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_SOURCE_SERVICE') | default(coredns_service_name, true) }}"
+coredns_dns_source_deployment: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_SOURCE_DEPLOYMENT') | default(coredns_deployment_name, true) }}"
+coredns_dns_source_configmap: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_SOURCE_CONFIGMAP') | default(coredns_configmap_name, true) }}"
+coredns_dns_service_type: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_SERVICE_TYPE') | default('LoadBalancer', true) }}"
+coredns_dns_service_annotations: {}
+coredns_dns_aws_nlb_compat: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_AWS_NLB_COMPAT') | default('true', true) | bool }}"
+coredns_dns_external_service_name: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_EXTERNAL_SERVICE_NAME') | default('kuadrant-coredns-ext', true) }}"
+coredns_dns_external_protocols: "{{ (lookup('ansible.builtin.env', 'COREDNS_DNS_EXTERNAL_PROTOCOLS') | default('UDP', true)).split(',') }}"
+coredns_dns_lb_wait_timeout: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_LB_WAIT_TIMEOUT') | default('300', true) | int }}"
+coredns_dns_upstream_zone: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_UPSTREAM_ZONE') | default('k.example.com', true) }}"
+coredns_dns_zone: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_ZONE') | default('', true) }}"
+coredns_dns_nameservers: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_NAMESERVERS') | default('', true) }}"
+coredns_dns_namespace: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_NAMESPACE') | default(apps_connectivity_gateway_namespace, true) }}"
+coredns_dns_secret_name: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_SECRET_NAME') | default('rhcl-coredns-credentials', true) }}"
+coredns_dns_secret_default_provider_label: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_SECRET_DEFAULT_PROVIDER_LABEL') | default('true', true) | bool }}"
+coredns_dns_glue_record_prefix: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_GLUE_RECORD_PREFIX') | default('ns', true) }}"
+coredns_dns_policy_enabled: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_POLICY_ENABLED') | default('true', true) | bool }}"
+coredns_dns_policy_target_gateway_name: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_POLICY_TARGET_GATEWAY_NAME') | default(apps_connectivity_gateway_name, true) }}"
+coredns_dns_policy_target_gateway_namespace: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_POLICY_TARGET_GATEWAY_NAMESPACE') | default(apps_connectivity_gateway_namespace, true) }}"
+coredns_dns_policy_name: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_POLICY_NAME') | default(coredns_dns_policy_target_gateway_name ~ '-coredns', true) }}"
+coredns_dns_policy_delegate: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_POLICY_DELEGATE') | default('true', true) | bool }}"
+coredns_dns_policy_load_balancing_enabled: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_POLICY_LOAD_BALANCING_ENABLED') | default('false', true) | bool }}"
+coredns_dns_policy_default_geo: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_POLICY_DEFAULT_GEO') | default('true', true) | bool }}"
+coredns_dns_policy_geo: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_POLICY_GEO') | default('', true) }}"
+coredns_dns_policy_weight: "{{ lookup('ansible.builtin.env', 'COREDNS_DNS_POLICY_WEIGHT') | default('120', true) | int }}"
+
+# MetalLB — on-prem LoadBalancer provider. Disabled by default so cloud
+# clusters keep using their native cloud LB. Enable on bare-metal clusters
+# that need to expose Services of type=LoadBalancer (e.g. kuadrant-coredns-ext
+# in the on-prem CoreDNS flow).
+metallb_enabled: "{{ lookup('ansible.builtin.env', 'METALLB_ENABLED') | default('false', true) | bool }}"
+metallb_namespace: "{{ lookup('ansible.builtin.env', 'METALLB_NAMESPACE') | default('metallb-system', true) }}"
+metallb_operator_name: "{{ lookup('ansible.builtin.env', 'METALLB_OPERATOR_NAME') | default('metallb-operator', true) }}"
+metallb_subscription_name: "{{ lookup('ansible.builtin.env', 'METALLB_SUBSCRIPTION_NAME') | default('metallb-operator', true) }}"
+metallb_operatorgroup_name: "{{ lookup('ansible.builtin.env', 'METALLB_OPERATORGROUP_NAME') | default('metallb-operator', true) }}"
+metallb_channel: "{{ lookup('ansible.builtin.env', 'METALLB_CHANNEL') | default('stable', true) }}"
+metallb_source: "{{ lookup('ansible.builtin.env', 'METALLB_SOURCE') | default('redhat-operators', true) }}"
+metallb_source_namespace: "{{ lookup('ansible.builtin.env', 'METALLB_SOURCE_NAMESPACE') | default('openshift-marketplace', true) }}"
+metallb_operator_webhook_deployment: "{{ lookup('ansible.builtin.env', 'METALLB_OPERATOR_WEBHOOK_DEPLOYMENT') | default('metallb-operator-webhook-server', true) }}"
+metallb_cr_name: "{{ lookup('ansible.builtin.env', 'METALLB_CR_NAME') | default('metallb', true) }}"
+
+# IPAddressPool / L2Advertisement
+metallb_ipaddresspool_name: "{{ lookup('ansible.builtin.env', 'METALLB_IPADDRESSPOOL_NAME') | default('rhcl-pool', true) }}"
+metallb_l2advertisement_name: "{{ lookup('ansible.builtin.env', 'METALLB_L2ADVERTISEMENT_NAME') | default('rhcl-l2', true) }}"
+metallb_auto_assign: "{{ lookup('ansible.builtin.env', 'METALLB_AUTO_ASSIGN') | default('true', true) | bool }}"
+metallb_avoid_buggy_ips: "{{ lookup('ansible.builtin.env', 'METALLB_AVOID_BUGGY_IPS') | default('false', true) | bool }}"
+
+# Optional L2Advertisement scoping. Leave empty to advertise on every node
+# and every interface; set to a comma-separated list of node interface names
+# (eth0,bond0) or a single node label (label=value) to restrict.
+metallb_l2advertisement_interfaces_raw: "{{ lookup('ansible.builtin.env', 'METALLB_L2ADVERTISEMENT_INTERFACES') | default('', true) }}"
+metallb_l2advertisement_interfaces: >-
+  {{
+    (metallb_l2advertisement_interfaces_raw | regex_replace('\s+', '')).split(',')
+    | reject('equalto', '')
+    | list
+  }}
+metallb_l2advertisement_node_selector_label: "{{ lookup('ansible.builtin.env', 'METALLB_L2ADVERTISEMENT_NODE_SELECTOR_LABEL') | default('', true) }}"
+metallb_l2advertisement_node_selector_value: "{{ lookup('ansible.builtin.env', 'METALLB_L2ADVERTISEMENT_NODE_SELECTOR_VALUE') | default('', true) }}"
+
+# METALLB_ADDRESSES accepts a comma-separated mix of:
+#  - hyphenated ranges:  192.168.68.31-192.168.68.35
+#  - single IPv4 hosts:  192.168.68.31  (normalised to 192.168.68.31-192.168.68.31)
+#  - CIDR blocks:        192.168.68.0/24
+# Example: "192.168.68.31-192.168.68.35,192.168.68.40,192.168.68.0/28"
+metallb_addresses_raw: "{{ lookup('ansible.builtin.env', 'METALLB_ADDRESSES') | default('', true) }}"
+metallb_addresses: >-
+  {{
+    (metallb_addresses_raw | regex_replace('\s+', '')).split(',')
+    | reject('equalto', '')
+    | map('regex_replace', '^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)$', '\1-\1')
+    | list
+  }}
+
+# ---------------------------------------------------------------------------
+# Observability — Tempo Operator + Red Hat build of OpenTelemetry Operator +
+# Cluster Observability Operator (COO) + MinIO (S3 backend for lab) +
+# TempoStack + OTel Collector + EnvoyFilter + UIPlugin (Distributed Tracing) +
+# Kuadrant observability patch. Implements REQ038.
+# Toggle with OBSERVABILITY_ENABLED=false to skip entirely.
+# ---------------------------------------------------------------------------
+observability_enabled: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_ENABLED') | default('true', true) | bool }}"
+
+# Tempo Operator (OLM)
+observability_tempo_namespace: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_TEMPO_OPERATOR_NAMESPACE') | default('openshift-tempo-operator', true) }}"
+observability_tempo_operator_name: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_TEMPO_OPERATOR_NAME') | default('tempo-product', true) }}"
+observability_tempo_subscription_name: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_TEMPO_SUBSCRIPTION_NAME') | default('tempo-product', true) }}"
+observability_tempo_operatorgroup_name: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_TEMPO_OPERATORGROUP_NAME') | default('openshift-tempo-operator', true) }}"
+observability_tempo_channel: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_TEMPO_CHANNEL') | default('stable', true) }}"
+observability_tempo_source: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_TEMPO_SOURCE') | default('redhat-operators', true) }}"
+observability_tempo_source_namespace: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_TEMPO_SOURCE_NAMESPACE') | default('openshift-marketplace', true) }}"
+
+# OpenTelemetry Operator (OLM)
+observability_otel_namespace: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_OTEL_OPERATOR_NAMESPACE') | default('openshift-opentelemetry-operator', true) }}"
+# Service que serve o webhook de admissão do operator OTel. O role espera esse
+# Service ter endpoints prontos antes de aplicar o OpenTelemetryCollector —
+# sem isso a API rejeita o objeto com 500 ("no endpoints available for
+# service"). Sobrescreva se o build do operator no ambiente usar outro nome.
+observability_otel_webhook_service: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_OTEL_WEBHOOK_SERVICE') | default('opentelemetry-operator-controller-manager-service', true) }}"
+# Espera pelos endpoints do webhook. Num cluster onde o operator já roda, a
+# primeira chamada resolve — o `until` só dorme quando a condição falha. Por
+# isso o teto é curto: se não respondeu em 60s, esperar mais não conserta,
+# tem algo errado e o operador precisa saber.
+observability_otel_webhook_wait_retries: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_OTEL_WEBHOOK_WAIT_RETRIES') | default('12', true) | int }}"
+observability_otel_webhook_wait_delay: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_OTEL_WEBHOOK_WAIT_DELAY') | default('5', true) | int }}"
+observability_otel_operator_name: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_OTEL_OPERATOR_NAME') | default('opentelemetry-product', true) }}"
+observability_otel_subscription_name: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_OTEL_SUBSCRIPTION_NAME') | default('opentelemetry-product', true) }}"
+observability_otel_operatorgroup_name: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_OTEL_OPERATORGROUP_NAME') | default('openshift-opentelemetry-operator', true) }}"
+observability_otel_channel: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_OTEL_CHANNEL') | default('stable', true) }}"
+observability_otel_source: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_OTEL_SOURCE') | default('redhat-operators', true) }}"
+observability_otel_source_namespace: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_OTEL_SOURCE_NAMESPACE') | default('openshift-marketplace', true) }}"
+
+# Cluster Observability Operator (OLM)
+observability_coo_namespace: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_COO_NAMESPACE') | default('openshift-cluster-observability-operator', true) }}"
+observability_coo_operator_name: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_COO_OPERATOR_NAME') | default('cluster-observability-operator', true) }}"
+observability_coo_subscription_name: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_COO_SUBSCRIPTION_NAME') | default('cluster-observability-operator', true) }}"
+observability_coo_operatorgroup_name: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_COO_OPERATORGROUP_NAME') | default('openshift-cluster-observability-operator', true) }}"
+observability_coo_channel: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_COO_CHANNEL') | default('stable', true) }}"
+observability_coo_source: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_COO_SOURCE') | default('redhat-operators', true) }}"
+observability_coo_source_namespace: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_COO_SOURCE_NAMESPACE') | default('openshift-marketplace', true) }}"
+
+# UIPlugin (Distributed Tracing — COO)
+observability_uiplugin_name: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_UIPLUGIN_NAME') | default('distributed-tracing', true) }}"
+observability_uiplugin_timeout: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_UIPLUGIN_TIMEOUT') | default('30s', true) }}"
+
+# MinIO (S3 backend — lab/POC only)
+observability_minio_namespace: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_MINIO_NAMESPACE') | default('minio', true) }}"
+observability_minio_root_user: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_MINIO_ROOT_USER') | default('tempo', true) }}"
+observability_minio_root_password: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_MINIO_ROOT_PASSWORD') | default('supersecret', true) }}"
+observability_minio_bucket: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_MINIO_BUCKET') | default('tempo', true) }}"
+observability_minio_storage_size: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_MINIO_STORAGE_SIZE') | default('5Gi', true) }}"
+# StorageClassName for the minio-data PVC. Same rationale as
+# OBSERVABILITY_TEMPOSTACK_STORAGE_CLASS — leave empty to use the
+# cluster default; set when the default isn't immediate-bind or doesn't
+# exist (vSphere CSI defaults to WaitForFirstConsumer, which manifests
+# as `pod has unbound immediate PersistentVolumeClaims` on the ingester
+# pod after Tempo points at the missing bucket).
+observability_minio_storage_class: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_MINIO_STORAGE_CLASS') | default('', true) }}"
+
+# TempoStack
+observability_tempostack_namespace: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_TEMPOSTACK_NAMESPACE') | default('tempo', true) }}"
+observability_tempostack_name: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_TEMPOSTACK_NAME') | default('tempo-rhcl', true) }}"
+observability_tempostack_storage_size: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_TEMPOSTACK_STORAGE_SIZE') | default('1Gi', true) }}"
+# StorageClassName for the per-component PVCs the Tempo operator
+# provisions (ingester WAL, compactor). Leave empty to use the cluster's
+# default StorageClass. On clusters where the default isn't immediate-bind
+# (e.g. vSphere CSI without a default class) the ingester PVC stays
+# Pending with "pod has unbound immediate PersistentVolumeClaims" — set
+# OBSERVABILITY_TEMPOSTACK_STORAGE_CLASS=<your class> (e.g. thin-csi,
+# vsphere-csi, ocs-storagecluster-ceph-rbd) so the operator stamps it on
+# the PVC spec.
+observability_tempostack_storage_class: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_TEMPOSTACK_STORAGE_CLASS') | default('', true) }}"
+# Total CPU/memory budget the operator divides across compactor,
+# distributor, gateway, ingester, querier, and query-frontend. The
+# original 2 CPU / 2 GiB default left the gateway with ~80m / 64 MiB —
+# not enough to respond to the readiness probe in time, so it crash-
+# looped on the customer cluster. 4/4 fixed the readiness probe, but
+# on r46jf the querier still OOM-killed every couple of hours: its
+# slice landed at ~574 MiB, and a single open-window query against
+# ~30 blocks pushed it to 98 % memory and crashloop — query-frontend
+# then sat with 0 queriers connected and the UI returned 502 on every
+# `/api/traces` call. 8 GiB total gives the querier ~1.1 GiB which is
+# comfortably above the steady-state working set; bump again on busy
+# clusters.
+observability_tempostack_total_cpu: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_TEMPOSTACK_TOTAL_CPU') | default('4', true) }}"
+observability_tempostack_total_memory: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_TEMPOSTACK_TOTAL_MEMORY') | default('10Gi', true) }}"
+observability_tempostack_tenant_name: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_TEMPOSTACK_TENANT_NAME') | default('dev', true) }}"
+observability_tempostack_tenant_id: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_TEMPOSTACK_TENANT_ID') | default('1610b0c3-c509-4592-a256-a1871353dbfa', true) }}"
+
+# OpenTelemetry Collector
+observability_collector_namespace: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_COLLECTOR_NAMESPACE') | default('observability', true) }}"
+observability_collector_name: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_COLLECTOR_NAME') | default('otel-rhcl', true) }}"
+observability_collector_service_account: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_COLLECTOR_SERVICE_ACCOUNT') | default('otel-collector', true) }}"
+
+# Auto-instrumentation of the banking-api Quarkus pods via the OpenTelemetry
+# Operator. When enabled, an Instrumentation CR is applied in the apps
+# namespace and the backend Deployments get the
+# `instrumentation.opentelemetry.io/inject-java: "true"` annotation — the
+# operator injects an init container that copies the Java agent into the
+# pod, so Quarkus exports spans as a child of whatever traceparent the
+# gateway propagates. This turns a 1-span "gateway → upstream" trace into
+# a real end-to-end "gateway → banking-api → JDBC" chain in Tempo, without
+# touching application code. Defaults to true so the demo trace works out
+# of the box; flip to false on clusters where the OTel operator is not
+# installed (or where you want to ship with manual instrumentation).
+apps_otel_instrumentation_enabled: "{{ lookup('ansible.builtin.env', 'APPS_OTEL_INSTRUMENTATION_ENABLED') | default('true', true) | bool }}"
+apps_otel_instrumentation_endpoint: "{{ lookup('ansible.builtin.env', 'APPS_OTEL_INSTRUMENTATION_ENDPOINT') | default('http://' ~ observability_collector_name ~ '-collector.' ~ observability_collector_namespace ~ '.svc.cluster.local:4318', true) }}"
+apps_otel_instrumentation_sampling_ratio: "{{ lookup('ansible.builtin.env', 'APPS_OTEL_INSTRUMENTATION_SAMPLING_RATIO') | default('1.0', true) }}"
+
+# EnvoyFilter (tracing on gateway)
+observability_envoyfilter_namespace: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_ENVOYFILTER_NAMESPACE') | default(apps_connectivity_gateway_namespace, true) }}"
+observability_envoyfilter_gateway_name: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_ENVOYFILTER_GATEWAY_NAME') | default(apps_connectivity_gateway_name, true) }}"
+observability_envoyfilter_service_name: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_ENVOYFILTER_SERVICE_NAME') | default('rhcl-gateway', true) }}"
+observability_envoyfilter_sampling: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_ENVOYFILTER_SAMPLING') | default('100', true) | int }}"
+
+# Istio Telemetry CR — tracing on the gateway. Required IN ADDITION to the
+# EnvoyFilter above: the filter wires the raw HCM, but Istio only emits
+# spans when a Telemetry CR explicitly selects the `opentelemetry` provider.
+# Defaults to the gateway namespace and reuses the EnvoyFilter sampling so
+# both layers stay aligned out of the box.
+observability_tracing_telemetry_name: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_TRACING_TELEMETRY_NAME') | default('rhcl-api-tracing', true) }}"
+observability_tracing_telemetry_namespace: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_TRACING_TELEMETRY_NAMESPACE') | default(observability_envoyfilter_namespace, true) }}"
+observability_tracing_telemetry_provider: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_TRACING_TELEMETRY_PROVIDER') | default('opentelemetry', true) }}"
+observability_tracing_sampling: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_TRACING_SAMPLING') | default(observability_envoyfilter_sampling, true) | int }}"
+
+# req035 — Gateway error access logging (Envoy OTel ALS → OTel logs pipeline).
+# Disable by setting OBSERVABILITY_ACCESS_LOGS_ENABLED=false; the role will
+# skip the EnvoyFilter and emit an OTel Collector without the logs pipeline.
+observability_access_logs_enabled: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_ACCESS_LOGS_ENABLED') | default('true', true) | bool }}"
+# Threshold (>=) for which response codes Envoy ships to the Collector.
+# Override at runtime without re-applying via the Envoy runtime key
+# `rhcl.access_log.min_status`.
+observability_access_logs_min_status: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_ACCESS_LOGS_MIN_STATUS') | default('400', true) | int }}"
+# Path inside the Collector pod where file/audit appends JSON Lines.
+observability_access_logs_path: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_ACCESS_LOGS_PATH') | default('/var/log/rhcl-errors.json', true) }}"
+observability_access_logs_rotation_max_megabytes: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_ACCESS_LOGS_ROTATION_MAX_MB') | default('100', true) | int }}"
+observability_access_logs_rotation_max_days: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_ACCESS_LOGS_ROTATION_MAX_DAYS') | default('14', true) | int }}"
+observability_access_logs_rotation_max_backups: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_ACCESS_LOGS_ROTATION_MAX_BACKUPS') | default('5', true) | int }}"
+# Optional second/third exporter — disabled by default. Enable when the
+# corresponding backend (LokiStack / Splunk HEC) is reachable.
+observability_access_logs_loki_enabled: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_ACCESS_LOGS_LOKI_ENABLED') | default('false', true) | bool }}"
+observability_access_logs_loki_endpoint: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_ACCESS_LOGS_LOKI_ENDPOINT') | default('https://lokistack-gateway-http.openshift-logging.svc:8080/api/logs/v1/application/otlp', true) }}"
+observability_access_logs_splunk_enabled: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_ACCESS_LOGS_SPLUNK_ENABLED') | default('false', true) | bool }}"
+observability_access_logs_splunk_endpoint: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_ACCESS_LOGS_SPLUNK_ENDPOINT') | default('https://splunk-hec.internal.example.com:8088/services/collector', true) }}"
+# Tag carregada no `resource/rhcl-tag` processor — facilita agregar em
+# ambientes multi-cluster ou SIEM corporativo do banco.
+observability_cluster_name: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_CLUSTER_NAME') | default('rhcl-poc', true) }}"
+
+# req066 — Audit access log (stdout JSON, 100% traffic).
+# Complementar ao req035 (OTLP errors only). Desabilite com
+# OBSERVABILITY_AUDIT_LOG_ENABLED=false.
+observability_audit_log_enabled: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_AUDIT_LOG_ENABLED') | default('true', true) | bool }}"
+# Adds three response headers (x-trace-id, x-parent-span-id, x-trace-parent)
+# whenever the client sent a W3C `traceparent` on the request — lets the
+# caller correlate its own request log line with the trace recorded in
+# Tempo without having to instrument trace propagation end-to-end.
+# Implemented via a small Lua EnvoyFilter on the gateway. No-op for
+# clients that don't send `traceparent`.
+observability_trace_response_headers_enabled: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_TRACE_RESPONSE_HEADERS_ENABLED') | default('true', true) | bool }}"
+
+# Kuadrant observability patch
+observability_kuadrant_namespace: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_KUADRANT_NAMESPACE') | default(rhcl_namespace, true) }}"
+observability_kuadrant_instance: "{{ lookup('ansible.builtin.env', 'OBSERVABILITY_KUADRANT_INSTANCE') | default(rhcl_instance_name, true) }}"
+
+# ---------------------------------------------------------------------------
+# Grafana — community Grafana Operator + Grafana instance + Thanos datasource
+# + Istio Telemetry CR (path/route/consumer labels) + four RHCL dashboards
+# (API Overview, API Consumers, Authorino, Limitador). Standalone
+# observability surface — req041 promoted from tests/ to automation here.
+# Toggle with GRAFANA_ENABLED=false to skip entirely.
+# ---------------------------------------------------------------------------
+grafana_enabled: "{{ lookup('ansible.builtin.env', 'GRAFANA_ENABLED') | default('true', true) | bool }}"
+
+# OLM install of the community Grafana Operator. Disable in environments
+# that install operators manually (Example Bank flow):
+# GRAFANA_INSTALL_OPERATOR=false skips the Subscription + CSV wait and only
+# applies the Grafana CR + datasource + dashboards on top of a preexisting
+# operator.
+grafana_install_operator: "{{ lookup('ansible.builtin.env', 'GRAFANA_INSTALL_OPERATOR') | default(operators_install_enabled | default('true'), true) | bool }}"
+
+grafana_operator_namespace: "{{ lookup('ansible.builtin.env', 'GRAFANA_OPERATOR_NAMESPACE') | default('grafana-operator', true) }}"
+grafana_operatorgroup_name: "{{ lookup('ansible.builtin.env', 'GRAFANA_OPERATORGROUP_NAME') | default('grafana-operator', true) }}"
+grafana_operator_name: "{{ lookup('ansible.builtin.env', 'GRAFANA_OPERATOR_NAME') | default('grafana-operator', true) }}"
+grafana_subscription_name: "{{ lookup('ansible.builtin.env', 'GRAFANA_SUBSCRIPTION_NAME') | default('grafana-operator', true) }}"
+grafana_channel: "{{ lookup('ansible.builtin.env', 'GRAFANA_CHANNEL') | default('v5', true) }}"
+grafana_source: "{{ lookup('ansible.builtin.env', 'GRAFANA_SOURCE') | default('community-operators', true) }}"
+grafana_source_namespace: "{{ lookup('ansible.builtin.env', 'GRAFANA_SOURCE_NAMESPACE') | default('openshift-marketplace', true) }}"
+
+# Grafana instance (namespace, CR name, admin creds). Lab-only defaults —
+# rotate the password before going to production.
+grafana_namespace: "{{ lookup('ansible.builtin.env', 'GRAFANA_NAMESPACE') | default('rhcl-grafana', true) }}"
+grafana_instance_name: "{{ lookup('ansible.builtin.env', 'GRAFANA_INSTANCE_NAME') | default('rhcl-grafana', true) }}"
+grafana_instance_label: "{{ lookup('ansible.builtin.env', 'GRAFANA_INSTANCE_LABEL') | default('rhcl', true) }}"
+grafana_admin_user: "{{ lookup('ansible.builtin.env', 'GRAFANA_ADMIN_USER') | default('rhcl-admin', true) }}"
+grafana_admin_password: "{{ lookup('ansible.builtin.env', 'GRAFANA_ADMIN_PASSWORD') | default('rhcl-poc-2026', true) }}"
+
+# Thanos datasource (uses the SA the operator auto-creates — `<instance>-sa`
+# — bound to cluster-monitoring-view). The bearer is resolved at apply time
+# and stamped inline into the GrafanaDatasource CR; the operator's
+# `valuesFrom` integration is broken on v5.24.0 and silently leaves
+# `secureJsonFields` empty → 401 on every dashboard query.
+grafana_thanos_sa_name: "{{ lookup('ansible.builtin.env', 'GRAFANA_THANOS_SA_NAME') | default(grafana_instance_name ~ '-sa', true) }}"
+grafana_thanos_sa_token_secret: "{{ lookup('ansible.builtin.env', 'GRAFANA_THANOS_SA_TOKEN_SECRET') | default(grafana_instance_name ~ '-sa-token', true) }}"
+grafana_thanos_clusterrolebinding_name: "{{ lookup('ansible.builtin.env', 'GRAFANA_THANOS_CRB_NAME') | default(grafana_instance_name ~ '-cluster-monitoring-view', true) }}"
+grafana_thanos_datasource_name: "{{ lookup('ansible.builtin.env', 'GRAFANA_THANOS_DATASOURCE_NAME') | default('rhcl-prometheus', true) }}"
+grafana_thanos_datasource_display: "{{ lookup('ansible.builtin.env', 'GRAFANA_THANOS_DATASOURCE_DISPLAY') | default('Prometheus (RHCL)', true) }}"
+
+# Istio Telemetry CR — applied in the namespace of the gateway pod.
+grafana_telemetry_name: "{{ lookup('ansible.builtin.env', 'GRAFANA_TELEMETRY_NAME') | default('rhcl-api-metrics', true) }}"
+grafana_telemetry_namespace: "{{ lookup('ansible.builtin.env', 'GRAFANA_TELEMETRY_NAMESPACE') | default('openshift-ingress', true) }}"
+# PodMonitor scraping the gateway istio-proxy so the labelled
+# istio_requests_total actually reaches Prometheus (podmonitor-gateway-istio.yml.j2).
+grafana_gateway_podmonitor_name: "{{ lookup('ansible.builtin.env', 'GRAFANA_GATEWAY_PODMONITOR_NAME') | default('rhcl-apps-gateway-istio-metrics', true) }}"
+
+apps_namespace: "{{ lookup('ansible.builtin.env', 'APPS_NAMESPACE') | default('rhcl-apps', true) }}"
+apps_backend_image_name: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_IMAGE_NAME') | default('banking-api', true) }}"
+apps_frontend_image_name: "{{ lookup('ansible.builtin.env', 'APPS_FRONTEND_IMAGE_NAME') | default('mobile-bank', true) }}"
+apps_ipfilter_enabled: "{{ lookup('ansible.builtin.env', 'APPS_IPFILTER_ENABLED') | default('true', true) | bool }}"
+apps_ipfilter_image_name: "{{ lookup('ansible.builtin.env', 'APPS_IPFILTER_IMAGE_NAME') | default('ipfilter-php', true) }}"
+apps_backend_primary_name: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_PRIMARY_NAME') | default('banking-api-v1', true) }}"
+apps_backend_secondary_name: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_SECONDARY_NAME') | default('banking-api-v2', true) }}"
+# req018 — UWM scrape against banking-api's /q/metrics so
+# bank_ai_tokens_total reaches Thanos. Enabled by default; toggle off
+# only when the customer manages monitoring out-of-band.
+apps_backend_servicemonitor_enabled: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_SERVICEMONITOR_ENABLED') | default('true', true) | bool }}"
+apps_backend_servicemonitor_name: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_SERVICEMONITOR_NAME') | default('banking-api', true) }}"
+apps_frontend_name: "{{ lookup('ansible.builtin.env', 'APPS_FRONTEND_NAME') | default('mobile-bank', true) }}"
+apps_ipfilter_name: "{{ lookup('ansible.builtin.env', 'APPS_IPFILTER_NAME') | default('ipfilter-php', true) }}"
+apps_backend_source_dir: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_SOURCE_DIR') | default('', true) }}"
+apps_frontend_source_dir: "{{ lookup('ansible.builtin.env', 'APPS_FRONTEND_SOURCE_DIR') | default('', true) }}"
+apps_ipfilter_source_dir: "{{ lookup('ansible.builtin.env', 'APPS_IPFILTER_SOURCE_DIR') | default('', true) }}"
+
+# RHOAI Assistant (standalone chat app — Quarkus + Flutter)
+apps_rhoai_enabled: "{{ lookup('ansible.builtin.env', 'APPS_RHOAI_ENABLED') | default('false', true) | bool }}"
+apps_rhoai_backend_name: "{{ lookup('ansible.builtin.env', 'APPS_RHOAI_BACKEND_NAME') | default('rhoai-assistant-backend', true) }}"
+apps_rhoai_frontend_name: "{{ lookup('ansible.builtin.env', 'APPS_RHOAI_FRONTEND_NAME') | default('rhoai-assistant-frontend', true) }}"
+apps_rhoai_backend_image_name: "{{ lookup('ansible.builtin.env', 'APPS_RHOAI_BACKEND_IMAGE_NAME') | default('rhoai-assistant-backend', true) }}"
+apps_rhoai_frontend_image_name: "{{ lookup('ansible.builtin.env', 'APPS_RHOAI_FRONTEND_IMAGE_NAME') | default('rhoai-assistant-frontend', true) }}"
+apps_rhoai_backend_source_dir: "{{ lookup('ansible.builtin.env', 'APPS_RHOAI_BACKEND_SOURCE_DIR') | default('', true) }}"
+apps_rhoai_frontend_source_dir: "{{ lookup('ansible.builtin.env', 'APPS_RHOAI_FRONTEND_SOURCE_DIR') | default('', true) }}"
+apps_rhoai_backend_image_quay: "{{ lookup('ansible.builtin.env', 'APPS_RHOAI_BACKEND_IMAGE_QUAY') | default('', true) }}"
+apps_rhoai_frontend_image_quay: "{{ lookup('ansible.builtin.env', 'APPS_RHOAI_FRONTEND_IMAGE_QUAY') | default('', true) }}"
+apps_rhoai_maas_base_url: "{{ lookup('ansible.builtin.env', 'APPS_RHOAI_MAAS_BASE_URL') | default('https://maas-default-gateway-data-science-gateway-class.openshift-ingress.svc.cluster.local/external-models/llama-31-70b-external/v1', true) }}"
+apps_rhoai_maas_model: "{{ lookup('ansible.builtin.env', 'APPS_RHOAI_MAAS_MODEL') | default('llama-31-70b-cpu', true) }}"
+apps_rhoai_maas_api_key: "{{ lookup('ansible.builtin.env', 'APPS_RHOAI_MAAS_API_KEY') | default('', true) }}"
+apps_rhoai_history_max_messages: "{{ lookup('ansible.builtin.env', 'APPS_RHOAI_HISTORY_MAX_MESSAGES') | default('10', true) | int }}"
+apps_rhoai_catalog_source: "{{ lookup('ansible.builtin.env', 'APPS_RHOAI_CATALOG_SOURCE') | default('external-models', true) }}"
+apps_rhoai_external_models_namespace: "{{ lookup('ansible.builtin.env', 'APPS_RHOAI_EXTERNAL_MODELS_NAMESPACE') | default('external-models', true) }}"
+apps_rhoai_maas_insecure_skip_verify: "{{ lookup('ansible.builtin.env', 'APPS_RHOAI_MAAS_INSECURE_SKIP_VERIFY') | default('false', true) | bool }}"
+# External-model inference requires a MaaS API key (sk-oai-); SA tokens are only accepted on /v1/models.
+apps_rhoai_maas_prefer_sa_token: "{{ lookup('ansible.builtin.env', 'APPS_RHOAI_MAAS_PREFER_SA_TOKEN') | default('false', true) | bool }}"
+
+apps_backend_tls_enabled: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_TLS_ENABLED') | default('true', true) | bool }}"
+apps_backend_https_port: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_HTTPS_PORT') | default('8443', true) | int }}"
+# Separate Service port for MCP-tagged HTTPS traffic. Routes to the same
+# backend HTTPS targetPort, but exposed as a distinct Service port so policies
+# (AuthPolicy, RateLimit) can target MCP traffic independently.
+apps_backend_mcp_https_service_port: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_MCP_HTTPS_SERVICE_PORT') | default('9443', true) | int }}"
+apps_backend_primary_tls_secret_name: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_PRIMARY_TLS_SECRET_NAME') | default(apps_backend_primary_name ~ '-tls', true) }}"
+apps_backend_secondary_tls_secret_name: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_SECONDARY_TLS_SECRET_NAME') | default(apps_backend_secondary_name ~ '-tls', true) }}"
+apps_backend_tls_mount_path: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_TLS_MOUNT_PATH') | default('/etc/banking-tls', true) }}"
+apps_backend_tls_client_auth: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_TLS_CLIENT_AUTH') | default('none', true) }}"
+# Habilita CORS no Quarkus do backend. Default false, alinhado com o
+# application.properties — a única fonte de Access-Control-* em produção
+# é o filtro do Gateway no HTTPRoute (req014). Setar true reinjeta a env
+# QUARKUS_HTTP_CORS_ENABLED=true no pod, útil só pra dev local sem gateway.
+apps_backend_cors_enabled: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_CORS_ENABLED') | default('false', true) | bool }}"
+apps_frontend_mcp_gateway_url: "{{ lookup('ansible.builtin.env', 'APPS_FRONTEND_MCP_GATEWAY_URL') | default(lookup('ansible.builtin.env', 'MCP_GATEWAY_URL') | default('', true), true) }}"
+apps_frontend_rhcl_gateway_url: "{{ lookup('ansible.builtin.env', 'APPS_FRONTEND_RHCL_GATEWAY_URL') | default(lookup('ansible.builtin.env', 'RHCL_GATEWAY_URL') | default('', true), true) }}"
+# Source of the application container images.
+#   build → BuildConfig + `oc start-build` from local source (default; needs source tree)
+#   quay  → ImageStream pulls pre-built images from quay.io (use in restricted/client envs
+#           where local builds are not possible). Skips BuildConfig and all source-dir checks.
+apps_image_source: "{{ lookup('ansible.builtin.env', 'APPS_IMAGE_SOURCE') | default('build', true) }}"
+
+# Orçamento das esperas do role apps (deployments disponíveis, HTTPRoutes
+# aceitas, gateway programado). Eram 30x10s = 300s cada, e como todas carregam
+# `failed_when: false`, um recurso que nunca fica pronto custava 5 minutos de
+# silêncio por espera — com 12 delas, até ~65 min por execução, terminando em
+# "sucesso". O `until` só dorme quando a condição falha, então num cluster
+# saudável isso resolve na primeira chamada: teto curto não penaliza ninguém.
+# 24x5s = 120s. Suba em clusters lentos.
+apps_wait_retries: "{{ lookup('ansible.builtin.env', 'APPS_WAIT_RETRIES') | default('24', true) | int }}"
+apps_wait_delay: "{{ lookup('ansible.builtin.env', 'APPS_WAIT_DELAY') | default('5', true) | int }}"
+# Emissão de certificado (cert-manager/ACME) leva legitimamente mais tempo.
+apps_wait_retries_long: "{{ lookup('ansible.builtin.env', 'APPS_WAIT_RETRIES_LONG') | default('60', true) | int }}"
+apps_backend_image_quay: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_IMAGE_QUAY') | default('quay.io/hodrigohamalho/red-bank-backend:backend-1.0', true) }}"
+apps_frontend_image_quay: "{{ lookup('ansible.builtin.env', 'APPS_FRONTEND_IMAGE_QUAY') | default('quay.io/hodrigohamalho/red-bank-backend:frontend-1.0', true) }}"
+apps_ipfilter_image_quay: "{{ lookup('ansible.builtin.env', 'APPS_IPFILTER_IMAGE_QUAY') | default('', true) }}"
+
+# Req 47 — dedicated HTTPRoute that targets banking-api HTTPS (:8443) with BackendTLSPolicy.
+apps_backend_tls_route_enabled: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_TLS_ROUTE_ENABLED') | default('true', true) | bool }}"
+apps_backend_tls_route_name: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_TLS_ROUTE_NAME') | default('backend-tls', true) }}"
+apps_backend_tls_route_hostname: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_TLS_ROUTE_HOSTNAME') | default('', true) }}"
+apps_backend_tls_http_listener_name: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_TLS_HTTP_LISTENER_NAME') | default('backend-tls-http', true) }}"
+apps_backend_tls_route_policy_name: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_TLS_ROUTE_POLICY_NAME') | default(apps_backend_tls_route_name ~ '-backend-tls', true) }}"
+apps_backend_tls_route_service_ca_configmap_name: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_TLS_ROUTE_SERVICE_CA_CONFIGMAP_NAME') | default(apps_backend_tls_route_name ~ '-service-ca', true) }}"
+apps_backend_tls_route_backend_hostname: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_TLS_ROUTE_BACKEND_HOSTNAME') | default(apps_backend_primary_name ~ '.' ~ apps_namespace ~ '.svc', true) }}"
+apps_backend_tls_route_cors_allow_origin: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_TLS_ROUTE_CORS_ALLOW_ORIGIN') | default('*', true) }}"
+
+apps_skip_build: "{{ lookup('ansible.builtin.env', 'APPS_SKIP_BUILD') | default('false', true) | bool }}"
+apps_build_target: "{{ lookup('ansible.builtin.env', 'APPS_BUILD_TARGET') | default('all', true) }}"
+apps_build_async_seconds: "{{ lookup('ansible.builtin.env', 'APPS_BUILD_ASYNC_SECONDS') | default('1800', true) | int }}"
+apps_build_poll_seconds: "{{ lookup('ansible.builtin.env', 'APPS_BUILD_POLL_SECONDS') | default('5', true) | int }}"
+
+monitoring_namespace: "{{ lookup('ansible.builtin.env', 'MONITORING_NAMESPACE') | default('openshift-monitoring', true) }}"
+monitoring_user_workload_namespace: "{{ lookup('ansible.builtin.env', 'MONITORING_USER_WORKLOAD_NAMESPACE') | default('openshift-user-workload-monitoring', true) }}"
+monitoring_config_name: "{{ lookup('ansible.builtin.env', 'MONITORING_CONFIG_NAME') | default('cluster-monitoring-config', true) }}"
+monitoring_enable_user_workload: "{{ lookup('ansible.builtin.env', 'MONITORING_ENABLE_USER_WORKLOAD') | default('true', true) | bool }}"
+apps_connectivity_link_enabled: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_LINK_ENABLED') | default('true', true) | bool }}"
+apps_connectivity_listener_wildcard_enabled: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_LISTENER_WILDCARD_ENABLED') | default('false', true) | bool }}"
+apps_connectivity_gateway_name: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_GATEWAY_NAME') | default('rhcl-apps-gateway', true) }}"
+apps_connectivity_gateway_namespace: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_GATEWAY_NAMESPACE') | default('openshift-ingress', true) }}"
+# Annotation networking.istio.io/service-type on the Gateway — controls the
+# Service type the Istio Gateway controller provisions. Empty (default) leaves
+# the controller default (LoadBalancer). Set to "ClusterIP" or "NodePort" in
+# restricted clusters without an external LB controller.
+apps_connectivity_gateway_service_type: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_GATEWAY_SERVICE_TYPE') | default('', true) }}"
+
+# OpenShift Route fronting the Gateway Service. Used in clusters where the
+# Gateway runs with ClusterIP (no LB controller) and traffic enters through
+# the OCP Router or an external ingress (e.g. an internal NGINX) that consumes
+# Routes via a labeled selector. Creates one Route per hostname.
+apps_openshift_route_enabled: "{{ lookup('ansible.builtin.env', 'APPS_OPENSHIFT_ROUTE_ENABLED') | default('false', true) | bool }}"
+apps_openshift_route_namespace: "{{ lookup('ansible.builtin.env', 'APPS_OPENSHIFT_ROUTE_NAMESPACE') | default(apps_connectivity_gateway_namespace, true) }}"
+# Service the Route points at. If empty, derived as "<gateway-name>-<gatewayclass-name>"
+# matching how Istio Gateway controller names auto-generated Services.
+apps_openshift_route_target_service: "{{ lookup('ansible.builtin.env', 'APPS_OPENSHIFT_ROUTE_TARGET_SERVICE') | default('', true) }}"
+apps_openshift_route_target_port: "{{ lookup('ansible.builtin.env', 'APPS_OPENSHIFT_ROUTE_TARGET_PORT') | default('http', true) }}"
+# Label injected on the Route — picked up by an internal NGINX (or any
+# external ingress that consumes OCP Routes via label selector). Set the key
+# empty to disable the label entirely.
+apps_openshift_route_ingress_class_label_key: "{{ lookup('ansible.builtin.env', 'APPS_OPENSHIFT_ROUTE_INGRESS_CLASS_LABEL_KEY') | default('kubernetes.io/ingress.class', true) }}"
+apps_openshift_route_ingress_class_label_value: "{{ lookup('ansible.builtin.env', 'APPS_OPENSHIFT_ROUTE_INGRESS_CLASS_LABEL_VALUE') | default('nginx', true) }}"
+apps_openshift_route_tls_termination: "{{ lookup('ansible.builtin.env', 'APPS_OPENSHIFT_ROUTE_TLS_TERMINATION') | default('edge', true) }}"
+apps_connectivity_route_name: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_ROUTE_NAME') | default('banking-api-connectivity', true) }}"
+apps_connectivity_route_hostname: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_ROUTE_HOSTNAME') | default(lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_LINK_HOSTNAME') | default('', true), true) }}"
+# By design frontends (mobile-bank, developer-portal, …) are exposed via
+# native OpenShift Routes (`frontend-route.yml.j2`), NOT through the RHCL
+# Gateway. RHCL/Kuadrant is for APIs — putting an SPA behind the gateway
+# adds an AuthPolicy + DNSPolicy + TLSPolicy axis you don't get anything
+# for on a static site. Keep this `false` unless you have a specific PoC
+# reason to also publish the frontend through the gateway (e.g. to demo
+# rate-limit on a public asset). Flipping to `true` will also need
+# APPS_CONNECTIVITY_FRONTEND_HTTPS_ENABLED=true so the listener gets a
+# Certificate from the TLSPolicy.
+apps_connectivity_frontend_route_enabled: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_FRONTEND_ROUTE_ENABLED') | default('false', true) | bool }}"
+apps_connectivity_frontend_route_name: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_FRONTEND_ROUTE_NAME') | default(apps_frontend_name ~ '-connectivity', true) }}"
+apps_connectivity_frontend_route_hostname: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_FRONTEND_ROUTE_HOSTNAME') | default('', true) }}"
+apps_connectivity_frontend_listener_name: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_FRONTEND_LISTENER_NAME') | default('frontend', true) }}"
+apps_connectivity_frontend_https_enabled: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_FRONTEND_HTTPS_ENABLED') | default('false', true) | bool }}"
+apps_connectivity_frontend_https_listener_name: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_FRONTEND_HTTPS_LISTENER_NAME') | default('frontend-https', true) }}"
+apps_connectivity_frontend_tls_secret_name: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_FRONTEND_TLS_SECRET_NAME') | default(apps_connectivity_tls_secret_name, true) }}"
+apps_connectivity_frontend_auth_policy_enabled: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_FRONTEND_AUTH_POLICY_ENABLED') | default('true', true) | bool }}"
+apps_connectivity_frontend_auth_policy_name: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_FRONTEND_AUTH_POLICY_NAME') | default(apps_connectivity_frontend_route_name ~ '-allow-public', true) }}"
+apps_ipfilter_route_name: "{{ lookup('ansible.builtin.env', 'APPS_IPFILTER_ROUTE_NAME') | default('ipfilter', true) }}"
+# Empty default → resolved to "ipfilter.<RHCL_ZONE_ROOT_DOMAIN>" (or the cluster
+# ingress domain when the zone is unset) by apps_ipfilter_route_hostname_resolved
+# in roles/apps/tasks/install.yml. Set APPS_IPFILTER_ROUTE_HOSTNAME to override.
+apps_ipfilter_route_hostname: "{{ lookup('ansible.builtin.env', 'APPS_IPFILTER_ROUTE_HOSTNAME') | default('', true) }}"
+apps_ipfilter_http_listener_name: "{{ lookup('ansible.builtin.env', 'APPS_IPFILTER_HTTP_LISTENER_NAME') | default('ipfilter-http', true) }}"
+apps_ipfilter_service_port: "{{ lookup('ansible.builtin.env', 'APPS_IPFILTER_SERVICE_PORT') | default('8080', true) | int }}"
+apps_ipfilter_auth_policy_enabled: "{{ lookup('ansible.builtin.env', 'APPS_IPFILTER_AUTH_POLICY_ENABLED') | default('true', true) | bool }}"
+apps_ipfilter_auth_policy_name: "{{ lookup('ansible.builtin.env', 'APPS_IPFILTER_AUTH_POLICY_NAME') | default(apps_ipfilter_route_name ~ '-ip-acl', true) }}"
+apps_ipfilter_acl_mode: "{{ lookup('ansible.builtin.env', 'APPS_IPFILTER_ACL_MODE') | default('deny-list', true) }}"
+apps_ipfilter_cors_allow_origin: "{{ lookup('ansible.builtin.env', 'APPS_IPFILTER_CORS_ALLOW_ORIGIN') | default('*', true) }}"
+apps_ipfilter_allowed_cidrs_raw: "{{ lookup('ansible.builtin.env', 'APPS_IPFILTER_ALLOWED_CIDRS') | default('10.0.0.0/8,172.16.0.0/12,192.168.0.0/16', true) }}"
+apps_ipfilter_allowed_cidrs: >-
+  {{
+    (apps_ipfilter_allowed_cidrs_raw | regex_replace('\s+', '')).split(',')
+    | reject('equalto', '')
+    | list
+  }}
+apps_ipfilter_denied_cidrs_raw: "{{ lookup('ansible.builtin.env', 'APPS_IPFILTER_DENIED_CIDRS') | default('203.0.113.0/24,198.51.100.0/24', true) }}"
+apps_ipfilter_denied_cidrs: >-
+  {{
+    (apps_ipfilter_denied_cidrs_raw | regex_replace('\s+', '')).split(',')
+    | reject('equalto', '')
+    | list
+  }}
+# --- req054: HTTP protocol versions (upstream HTTP/1.1 vs HTTP/2 h2c) ---
+# Creates two Services pointing at banking-api-v1 with different appProtocol
+# to demonstrate gateway→backend protocol selection.
+apps_req054_enabled: "{{ lookup('ansible.builtin.env', 'APPS_REQ054_ENABLED') | default('true', true) | bool }}"
+apps_req054_route_name: "{{ lookup('ansible.builtin.env', 'APPS_REQ054_ROUTE_NAME') | default('req054-backend', true) }}"
+apps_req054_route_hostname: "{{ lookup('ansible.builtin.env', 'APPS_REQ054_ROUTE_HOSTNAME') | default('', true) }}"
+apps_req054_http_listener_name: "{{ lookup('ansible.builtin.env', 'APPS_REQ054_HTTP_LISTENER_NAME') | default('req054-http', true) }}"
+apps_req054_service_http11_name: "{{ lookup('ansible.builtin.env', 'APPS_REQ054_SERVICE_HTTP11_NAME') | default('req054-backend-http11', true) }}"
+apps_req054_service_h2c_name: "{{ lookup('ansible.builtin.env', 'APPS_REQ054_SERVICE_H2C_NAME') | default('req054-backend-h2c', true) }}"
+apps_req054_auth_policy_name: "{{ lookup('ansible.builtin.env', 'APPS_REQ054_AUTH_POLICY_NAME') | default('req054-allow-public', true) }}"
+
+# --- req048: gRPC backend communication ---
+# Creates a Service with appProtocol h2c pointing at banking-api-v1 and an
+# HTTPRoute to demonstrate gRPC (native + gRPC-Web) routing through the gateway.
+apps_req048_enabled: "{{ lookup('ansible.builtin.env', 'APPS_REQ048_ENABLED') | default('true', true) | bool }}"
+apps_req048_route_name: "{{ lookup('ansible.builtin.env', 'APPS_REQ048_ROUTE_NAME') | default('req048-grpc', true) }}"
+apps_req048_route_hostname: "{{ lookup('ansible.builtin.env', 'APPS_REQ048_ROUTE_HOSTNAME') | default('', true) }}"
+apps_req048_http_listener_name: "{{ lookup('ansible.builtin.env', 'APPS_REQ048_HTTP_LISTENER_NAME') | default('req048-grpc', true) }}"
+apps_req048_service_name: "{{ lookup('ansible.builtin.env', 'APPS_REQ048_SERVICE_NAME') | default('req048-grpc-backend', true) }}"
+apps_req048_auth_policy_name: "{{ lookup('ansible.builtin.env', 'APPS_REQ048_AUTH_POLICY_NAME') | default('req048-allow-public', true) }}"
+# --- req038: propagação de traces (banking-api → ledger-api downstream) ---
+# Novo microserviço ledger-api chamado pelo banking-api em /api/test/propagate
+# para demonstrar a propagação W3C `traceparent`: gateway → banking-api →
+# ledger-api, sob um único Trace ID. A propagação é feita pelo agente Java
+# injetado (anotação inject-java + Instrumentation CR), não por código.
+apps_ledger_enabled: "{{ lookup('ansible.builtin.env', 'APPS_LEDGER_ENABLED') | default('true', true) | bool }}"
+apps_ledger_name: "{{ lookup('ansible.builtin.env', 'APPS_LEDGER_NAME') | default('ledger-api', true) }}"
+apps_ledger_image_name: "{{ lookup('ansible.builtin.env', 'APPS_LEDGER_IMAGE_NAME') | default('ledger-api', true) }}"
+apps_ledger_source_dir: "{{ lookup('ansible.builtin.env', 'APPS_LEDGER_SOURCE_DIR') | default('', true) }}"
+apps_ledger_image_quay: "{{ lookup('ansible.builtin.env', 'APPS_LEDGER_IMAGE_QUAY') | default('quay.io/hodrigohamalho/ledger-api:1.0', true) }}"
+apps_ledger_route_name: "{{ lookup('ansible.builtin.env', 'APPS_LEDGER_ROUTE_NAME') | default('ledger-api', true) }}"
+apps_ledger_route_hostname: "{{ lookup('ansible.builtin.env', 'APPS_LEDGER_ROUTE_HOSTNAME') | default('', true) }}"
+apps_ledger_http_listener_name: "{{ lookup('ansible.builtin.env', 'APPS_LEDGER_HTTP_LISTENER_NAME') | default('ledger-http', true) }}"
+apps_ledger_auth_policy_name: "{{ lookup('ansible.builtin.env', 'APPS_LEDGER_AUTH_POLICY_NAME') | default('ledger-allow-public', true) }}"
+
+# PIX API — second demo product on top of the same gateway. Mock backend
+# (quay.io/jsimas/mock-api) so the deploy is cheap; the value of having
+# it is making the dashboards show *two* products with separate traffic,
+# routes and consumers — that's what tells the "API platform" story to
+# the BU. tests/simulate-api-traffic.sh --target=pix targets this stack.
+apps_pix_enabled: "{{ lookup('ansible.builtin.env', 'APPS_PIX_ENABLED') | default('true', true) | bool }}"
+apps_pix_route_name: "{{ lookup('ansible.builtin.env', 'APPS_PIX_ROUTE_NAME') | default('pix-api-connectivity', true) }}"
+apps_pix_route_hostname: "{{ lookup('ansible.builtin.env', 'APPS_PIX_ROUTE_HOSTNAME') | default('', true) }}"
+apps_pix_http_listener_name: "{{ lookup('ansible.builtin.env', 'APPS_PIX_HTTP_LISTENER_NAME') | default('pix-http', true) }}"
+apps_pix_https_listener_name: "{{ lookup('ansible.builtin.env', 'APPS_PIX_HTTPS_LISTENER_NAME') | default('pix-https', true) }}"
+apps_pix_service_name: "{{ lookup('ansible.builtin.env', 'APPS_PIX_SERVICE_NAME') | default('pix-api', true) }}"
+apps_pix_deployment_name: "{{ lookup('ansible.builtin.env', 'APPS_PIX_DEPLOYMENT_NAME') | default('pix-api', true) }}"
+apps_pix_auth_policy_name: "{{ lookup('ansible.builtin.env', 'APPS_PIX_AUTH_POLICY_NAME') | default('pix-api-apikey', true) }}"
+apps_pix_apikey_secret_name: "{{ lookup('ansible.builtin.env', 'APPS_PIX_APIKEY_SECRET_NAME') | default('pix-api-keys', true) }}"
+apps_pix_apikey_secret_value: "{{ lookup('ansible.builtin.env', 'APPS_PIX_APIKEY_SECRET_VALUE') | default('pix-tester-secret', true) }}"
+apps_pix_apikey_tester_name: "{{ lookup('ansible.builtin.env', 'APPS_PIX_APIKEY_TESTER_NAME') | default('pix-api-key-tester', true) }}"
+apps_pix_image: "{{ lookup('ansible.builtin.env', 'APPS_PIX_IMAGE') | default('quay.io/jsimas/mock-api:latest', true) }}"
+# The mock-api can be tuned via env. These four are the ones the demo
+# benefits from — anything more would be over-engineering for "GET 200".
+apps_pix_response_body: "{{ lookup('ansible.builtin.env', 'APPS_PIX_RESPONSE_BODY') | default('{\"status\":\"ok\",\"service\":\"pix\"}', true) }}"
+apps_pix_response_content_type: "{{ lookup('ansible.builtin.env', 'APPS_PIX_RESPONSE_CONTENT_TYPE') | default('application/json', true) }}"
+apps_pix_response_status: "{{ lookup('ansible.builtin.env', 'APPS_PIX_RESPONSE_STATUS') | default('200', true) }}"
+# A small artificial delay makes the P95 latency panel non-flat without
+# affecting the success rate. 25ms is invisible to the user but visible
+# on the chart.
+apps_pix_response_delay_ms: "{{ lookup('ansible.builtin.env', 'APPS_PIX_RESPONSE_DELAY_MS') | default('25', true) }}"
+
+apps_connectivity_route_alt_svc_enabled: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_ROUTE_ALT_SVC_ENABLED') | default('true', true) | bool }}"
+apps_connectivity_route_alt_svc_value: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_ROUTE_ALT_SVC_VALUE') | default('h3=\":443\"; ma=86400', true) }}"
+apps_connectivity_lb_test_enabled: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_LB_TEST_ENABLED') | default('true', true) | bool }}"
+apps_connectivity_lb_test_path: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_LB_TEST_PATH') | default('/api/lb-test', true) }}"
+apps_connectivity_lb_v1_weight: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_LB_V1_WEIGHT') | default('50', true) | int }}"
+apps_connectivity_lb_v2_weight: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_LB_V2_WEIGHT') | default('50', true) | int }}"
+# (apps_connectivity_jwt_* declared further down — alongside the RHBK
+# realm hostname/realm defaults — so the issuer URL can fall back to the
+# in-cluster Keycloak when RHBK_HOSTNAME/RHBK_REALM are set.)
+apps_connectivity_route_cors_enabled: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_ROUTE_CORS_ENABLED') | default('true', true) | bool }}"
+apps_connectivity_route_cors_allow_origin: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_ROUTE_CORS_ALLOW_ORIGIN') | default('*', true) }}"
+apps_connectivity_route_cors_allow_methods: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_ROUTE_CORS_ALLOW_METHODS') | default('GET,POST,PUT,PATCH,DELETE,OPTIONS', true) }}"
+apps_connectivity_route_cors_allow_headers: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_ROUTE_CORS_ALLOW_HEADERS') | default('accept,authorization,content-type,x-requested-with,x-flow-trace-id,x-client-app,x-consumer-id,x-customer-id,x-grpc-web,api-key', true) }}"
+apps_connectivity_route_cors_expose_headers: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_ROUTE_CORS_EXPOSE_HEADERS') | default('ratelimit-limit,ratelimit-remaining,ratelimit-reset,x-ratelimit-limit,x-ratelimit-remaining,x-ratelimit-reset,x-context-tokens,x-context-items,x-consumer-id,x-instance', true) }}"
+apps_connectivity_route_cors_allow_credentials: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_ROUTE_CORS_ALLOW_CREDENTIALS') | default('true', true) }}"
+apps_connectivity_route_cors_max_age: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_ROUTE_CORS_MAX_AGE') | default('86400', true) }}"
+apps_connectivity_gateway_deny_all_enabled: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_GATEWAY_DENY_ALL_ENABLED') | default('true', true) | bool }}"
+apps_connectivity_gateway_deny_all_policy_name: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_GATEWAY_DENY_ALL_POLICY_NAME') | default(apps_connectivity_gateway_name ~ '-deny-all', true) }}"
+apps_connectivity_ratelimit_policy_name: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_RATELIMIT_POLICY_NAME') | default('banking-api-10rps', true) }}"
+apps_connectivity_ratelimit_enabled: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_RATELIMIT_ENABLED') | default('false', true) | bool }}"
+apps_connectivity_ratelimit_limit: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_RATELIMIT_LIMIT') | default('10', true) | int }}"
+apps_connectivity_ratelimit_window: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_RATELIMIT_WINDOW') | default('1s', true) }}"
+# req026 — per-route body cap + upload timeout enforced at the gateway
+# (Envoy buffer filter + HTTPRoute timeouts). Backend Quarkus settings
+# are intentionally not touched: the PoC is exercising RHCL controls, not
+# the backend's. With apps_streaming_enabled=true the gateway returns
+# 413 for uploads above apps_streaming_max_request_bytes and 408/504
+# for uploads taking longer than apps_streaming_upload_request_timeout.
+apps_streaming_enabled: "{{ lookup('ansible.builtin.env', 'APPS_STREAMING_ENABLED') | default('true', true) | bool }}"
+apps_streaming_envoyfilter_name: "{{ lookup('ansible.builtin.env', 'APPS_STREAMING_ENVOYFILTER_NAME') | default('files-upload-max-body', true) }}"
+apps_streaming_envoyfilter_namespace: "{{ lookup('ansible.builtin.env', 'APPS_STREAMING_ENVOYFILTER_NAMESPACE') | default(apps_connectivity_gateway_namespace, true) }}"
+apps_streaming_upload_path: "{{ lookup('ansible.builtin.env', 'APPS_STREAMING_UPLOAD_PATH') | default('/api/files/upload', true) }}"
+apps_streaming_max_request_bytes: "{{ lookup('ansible.builtin.env', 'APPS_STREAMING_MAX_REQUEST_BYTES') | default('33554432', true) | int }}"
+apps_streaming_upload_request_timeout: "{{ lookup('ansible.builtin.env', 'APPS_STREAMING_UPLOAD_REQUEST_TIMEOUT') | default('60s', true) }}"
+# Istio names every Envoy route after `<namespace>.<HTTPRoute name>.<ruleIndex>`.
+# The /ws upgrade rule in connectivity-httproute.yml.j2 currently sits at index
+# 5 (after the 5 functional rules + before lb-test/upload). If you reorder the
+# HTTPRoute rules, bump this index or the buffer filter will block WebSocket
+# handshakes. Overridable per-cluster via the env var.
+apps_streaming_websocket_route_name: "{{ lookup('ansible.builtin.env', 'APPS_STREAMING_WEBSOCKET_ROUTE_NAME') | default(apps_namespace ~ '.' ~ apps_connectivity_route_name ~ '.5', true) }}"
+apps_connectivity_tls_enabled: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_TLS_ENABLED') | default('true', true) | bool }}"
+# AWS ELB-specific annotations on the Gateway Service (TCP passthrough +
+# healthcheck on the status-port NodePort). Only useful on OpenShift clusters
+# running on AWS. Set to false in on-prem / Azure / GCP envs where these
+# annotations are no-ops or where the Gateway Service hasn't been programmed
+# yet by the time the task runs.
+apps_connectivity_gateway_elb_annotations_enabled: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_GATEWAY_ELB_ANNOTATIONS_ENABLED') | default('false', true) | bool }}"
+apps_connectivity_tls_policy_name: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_TLS_POLICY_NAME') | default(apps_connectivity_gateway_name ~ '-tls', true) }}"
+apps_connectivity_tls_secret_name: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_TLS_SECRET_NAME') | default(apps_connectivity_gateway_name ~ '-tls', true) }}"
+apps_connectivity_tls_issuer_name: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_TLS_ISSUER_NAME') | default(letsencrypt_prod_name, true) }}"
+apps_connectivity_tls_issuer_kind: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_TLS_ISSUER_KIND') | default('ClusterIssuer', true) }}"
+apps_connectivity_tls_issuer_group: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_TLS_ISSUER_GROUP') | default('cert-manager.io', true) }}"
+apps_connectivity_apikey_enabled: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_APIKEY_ENABLED') | default('true', true) | bool }}"
+apps_connectivity_apikey_secret_name: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_APIKEY_SECRET_NAME') | default('banking-api-apikey', true) }}"
+apps_connectivity_apikey_secret_namespace: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_APIKEY_SECRET_NAMESPACE') | default(apps_namespace, true) }}"
+apps_connectivity_apikey_all_namespaces: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_APIKEY_ALL_NAMESPACES') | default('true', true) | bool }}"
+apps_connectivity_apikeys:
+  - name: banking-api-key-alice
+    user: alice
+    plan: gold
+    value: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_APIKEY_GOLD') | default('alice-gold-secret', true) }}"
+  - name: banking-api-key-bob
+    user: bob
+    plan: silver
+    value: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_APIKEY_SILVER') | default('bob-silver-secret', true) }}"
+  - name: banking-api-key-carol
+    user: carol
+    plan: bronze
+    value: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_APIKEY_BRONZE') | default('carol-bronze-secret', true) }}"
+# Single value baked into the frontend build (RHCL_API_KEY arg). Defaults to the
+# gold-tier key so the frontend exercises the highest plan during smoke tests.
+apps_connectivity_apikey_value: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_APIKEY_VALUE') | default(apps_connectivity_apikeys[0].value, true) }}"
+
+apps_connectivity_apiproduct_enabled: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_APIPRODUCT_ENABLED') | default('true', true) | bool }}"
+# Cria APIKey CRs (devportal) em Pending por usuário — fluxo de request/approve
+# que a console customizada mostra. Não gera secret (só na aprovação); a auth real
+# segue nos Secrets de valor fixo. Requer o developer portal (rhcl_developer_portal_enabled).
+apps_connectivity_apikey_cr_enabled: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_APIKEY_CR_ENABLED') | default('true', true) | bool }}"
+apps_connectivity_apiproduct_name: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_APIPRODUCT_NAME') | default('banking-api', true) }}"
+apps_connectivity_apiproduct_display_name: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_APIPRODUCT_DISPLAY_NAME') | default('Banking API', true) }}"
+apps_connectivity_apiproduct_description: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_APIPRODUCT_DESCRIPTION') | default('Sample banking API exposed through Red Hat Connectivity Link for the RHCL PoC.', true) }}"
+apps_connectivity_apiproduct_version: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_APIPRODUCT_VERSION') | default('v1', true) }}"
+apps_connectivity_apiproduct_approval_mode: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_APIPRODUCT_APPROVAL_MODE') | default('manual', true) }}"
+apps_connectivity_apiproduct_publish_status: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_APIPRODUCT_PUBLISH_STATUS') | default('Published', true) }}"
+apps_connectivity_apiproduct_tags:
+  - banking
+  - poc
+  - rhcl
+apps_connectivity_apiproduct_contact_team: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_APIPRODUCT_CONTACT_TEAM') | default('RHCL PoC Team', true) }}"
+apps_connectivity_apiproduct_contact_email: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_APIPRODUCT_CONTACT_EMAIL') | default('rhcl-poc@example.com', true) }}"
+
+apps_connectivity_planpolicy_enabled: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_PLANPOLICY_ENABLED') | default('true', true) | bool }}"
+apps_connectivity_planpolicy_name: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_PLANPOLICY_NAME') | default('banking-api-plans', true) }}"
+# Which CR backs the tiered plans on banking-api:
+#   planpolicy   → upstream Kuadrant PlanPolicy. Different rates per tier
+#                  (gold=1000, silver=50, bronze=10 — looks great in the
+#                  demo), but all subscribers on the same tier share one
+#                  Limitador counter (bug kuadrant-operator#2047, still open).
+#   manual-rlp   → hand-rolled RateLimitPolicy with
+#                  counters: [request.headers['x-consumer-id']]. Per-key
+#                  isolation works (each api-key gets its own bucket — what
+#                  the dev portal needs), but the WASM `when:` predicate
+#                  can't read auth.identity to gate different rates per
+#                  tier, so the gold/silver/bronze label is cosmetic and
+#                  everyone effectively hits the silver rate.
+# Default planpolicy because per-tier rates demo better; flip to manual-rlp
+# (APPS_CONNECTIVITY_PLANS_MODE=manual-rlp) when the dev portal needs to
+# show per-subscriber quotas instead.
+apps_connectivity_plans_mode: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_PLANS_MODE') | default('planpolicy', true) }}"
+apps_connectivity_plans:
+  - tier: gold
+    unlimited: true
+  - tier: silver
+    limit: 50
+    window: 1m
+  - tier: bronze
+    limit: 10
+    window: 1m
+
+# req018 — Monitoração de Custo.
+#
+# Pricing table the Cost Monitoring page (plugin) + dashboard-api-costs
+# (Grafana) use to translate consumption into money. Keys here must match
+# the plan tiers declared in `apps_connectivity_apikey_plans` and the
+# `secret.kuadrant.io/plan-id` annotation each APIKey carries. `anonymous`
+# is the bucket for unauthenticated traffic (where Istio reports
+# `request_headers_x_consumer_id=<nil>`).
+#
+# `tokens_per_1k` is the price for 1 000 AI tokens (sum of prompt +
+# completion). `calls_per_1k` is the price for 1 000 HTTP calls.
+# Empty/missing dict ⇒ plugin and dashboard fall back to raw usage
+# (counts only, no monetary column).
+#
+# Os valores abaixo são uma tabela plausível em BRL para uma API bancária,
+# não um placeholder: a chamada é o custo dominante (R$ 2,00 por 1 000
+# chamadas ⇒ R$ 0,002/chamada) e o tier melhor paga MENOS por unidade —
+# o desconto por volume que um contrato real teria. `anonymous` é o mais
+# caro de propósito: tráfego não autenticado é o que se quer empurrar
+# para dentro de um plano.
+apps_cost_currency: "{{ lookup('ansible.builtin.env', 'APPS_COST_CURRENCY') | default('BRL', true) }}"
+apps_cost_pricing:
+  gold:      { tokens_per_1k: 0.03, calls_per_1k: 2.00 }
+  silver:    { tokens_per_1k: 0.05, calls_per_1k: 3.00 }
+  bronze:    { tokens_per_1k: 0.08, calls_per_1k: 4.50 }
+  anonymous: { tokens_per_1k: 0.15, calls_per_1k: 8.00 }
+
+# Teto mensal (na moeda de `apps_cost_currency`) que a página de Cost
+# Monitoring usa para o KPI "Budget Usage" e a projeção de fim de mês.
+# Vazio ⇒ o plugin esconde o card de budget.
+apps_cost_budget: "{{ lookup('ansible.builtin.env', 'APPS_COST_BUDGET') | default('10000', true) }}"
+
+# Master toggle for the Let's Encrypt ClusterIssuer provisioning. Default
+# true. Set LETSENCRYPT_ENABLED=false in environments that issue certs
+# through another path — e.g. a self-signed/corporate ClusterIssuer
+# (APPS_CONNECTIVITY_TLS_ISSUER_NAME) when the public ACME endpoint isn't
+# reachable from inside the network.
+letsencrypt_enabled: "{{ lookup('ansible.builtin.env', 'LETSENCRYPT_ENABLED') | default('true', true) | bool }}"
+letsencrypt_email: "{{ lookup('ansible.builtin.env', 'LETSENCRYPT_EMAIL') | default('', true) }}"
+letsencrypt_solver: "{{ lookup('ansible.builtin.env', 'LETSENCRYPT_SOLVER') | default('dns01', true) }}"
+letsencrypt_dns_provider: "{{ lookup('ansible.builtin.env', 'LETSENCRYPT_DNS_PROVIDER') | default(rhcl_dns_provider, true) }}"
+letsencrypt_staging_name: "{{ lookup('ansible.builtin.env', 'LETSENCRYPT_STAGING_NAME') | default('letsencrypt-staging', true) }}"
+letsencrypt_prod_name: "{{ lookup('ansible.builtin.env', 'LETSENCRYPT_PROD_NAME') | default('letsencrypt-prod', true) }}"
+letsencrypt_prod_enabled: "{{ lookup('ansible.builtin.env', 'LETSENCRYPT_PROD_ENABLED') | default('false', true) | bool }}"
+letsencrypt_secret_namespace: "{{ lookup('ansible.builtin.env', 'LETSENCRYPT_SECRET_NAMESPACE') | default('cert-manager', true) }}"
+letsencrypt_secret_name: "{{ lookup('ansible.builtin.env', 'LETSENCRYPT_SECRET_NAME') | default('letsencrypt-dns-credentials', true) }}"
+letsencrypt_aws_hosted_zone_id: "{{ lookup('ansible.builtin.env', 'LETSENCRYPT_AWS_HOSTED_ZONE_ID') | default('', true) }}"
+letsencrypt_azure_hosted_zone_name: "{{ lookup('ansible.builtin.env', 'LETSENCRYPT_AZURE_HOSTED_ZONE_NAME') | default(lookup('ansible.builtin.env', 'AZ_DNS_ZONE'), true) | default('', true) }}"
+
+# ---------------------------------------------------------------------------
+# RHBK (Red Hat build of Keycloak) — Item 71 OIDC/JWT issuer.
+# Stood up by the rhbk role / rhbk-install.yml (also runs inside install-all,
+# before apps). Toggle the whole thing with RHBK_ENABLED=false.
+# (NOTE: this block was restored after commit 236cf2b "metalLB docs" dropped it.)
+# ---------------------------------------------------------------------------
+rhbk_enabled: "{{ lookup('ansible.builtin.env', 'RHBK_ENABLED') | default('true', true) | bool }}"
+rhbk_namespace: "{{ lookup('ansible.builtin.env', 'RHBK_NAMESPACE') | default('rhcl-keycloak', true) }}"
+rhbk_operator_name: "{{ lookup('ansible.builtin.env', 'RHBK_OPERATOR_NAME') | default('rhbk-operator', true) }}"
+rhbk_operator_subscription_name: "{{ lookup('ansible.builtin.env', 'RHBK_OPERATOR_SUBSCRIPTION_NAME') | default('rhbk-operator', true) }}"
+rhbk_operator_channel: "{{ lookup('ansible.builtin.env', 'RHBK_OPERATOR_CHANNEL') | default('stable-v26.4', true) }}"
+rhbk_operator_source: "{{ lookup('ansible.builtin.env', 'RHBK_OPERATOR_SOURCE') | default('redhat-operators', true) }}"
+rhbk_operator_source_namespace: "{{ lookup('ansible.builtin.env', 'RHBK_OPERATOR_SOURCE_NAMESPACE') | default('openshift-marketplace', true) }}"
+rhbk_operatorgroup_name: "{{ lookup('ansible.builtin.env', 'RHBK_OPERATORGROUP_NAME') | default('rhbk-operatorgroup', true) }}"
+# (rhbk_install_operator was defined further up the file alongside the
+# other *_install_operator switches; the duplicate here is removed so
+# both definitions don't shadow each other.)
+
+rhbk_keycloak_name: "{{ lookup('ansible.builtin.env', 'RHBK_KEYCLOAK_NAME') | default('rhcl', true) }}"
+rhbk_instances: "{{ lookup('ansible.builtin.env', 'RHBK_INSTANCES') | default('1', true) | int }}"
+rhbk_hostname: "{{ lookup('ansible.builtin.env', 'RHBK_HOSTNAME') | default('keycloak.' ~ rhcl_zone_root_domain, true) }}"
+rhbk_realm: "{{ lookup('ansible.builtin.env', 'RHBK_REALM') | default('rhcl', true) }}"
+rhbk_realm_display_name: "{{ lookup('ansible.builtin.env', 'RHBK_REALM_DISPLAY_NAME') | default('RHCL PoC', true) }}"
+rhbk_access_token_lifespan: "{{ lookup('ansible.builtin.env', 'RHBK_ACCESS_TOKEN_LIFESPAN') | default('1800', true) | int }}"
+# Session lifespans. Keycloak's 5-min default access token + 30-min idle session
+# expire mid-demo (SPA calls start returning 401 even on /api/me once the token
+# lapses and the SSO session has gone idle). Generous, demo-friendly values for
+# this throwaway PoC realm: 30-min tokens, 2-h idle, 12-h max.
+rhbk_sso_session_idle_timeout: "{{ lookup('ansible.builtin.env', 'RHBK_SSO_SESSION_IDLE_TIMEOUT') | default('7200', true) | int }}"
+rhbk_sso_session_max_lifespan: "{{ lookup('ansible.builtin.env', 'RHBK_SSO_SESSION_MAX_LIFESPAN') | default('43200', true) | int }}"
+rhbk_client_session_idle_timeout: "{{ lookup('ansible.builtin.env', 'RHBK_CLIENT_SESSION_IDLE_TIMEOUT') | default('7200', true) | int }}"
+rhbk_client_session_max_lifespan: "{{ lookup('ansible.builtin.env', 'RHBK_CLIENT_SESSION_MAX_LIFESPAN') | default('43200', true) | int }}"
+rhbk_client_id: "{{ lookup('ansible.builtin.env', 'RHBK_CLIENT_ID') | default('banking-api', true) }}"
+rhbk_client_secret: "{{ lookup('ansible.builtin.env', 'RHBK_CLIENT_SECRET') | default('banking-api-secret', true) }}"
+
+# Bootstrap admin (master realm). Provided via Secret so o Keycloak nasce com um
+# admin DEFINITIVO (em vez do temp-admin + senha aleatória que o operator gera).
+# Só é aplicado na criação inicial da instância (spec.bootstrapAdmin).
+rhbk_admin_username: "{{ lookup('ansible.builtin.env', 'RHBK_ADMIN_USERNAME') | default('admin', true) }}"
+rhbk_admin_password: "{{ lookup('ansible.builtin.env', 'RHBK_ADMIN_PASSWORD') | default('redhat', true) }}"
+rhbk_admin_secret_name: "{{ lookup('ansible.builtin.env', 'RHBK_ADMIN_SECRET_NAME') | default('keycloak-bootstrap-admin', true) }}"
+
+# Database (PostgreSQL — required by the operator-managed Keycloak).
+rhbk_db_image: "{{ lookup('ansible.builtin.env', 'RHBK_DB_IMAGE') | default('quay.io/sclorg/postgresql-15-c9s:latest', true) }}"
+rhbk_db_name: "{{ lookup('ansible.builtin.env', 'RHBK_DB_NAME') | default('keycloak', true) }}"
+rhbk_db_username: "{{ lookup('ansible.builtin.env', 'RHBK_DB_USERNAME') | default('keycloak', true) }}"
+rhbk_db_password: "{{ lookup('ansible.builtin.env', 'RHBK_DB_PASSWORD') | default('keycloak-demo-pass', true) }}"
+rhbk_db_secret_name: "{{ lookup('ansible.builtin.env', 'RHBK_DB_SECRET_NAME') | default('keycloak-db-secret', true) }}"
+
+# --- Awareness de perfil: deriva dos flags apps_* (o perfil corporativo liga a
+# Route própria e o RHBK segue junto sem flags extras). ---
+# rhbk_tls_mode — como o TLS do Keycloak é servido/exposto:
+#   passthrough (default corporate): cert no POD (tlsSecret, CA interna corporativa) +
+#     Route passthrough consumida pelo NGINX; Authorino confia na CA interna. É o
+#     modelo do iib-rhbk (provado) e mantém o SAN do issuer sob nosso controle.
+#   letsencrypt (default AWS): cert do cert-manager (LE, já confiável) no pod +
+#     Route passthrough gerenciada pelo operator.
+#   edge: TLS termina no Route/NGINX e o Keycloak roda HTTP atrás de proxy
+#     (xforwarded). NÃO usar num ambiente corporativo pra JWT — o cert servido seria o do NGINX, não o
+#     nosso, e o SAN do issuer fugiria do nosso controle.
+rhbk_tls_mode: "{{ lookup('ansible.builtin.env', 'RHBK_TLS_MODE') | default('passthrough' if (apps_openshift_route_enabled | bool) else 'letsencrypt', true) }}"
+# Compat: proxy_edge = (modo edge). As demais derivações abaixo usam rhbk_tls_mode.
+rhbk_proxy_edge: "{{ lookup('ansible.builtin.env', 'RHBK_PROXY_EDGE') | default((rhbk_tls_mode == 'edge') | string | lower, true) | bool }}"
+# Route OpenShift própria (consumida pelo NGINX interno via label de ingress class).
+rhbk_openshift_route_enabled: "{{ lookup('ansible.builtin.env', 'RHBK_OPENSHIFT_ROUTE_ENABLED') | default(apps_openshift_route_enabled, true) | bool }}"
+# Route gerenciada pelo operator (passthrough) — AWS sim; corporate não (usamos Route própria).
+rhbk_operator_ingress_enabled: "{{ lookup('ansible.builtin.env', 'RHBK_OPERATOR_INGRESS_ENABLED') | default((not (rhbk_openshift_route_enabled | bool)) | string | lower, true) | bool }}"
+
+# Authorino trust da CA do issuer — num ambiente corporativo o cert do Keycloak vem da CA interna do
+# banco (internal corporate CA), seja edge ou passthrough; o Authorino precisa confiar nela pra
+# buscar o JWKS. Cria um ConfigMap inject-trusted-cabundle (OpenShift preenche com
+# system+user-ca-bundle) e monta no pod do Authorino. Ligado em qualquer modo que
+# NÃO seja letsencrypt (AWS usa LE, já confiável, e não precisa).
+rhbk_authorino_trust_ca: "{{ lookup('ansible.builtin.env', 'RHBK_AUTHORINO_TRUST_CA') | default((rhbk_tls_mode != 'letsencrypt') | string | lower, true) | bool }}"
+rhbk_authorino_namespace: "{{ lookup('ansible.builtin.env', 'RHBK_AUTHORINO_NAMESPACE') | default(rhcl_namespace, true) }}"
+rhbk_authorino_name: "{{ lookup('ansible.builtin.env', 'RHBK_AUTHORINO_NAME') | default('authorino', true) }}"
+rhbk_authorino_trust_ca_configmap: "{{ lookup('ansible.builtin.env', 'RHBK_AUTHORINO_TRUST_CA_CONFIGMAP') | default('kuadrant-trusted-ca', true) }}"
+
+# TLS — Secret kubernetes.io/tls montado no pod do Keycloak (spec.http.tlsSecret).
+#   passthrough (corporate): você cria esse Secret À MÃO com o cert corporativo (tls.crt+tls.key,
+#     +ca.crt) emitido pro host do Keycloak — a automação NÃO emite (rhbk_tls_create_
+#     certificate=false). Nome default keycloak-tls (ajuste com RHBK_TLS_SECRET_NAME).
+#   letsencrypt (AWS): o cert-manager emite o Certificate nesse Secret.
+rhbk_tls_secret_name: "{{ lookup('ansible.builtin.env', 'RHBK_TLS_SECRET_NAME') | default('keycloak-tls', true) }}"
+rhbk_tls_create_certificate: "{{ lookup('ansible.builtin.env', 'RHBK_TLS_CREATE_CERTIFICATE') | default((rhbk_tls_mode == 'letsencrypt') | string | lower, true) | bool }}"
+rhbk_tls_issuer_name: "{{ lookup('ansible.builtin.env', 'RHBK_TLS_ISSUER_NAME') | default(apps_connectivity_tls_issuer_name, true) }}"
+rhbk_tls_issuer_kind: "{{ lookup('ansible.builtin.env', 'RHBK_TLS_ISSUER_KIND') | default('ClusterIssuer', true) }}"
+
+# DNS override (DNSRecord kuadrant) — cloud quando *.<zone> é wildcard pro gateway.
+# Ligado por default; desligue com RHBK_DNS_OVERRIDE_ENABLED=false onde o DNS é
+# gerenciado fora do Kuadrant.
+rhbk_dns_override_enabled: "{{ lookup('ansible.builtin.env', 'RHBK_DNS_OVERRIDE_ENABLED') | default('true', true) | bool }}"
+rhbk_dns_record_name: "{{ lookup('ansible.builtin.env', 'RHBK_DNS_RECORD_NAME') | default('keycloak-' ~ rhbk_realm, true) }}"
+rhbk_dns_record_namespace: "{{ lookup('ansible.builtin.env', 'RHBK_DNS_RECORD_NAMESPACE') | default('openshift-ingress', true) }}"
+rhbk_dns_provider_secret: "{{ lookup('ansible.builtin.env', 'RHBK_DNS_PROVIDER_SECRET') | default('rhcl-dns-credentials', true) }}"
+# Auto-discovered from router-default when empty. AWS ELB → CNAME (hostname);
+# Azure/GCP LB → A (IP). Override manual via RHBK_ROUTER_LB_HOSTNAME.
+rhbk_router_lb_hostname: "{{ lookup('ansible.builtin.env', 'RHBK_ROUTER_LB_HOSTNAME') | default('', true) }}"
+
+# OpenShift Route própria (corporate) — consumida pelo NGINX via label de ingress class
+# (reaproveita apps_openshift_route_ingress_class_label_*). Aponta pro Service do
+# Keycloak (operator cria <name>-service). Em passthrough vai pro port https (8443,
+# o pod serve o cert corporativo); em edge iria pro http (8080). O NGINX interno PRECISA
+# suportar TLS passthrough (SNI) — confirme antes.
+rhbk_route_target_service: "{{ lookup('ansible.builtin.env', 'RHBK_ROUTE_TARGET_SERVICE') | default(rhbk_keycloak_name ~ '-service', true) }}"
+rhbk_route_target_port: "{{ lookup('ansible.builtin.env', 'RHBK_ROUTE_TARGET_PORT') | default('http' if (rhbk_tls_mode == 'edge') else 'https', true) }}"
+rhbk_route_tls_termination: "{{ lookup('ansible.builtin.env', 'RHBK_ROUTE_TLS_TERMINATION') | default('edge' if (rhbk_tls_mode == 'edge') else 'passthrough', true) }}"
+
+rhbk_remove_namespace: "{{ lookup('ansible.builtin.env', 'RHBK_REMOVE_NAMESPACE') | default('true', true) | bool }}"
+
+# Realm roles + demo users.
+#
+# The `banking-*` roles drive the gateway's JWT AuthPolicy (see
+# `apps_connectivity_jwt_required_role` below) — they protect the API.
+# The `api-*` roles drive the **Developer Portal** (its own repo,
+# hodrigohamalho/rhcl-developer-portal — security/Roles.java) —
+# they gate the Settings → Administration screens (manage APIs, plans,
+# subscriptions). The portal frontend reads `realm_access.roles` from
+# the token and hides admin menus when missing.
+#
+# Demo assignments:
+#   alice → consumer + admin + owner   (drives the full portal demo)
+#   bob   → consumer only              (regular subscriber)
+rhbk_realm_roles:
+  - name: banking-customer
+    description: "Cliente do banco — acessa contas próprias"
+  - name: banking-admin
+    description: "Administrador — operações privilegiadas"
+  - name: api-consumer
+    description: "Developer Portal — pode descobrir APIs e gerar API keys"
+  - name: api-admin
+    description: "Developer Portal — administra APIs, plans, subscriptions"
+  - name: api-owner
+    description: "Developer Portal — owner do produto (mesma UI do api-admin)"
+rhbk_users:
+  - username: alice
+    email: alice@example.com
+    firstName: Alice
+    lastName: Customer
+    password: "{{ lookup('ansible.builtin.env', 'RHBK_USER_ALICE_PASSWORD') | default('alice123', true) }}"
+    realmRoles: [banking-customer, api-consumer, api-admin, api-owner]
+  - username: bob
+    email: bob@example.com
+    firstName: Bob
+    lastName: Admin
+    password: "{{ lookup('ansible.builtin.env', 'RHBK_USER_BOB_PASSWORD') | default('bob123', true) }}"
+    realmRoles: [banking-customer, banking-admin, api-consumer]
+
+# ---------------------------------------------------------------------------
+# Gateway JWT/OIDC enforcement (apps AuthPolicy) — Item 71.
+# Adds a `jwt` authentication method + role authZ + claim-forwarding headers to
+# the connectivity AuthPolicy, scoped to the protected path. Points at the RHBK
+# realm issuer above.
+# ---------------------------------------------------------------------------
+apps_connectivity_jwt_enabled: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_JWT_ENABLED') | default('true', true) | bool }}"
+apps_connectivity_jwt_issuer_url: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_JWT_ISSUER_URL') | default('https://' ~ rhbk_hostname ~ '/realms/' ~ rhbk_realm, true) }}"
+apps_connectivity_jwt_protected_path: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_JWT_PROTECTED_PATH') | default('/api/whoami', true) }}"
+apps_connectivity_jwt_required_role: "{{ lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_JWT_REQUIRED_ROLE') | default('banking-customer', true) }}"
+# Paths extras liberados SEM autenticação na AuthPolicy do gateway (regra
+# anonymous + exclusão das regras de api-key/jwt). Lista separada por vírgula.
+# Ex.: APPS_CONNECTIVITY_ANONYMOUS_EXTRA_PATHS=/api/v1/timeout,/api/v1/timeoutmaior
+# Vazio (default) = nenhum path extra liberado (comportamento atual inalterado).
+apps_connectivity_anonymous_extra_paths: "{{ (lookup('ansible.builtin.env', 'APPS_CONNECTIVITY_ANONYMOUS_EXTRA_PATHS') | default('', true)).split(',') | map('trim') | reject('equalto', '') | list }}"
+
+# ---------------------------------------------------------------------------
+# Custom RHCL Console — OpenShift Console dynamic plugin.
+# Repo: github.com/redhat-rhcl-poc/custom-rhcl-console (privado).
+# Instalado pela role custom_console / custom_console-install.yml (também roda
+# no fim do install-all). Toggle com CUSTOM_CONSOLE_ENABLED=false.
+# ---------------------------------------------------------------------------
+custom_console_enabled: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_ENABLED') | default('true', true) | bool }}"
+custom_console_namespace: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_NAMESPACE') | default('custom-rhcl-console', true) }}"
+custom_console_name: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_NAME') | default('custom-rhcl-console', true) }}"
+custom_console_plugin_name: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_PLUGIN_NAME') | default('custom-rhcl-console', true) }}"
+custom_console_display_name: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DISPLAY_NAME') | default('Connectivity Link', true) }}"
+# Runtime ConfigMap consumed by the plugin's pluginConfig.usePluginConfig
+# hook. Hosts the per-environment overrides we don't want baked into the
+# image (Grafana / Tempo discovery, Developer Portal URL, the req018
+# Cost Monitoring pricing table). The plugin watches it via
+# useK8sWatchResource, so a `data:` edit propagates without a rollout.
+custom_console_config_configmap_name: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_CONFIG_CONFIGMAP_NAME') | default('custom-rhcl-console-config', true) }}"
+# Links absolutos que o browser abre direto. Deixe VAZIO para o role derivar
+# `https://<prefixo>.<apps-domain>` do próprio cluster (é o que o lab usa);
+# preencha para apontar a uma instância mantida pelo cliente. Se ficar vazio
+# e o domínio não resolver, o item some da sidebar em vez de virar link morto.
+custom_console_developer_portal_url: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DEVELOPER_PORTAL_URL') | default('', true) }}"
+custom_console_internal_developer_hub_url: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_INTERNAL_DEVELOPER_HUB_URL') | default('', true) }}"
+custom_console_dns_prober_url: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DNS_PROBER_URL') | default('', true) }}"
+# Prefixos usados para montar as URLs acima. `dns-prober-custom-rhcl-console`
+# é o host default do OpenShift para a rota `dns-prober` no namespace do
+# plugin (padrão <rota>-<namespace>.<apps-domain>).
+custom_console_developer_portal_route_prefix: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DEVELOPER_PORTAL_ROUTE_PREFIX') | default('devportal', true) }}"
+custom_console_internal_developer_hub_route_prefix: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_INTERNAL_DEVELOPER_HUB_ROUTE_PREFIX') | default('rhdh', true) }}"
+custom_console_dns_prober_route_prefix: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DNS_PROBER_ROUTE_PREFIX') | default('dns-prober-custom-rhcl-console', true) }}"
+custom_console_grafana_namespace: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_GRAFANA_NAMESPACE') | default('', true) }}"
+custom_console_grafana_route_name: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_GRAFANA_ROUTE_NAME') | default('', true) }}"
+custom_console_grafana_dashboard_prefix: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_GRAFANA_DASHBOARD_PREFIX') | default('', true) }}"
+custom_console_tempo_namespace: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_TEMPO_NAMESPACE') | default('', true) }}"
+custom_console_tempo_gateway_route_name: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_TEMPO_GATEWAY_ROUTE_NAME') | default('', true) }}"
+custom_console_tempo_stack_name: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_TEMPO_STACK_NAME') | default('', true) }}"
+# Imagem casada com a instalação que está rodando no cluster (tag pinada 1.1).
+# nginx do plugin serve HTTPS na porta 9001 (não 8080 como no exemplo do README).
+# Plugin do RHCL Console (custom). Default aponta pra `:latest` do fork
+# `hodrigohamalho/custom-rhcl-console`, que é a imagem mantida pela equipe
+# do PoC (Backends tab com Drawer, dedupe de backends, APIProduct backends
+# card, fluxo de APIKey approval via APIKeyApproval CR, etc.).
+#
+# A imagem antiga `quay.io/jsimas/custom-rhcl-console:1.1` ficou congelada
+# em julho/agosto de 2026 e não tem nenhum dos refactors. Não usar.
+#
+# `imagePullPolicy: Always` (também default) garante que cada rollout puxe
+# o digest mais recente da tag `:latest` — então um `oc rollout restart`
+# já atualiza o cluster sem precisar mexer aqui.
+custom_console_image: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_IMAGE') | default('quay.io/hodrigohamalho/custom-rhcl-console:1.0', true) }}"
+custom_console_image_pull_policy: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_IMAGE_PULL_POLICY') | default('Always', true) }}"
+custom_console_image_pull_secret: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_IMAGE_PULL_SECRET') | default('', true) }}"
+custom_console_replicas: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_REPLICAS') | default('1', true) | int }}"
+custom_console_container_port: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_CONTAINER_PORT') | default('9001', true) | int }}"
+custom_console_service_port: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_SERVICE_PORT') | default('9001', true) | int }}"
+# OpenShift serving-cert secret (TLS) mintado pela anotação no Service.
+custom_console_cert_secret_name: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_CERT_SECRET_NAME') | default('custom-rhcl-console-cert', true) }}"
+custom_console_remove_namespace: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_REMOVE_NAMESPACE') | default('true', true) | bool }}"
+
+# ---------------------------------------------------------------------------
+# Tests catalog (rhcl-lab-git) — site estático (nginx) que lista os req*/ + req*.md
+# e renderiza os READMEs (viewer/reproduzir). Builda da pasta tests/ deste repo.
+# Instalado pela role tests_catalog / tests_catalog-install.yml. Toggle com
+# TESTS_CATALOG_ENABLED=false.
+# ---------------------------------------------------------------------------
+tests_catalog_enabled: "{{ lookup('ansible.builtin.env', 'TESTS_CATALOG_ENABLED') | default('true', true) | bool }}"
+tests_catalog_namespace: "{{ lookup('ansible.builtin.env', 'TESTS_CATALOG_NAMESPACE') | default('tests', true) }}"
+tests_catalog_name: "{{ lookup('ansible.builtin.env', 'TESTS_CATALOG_NAME') | default('rhcl-lab-git', true) }}"
+# build = BuildConfig Git in-cluster (default, fiel ao que está rodando).
+# image = imagem pronta (sem egress p/ github: builde e publique, e aponte aqui).
+tests_catalog_image_source: "{{ lookup('ansible.builtin.env', 'TESTS_CATALOG_IMAGE_SOURCE') | default('build', true) }}"
+tests_catalog_git_uri: "{{ lookup('ansible.builtin.env', 'TESTS_CATALOG_GIT_URI') | default('https://github.com/redhat-rhcl-poc/rhcl-lab.git', true) }}"
+tests_catalog_git_ref: "{{ lookup('ansible.builtin.env', 'TESTS_CATALOG_GIT_REF') | default('', true) }}"
+# Credentials for cloning the catalog repo. When TESTS_CATALOG_GIT_TOKEN is
+# set, the role creates a basic-auth Secret named after
+# `tests_catalog_git_source_secret_default` and wires it into the
+# BuildConfig.sourceSecret. TESTS_CATALOG_GIT_USERNAME defaults to
+# "x-access-token" because that's the canonical value GitHub expects when
+# the password slot carries a fine-grained or classic PAT.
+# Pass an explicit TESTS_CATALOG_GIT_SOURCE_SECRET to point at a Secret you
+# created out-of-band instead.
+tests_catalog_git_username: "{{ lookup('ansible.builtin.env', 'TESTS_CATALOG_GIT_USERNAME') | default('x-access-token', true) }}"
+tests_catalog_git_token: "{{ lookup('ansible.builtin.env', 'TESTS_CATALOG_GIT_TOKEN') | default('', true) }}"
+tests_catalog_git_source_secret_default: "{{ tests_catalog_name }}-git-credentials"
+tests_catalog_git_source_secret: "{{ lookup('ansible.builtin.env', 'TESTS_CATALOG_GIT_SOURCE_SECRET') | default((tests_catalog_git_source_secret_default if (lookup('ansible.builtin.env', 'TESTS_CATALOG_GIT_TOKEN') | length > 0) else ''), true) }}"
+tests_catalog_context_dir: "{{ lookup('ansible.builtin.env', 'TESTS_CATALOG_CONTEXT_DIR') | default('/tests', true) }}"
+tests_catalog_dockerfile_path: "{{ lookup('ansible.builtin.env', 'TESTS_CATALOG_DOCKERFILE_PATH') | default('Dockerfile', true) }}"
+tests_catalog_image: "{{ lookup('ansible.builtin.env', 'TESTS_CATALOG_IMAGE') | default('', true) }}"
+tests_catalog_image_pull_policy: "{{ lookup('ansible.builtin.env', 'TESTS_CATALOG_IMAGE_PULL_POLICY') | default('Always', true) }}"
+tests_catalog_image_pull_secret: "{{ lookup('ansible.builtin.env', 'TESTS_CATALOG_IMAGE_PULL_SECRET') | default('', true) }}"
+tests_catalog_replicas: "{{ lookup('ansible.builtin.env', 'TESTS_CATALOG_REPLICAS') | default('1', true) | int }}"
+tests_catalog_container_port: "{{ lookup('ansible.builtin.env', 'TESTS_CATALOG_CONTAINER_PORT') | default('8080', true) | int }}"
+# Hostname da Route. Default deriva da MESMA zona delegada que o banking-api
+# usa: pega apps_connectivity_route_hostname e troca o 1º label por
+# "tests" (ex.: banking-api.apps.example.com -> tests.apps.example.com).
+# NÃO usar rhcl_zone_root_domain aqui: num ambiente corporativo o cluster-env.sh sobrescreve essa var
+# com o domínio de ingress DO CLUSTER (ex.: lab.example.com), que NÃO é a zona
+# delegada da PoC — derivar dela gera tests.lab.example.com, fora da zona. Sem
+# apps_connectivity_route_hostname o default fica vazio = OpenShift gera o host da Route.
+tests_catalog_hostname: "{{ lookup('ansible.builtin.env', 'TESTS_CATALOG_HOSTNAME') | default(('tests.' ~ (apps_connectivity_route_hostname.split('.')[1:] | join('.'))) if (apps_connectivity_route_hostname | default('') | length > 0 and '.' in (apps_connectivity_route_hostname | default(''))) else '', true) }}"
+tests_catalog_route_tls_termination: "{{ lookup('ansible.builtin.env', 'TESTS_CATALOG_ROUTE_TLS_TERMINATION') | default('edge', true) }}"
+# Profile-aware (deriva do flag apps_openshift_route_enabled).
+tests_catalog_openshift_route_bb_enabled: "{{ lookup('ansible.builtin.env', 'TESTS_CATALOG_OPENSHIFT_ROUTE_BB_ENABLED') | default(apps_openshift_route_enabled, true) | bool }}"
+tests_catalog_remove_namespace: "{{ lookup('ansible.builtin.env', 'TESTS_CATALOG_REMOVE_NAMESPACE') | default('true', true) | bool }}"
+
+# ---------------------------------------------------------------------------
+# OpenShift AI (RHOAI 3.4) — model serving, llm-d, distributed workloads,
+# Llama Stack, workbenches, pipelines, model registry, and supporting operators.
+# Installed by role ocp_ai / ocp_ai-install.yml. Toggle with OCP_AI_ENABLED=false.
+# Requires cert-manager, Gateway API, and RHCL (for llm-d + Connectivity Link auth).
+# Not part of install-all.yml by default — run after the RHCL baseline is ready.
+# ---------------------------------------------------------------------------
+ocp_ai_enabled: "{{ lookup('ansible.builtin.env', 'OCP_AI_ENABLED') | default('false', true) | bool }}"
+ocp_ai_require_rhcl: "{{ lookup('ansible.builtin.env', 'OCP_AI_REQUIRE_RHCL') | default('true', true) | bool }}"
+ocp_ai_require_gateway_api: "{{ lookup('ansible.builtin.env', 'OCP_AI_REQUIRE_GATEWAY_API') | default('true', true) | bool }}"
+ocp_ai_llmd_enabled: "{{ lookup('ansible.builtin.env', 'OCP_AI_LLMD_ENABLED') | default('true', true) | bool }}"
+ocp_ai_distributed_workloads_enabled: "{{ lookup('ansible.builtin.env', 'OCP_AI_DISTRIBUTED_WORKLOADS_ENABLED') | default('true', true) | bool }}"
+ocp_ai_models_as_service_enabled: "{{ lookup('ansible.builtin.env', 'OCP_AI_MODELS_AS_SERVICE_ENABLED') | default('true', true) | bool }}"
+ocp_ai_gpu_enabled: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_ENABLED') | default('true', true) | bool }}"
+ocp_ai_require_gpu_nodes: "{{ lookup('ansible.builtin.env', 'OCP_AI_REQUIRE_GPU_NODES') | default('false', true) | bool }}"
+ocp_ai_remove_operators: "{{ lookup('ansible.builtin.env', 'OCP_AI_REMOVE_OPERATORS') | default('false', true) | bool }}"
+ocp_ai_remove_namespaces: "{{ lookup('ansible.builtin.env', 'OCP_AI_REMOVE_NAMESPACES') | default('false', true) | bool }}"
+ocp_ai_create_model_serving_namespace: "{{ lookup('ansible.builtin.env', 'OCP_AI_CREATE_MODEL_SERVING_NAMESPACE') | default('true', true) | bool }}"
+
+ocp_ai_operator_namespace: "{{ lookup('ansible.builtin.env', 'OCP_AI_OPERATOR_NAMESPACE') | default('redhat-ods-operator', true) }}"
+ocp_ai_applications_namespace: "{{ lookup('ansible.builtin.env', 'OCP_AI_APPLICATIONS_NAMESPACE') | default('redhat-ods-applications', true) }}"
+ocp_ai_model_serving_namespace: "{{ lookup('ansible.builtin.env', 'OCP_AI_MODEL_SERVING_NAMESPACE') | default('rhcl-model-serving', true) }}"
+ocp_ai_workbench_namespace: "{{ lookup('ansible.builtin.env', 'OCP_AI_WORKBENCH_NAMESPACE') | default('rhods-notebooks', true) }}"
+
+ocp_ai_operator_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_OPERATOR_NAME') | default('rhods-operator', true) }}"
+ocp_ai_subscription_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_SUBSCRIPTION_NAME') | default('rhods-operator', true) }}"
+ocp_ai_operatorgroup_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_OPERATORGROUP_NAME') | default('rhods-operator', true) }}"
+ocp_ai_channel: "{{ lookup('ansible.builtin.env', 'OCP_AI_CHANNEL') | default('stable-3.4', true) }}"
+ocp_ai_starting_csv: "{{ lookup('ansible.builtin.env', 'OCP_AI_STARTING_CSV') | default('', true) }}"
+ocp_ai_dsci_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_DSCI_NAME') | default('default-dsci', true) }}"
+ocp_ai_dsc_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_DSC_NAME') | default('default-dsc', true) }}"
+ocp_ai_aipipelines_state: "{{ lookup('ansible.builtin.env', 'OCP_AI_AIPIPELINES_STATE') | default('Managed', true) }}"
+ocp_ai_aipipelines_argo_workflows_controllers_state: "{{ lookup('ansible.builtin.env', 'OCP_AI_AIPIPELINES_ARGO_WORKFLOWS_CONTROLLERS_STATE') | default('Managed', true) }}"
+ocp_ai_kserve_state: "{{ lookup('ansible.builtin.env', 'OCP_AI_KSERVE_STATE') | default('Managed', true) }}"
+ocp_ai_kserve_models_as_service_state: "{{ lookup('ansible.builtin.env', 'OCP_AI_KSERVE_MODELS_AS_SERVICE_STATE') | default(ocp_ai_models_as_service_enabled | ternary('Managed', 'Removed'), true) }}"
+ocp_ai_kserve_nim_state: "{{ lookup('ansible.builtin.env', 'OCP_AI_KSERVE_NIM_STATE') | default('Removed', true) }}"
+ocp_ai_kserve_nim_airgapped: "{{ lookup('ansible.builtin.env', 'OCP_AI_KSERVE_NIM_AIRGAPPED') | default('false', true) | bool }}"
+ocp_ai_kserve_raw_deployment_service_config: "{{ lookup('ansible.builtin.env', 'OCP_AI_KSERVE_RAW_DEPLOYMENT_SERVICE_CONFIG') | default('Headless', true) }}"
+ocp_ai_kserve_wva_state: "{{ lookup('ansible.builtin.env', 'OCP_AI_KSERVE_WVA_STATE') | default(ocp_ai_llmd_enabled | ternary('Managed', 'Removed'), true) }}"
+ocp_ai_dashboard_state: "{{ lookup('ansible.builtin.env', 'OCP_AI_DASHBOARD_STATE') | default('Managed', true) }}"
+# Gen AI studio / Playground menu (OdhDashboardConfig; default false in RHOAI 3.4 docs).
+ocp_ai_dashboard_gen_ai_studio: "{{ lookup('ansible.builtin.env', 'OCP_AI_DASHBOARD_GEN_AI_STUDIO') | default('true', true) | bool }}"
+ocp_ai_dashboard_model_as_service: "{{ lookup('ansible.builtin.env', 'OCP_AI_DASHBOARD_MODEL_AS_SERVICE') | default((ocp_ai_kserve_models_as_service_state == 'Managed') | ternary('true', 'false'), true) | bool }}"
+ocp_ai_dashboard_maas_auth_policies: "{{ lookup('ansible.builtin.env', 'OCP_AI_DASHBOARD_MAAS_AUTH_POLICIES') | default((ocp_ai_kserve_models_as_service_state == 'Managed') | ternary('true', 'false'), true) | bool }}"
+# AI asset custom endpoints (OdhDashboardConfig; externalProviders requires aiAssetCustomEndpoints).
+ocp_ai_dashboard_ai_asset_custom_endpoints: "{{ lookup('ansible.builtin.env', 'OCP_AI_DASHBOARD_AI_ASSET_CUSTOM_ENDPOINTS') | default('true', true) | bool }}"
+ocp_ai_dashboard_ai_asset_external_providers: "{{ lookup('ansible.builtin.env', 'OCP_AI_DASHBOARD_AI_ASSET_EXTERNAL_PROVIDERS') | default('true', true) | bool }}"
+# Comma-separated internal domains only (e.g. apps.maas.example.com). Do not use broad public TLDs like .com.
+ocp_ai_dashboard_ai_asset_cluster_domains: "{{ lookup('ansible.builtin.env', 'OCP_AI_DASHBOARD_AI_ASSET_CLUSTER_DOMAINS') | default('', true) | split(',') | map('trim') | reject('equalto', '') | list }}"
+ocp_ai_feastoperator_state: "{{ lookup('ansible.builtin.env', 'OCP_AI_FEASTOPERATOR_STATE') | default('Managed', true) }}"
+ocp_ai_kueue_state: "{{ lookup('ansible.builtin.env', 'OCP_AI_KUEUE_STATE') | default(ocp_ai_distributed_workloads_enabled | ternary('Unmanaged', 'Removed'), true) }}"
+ocp_ai_kueue_default_cluster_queue_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_KUEUE_DEFAULT_CLUSTER_QUEUE_NAME') | default('default', true) }}"
+ocp_ai_kueue_default_local_queue_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_KUEUE_DEFAULT_LOCAL_QUEUE_NAME') | default('default', true) }}"
+ocp_ai_llamastackoperator_state: "{{ lookup('ansible.builtin.env', 'OCP_AI_LLAMASTACKOPERATOR_STATE') | default('Managed', true) }}"
+ocp_ai_mlflowoperator_state: "{{ lookup('ansible.builtin.env', 'OCP_AI_MLFLOWOPERATOR_STATE') | default('Managed', true) }}"
+ocp_ai_modelregistry_state: "{{ lookup('ansible.builtin.env', 'OCP_AI_MODELREGISTRY_STATE') | default('Managed', true) }}"
+ocp_ai_modelregistry_namespace: "{{ lookup('ansible.builtin.env', 'OCP_AI_MODELREGISTRY_NAMESPACE') | default('rhoai-model-registries', true) }}"
+ocp_ai_ray_state: "{{ lookup('ansible.builtin.env', 'OCP_AI_RAY_STATE') | default(ocp_ai_distributed_workloads_enabled | ternary('Managed', 'Removed'), true) }}"
+ocp_ai_sparkoperator_state: "{{ lookup('ansible.builtin.env', 'OCP_AI_SPARKOPERATOR_STATE') | default('Managed', true) }}"
+ocp_ai_trainer_state: "{{ lookup('ansible.builtin.env', 'OCP_AI_TRAINER_STATE') | default('Managed', true) }}"
+ocp_ai_trainingoperator_state: "{{ lookup('ansible.builtin.env', 'OCP_AI_TRAININGOPERATOR_STATE') | default(ocp_ai_distributed_workloads_enabled | ternary('Managed', 'Removed'), true) }}"
+ocp_ai_trustyai_state: "{{ lookup('ansible.builtin.env', 'OCP_AI_TRUSTYAI_STATE') | default('Managed', true) }}"
+ocp_ai_trustyai_mcp_guardrails_mode: "{{ lookup('ansible.builtin.env', 'OCP_AI_TRUSTYAI_MCP_GUARDRAILS_MODE') | default('false', true) | bool }}"
+ocp_ai_workbenches_state: "{{ lookup('ansible.builtin.env', 'OCP_AI_WORKBENCHES_STATE') | default('Managed', true) }}"
+ocp_ai_monitoring_namespace: "{{ lookup('ansible.builtin.env', 'OCP_AI_MONITORING_NAMESPACE') | default('redhat-ods-monitoring', true) }}"
+ocp_ai_monitoring_state: "{{ lookup('ansible.builtin.env', 'OCP_AI_MONITORING_STATE') | default('Managed', true) }}"
+ocp_ai_trusted_ca_bundle_state: "{{ lookup('ansible.builtin.env', 'OCP_AI_TRUSTED_CA_BUNDLE_STATE') | default('Managed', true) }}"
+ocp_ai_inference_gateway_namespace: "{{ lookup('ansible.builtin.env', 'OCP_AI_INFERENCE_GATEWAY_NAMESPACE') | default('openshift-ingress', true) }}"
+ocp_ai_inference_gateway_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_INFERENCE_GATEWAY_NAME') | default('data-science-gateway', true) }}"
+ocp_ai_maas_gateway_enabled: "{{ lookup('ansible.builtin.env', 'OCP_AI_MAAS_GATEWAY_ENABLED') | default((ocp_ai_kserve_models_as_service_state == 'Managed') | ternary('true', 'false'), true) | bool }}"
+ocp_ai_maas_gateway_namespace: "{{ lookup('ansible.builtin.env', 'OCP_AI_MAAS_GATEWAY_NAMESPACE') | default('openshift-ingress', true) }}"
+ocp_ai_maas_gateway_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_MAAS_GATEWAY_NAME') | default('maas-default-gateway', true) }}"
+ocp_ai_maas_gatewayclass_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_MAAS_GATEWAYCLASS_NAME') | default('data-science-gateway-class', true) }}"
+ocp_ai_maas_gateway_config_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_MAAS_GATEWAY_CONFIG_NAME') | default(ocp_ai_maas_gateway_name ~ '-config', true) }}"
+# TLS Secret for the MaaS Gateway listener (OpenShift serving-cert annotation + Gateway certificateRefs).
+ocp_ai_maas_gateway_tls_secret_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_MAAS_GATEWAY_TLS_SECRET_NAME') | default(ocp_ai_maas_gateway_name ~ '-tls', true) }}"
+ocp_ai_maas_gateway_extra_route_namespaces: "{{ lookup('ansible.builtin.env', 'OCP_AI_MAAS_GATEWAY_EXTRA_ROUTE_NAMESPACES') | default('external-models', true) | split(',') | map('trim') | reject('equalto', '') | list }}"
+# ClusterIP (in-cluster only) or LoadBalancer (external via Gateway API — no OpenShift Route).
+ocp_ai_maas_gateway_service_type: "{{ lookup('ansible.builtin.env', 'OCP_AI_MAAS_GATEWAY_SERVICE_TYPE') | default('ClusterIP', true) }}"
+# Optional listener hostname when exposing externally (e.g. maas-api.apps.<cluster-domain>).
+ocp_ai_maas_gateway_hostname: "{{ lookup('ansible.builtin.env', 'OCP_AI_MAAS_GATEWAY_HOSTNAME') | default('', true) }}"
+# Dashboard / maas-ui auto-discovers https://maas.<apps-domain>/maas-api (standard OcpRoute).
+ocp_ai_maas_route_hostname: "{{ lookup('ansible.builtin.env', 'OCP_AI_MAAS_ROUTE_HOSTNAME') | default('maas.' ~ rhcl_zone_root_domain, true) }}"
+ocp_ai_maas_database_enabled: "{{ lookup('ansible.builtin.env', 'OCP_AI_MAAS_DATABASE_ENABLED') | default((ocp_ai_kserve_models_as_service_state == 'Managed') | ternary('true', 'false'), true) | bool }}"
+ocp_ai_maas_db_deployment_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_MAAS_DB_DEPLOYMENT_NAME') | default('maas-postgres', true) }}"
+ocp_ai_maas_db_service_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_MAAS_DB_SERVICE_NAME') | default(ocp_ai_maas_db_deployment_name, true) }}"
+ocp_ai_maas_db_secret_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_MAAS_DB_SECRET_NAME') | default('maas-postgres', true) }}"
+ocp_ai_maas_db_config_secret_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_MAAS_DB_CONFIG_SECRET_NAME') | default('maas-db-config', true) }}"
+ocp_ai_maas_db_image: "{{ lookup('ansible.builtin.env', 'OCP_AI_MAAS_DB_IMAGE') | default('quay.io/sclorg/postgresql-15-c9s:latest', true) }}"
+ocp_ai_maas_db_username: "{{ lookup('ansible.builtin.env', 'OCP_AI_MAAS_DB_USERNAME') | default('maas', true) }}"
+ocp_ai_maas_db_password: "{{ lookup('ansible.builtin.env', 'OCP_AI_MAAS_DB_PASSWORD') | default('maas-lab-password', true) }}"
+ocp_ai_maas_db_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_MAAS_DB_NAME') | default('maas', true) }}"
+ocp_ai_maas_db_connection_url: "{{ lookup('ansible.builtin.env', 'OCP_AI_MAAS_DB_CONNECTION_URL') | default('postgresql://' ~ ocp_ai_maas_db_username ~ ':' ~ ocp_ai_maas_db_password ~ '@' ~ ocp_ai_maas_db_service_name ~ '.' ~ ocp_ai_applications_namespace ~ '.svc.cluster.local:5432/' ~ ocp_ai_maas_db_name ~ '?sslmode=disable', true) }}"
+ocp_ai_maas_namespace: "{{ lookup('ansible.builtin.env', 'OCP_AI_MAAS_NAMESPACE') | default('models-as-a-service', true) }}"
+ocp_ai_maas_tenant_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_MAAS_TENANT_NAME') | default('default-tenant', true) }}"
+ocp_ai_authorino_tls_enabled: "{{ lookup('ansible.builtin.env', 'OCP_AI_AUTHORINO_TLS_ENABLED') | default((ocp_ai_kserve_models_as_service_state == 'Managed') | ternary('true', 'false'), true) | bool }}"
+ocp_ai_authorino_namespace: "{{ lookup('ansible.builtin.env', 'OCP_AI_AUTHORINO_NAMESPACE') | default(rhcl_namespace, true) }}"
+ocp_ai_authorino_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_AUTHORINO_NAME') | default('authorino', true) }}"
+ocp_ai_authorino_service_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_AUTHORINO_SERVICE_NAME') | default('authorino-authorino-authorization', true) }}"
+ocp_ai_authorino_tls_secret_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_AUTHORINO_TLS_SECRET_NAME') | default('authorino-listener-tls', true) }}"
+
+ocp_ai_olm_source: "{{ lookup('ansible.builtin.env', 'OCP_AI_OLM_SOURCE') | default('redhat-operators', true) }}"
+ocp_ai_olm_source_namespace: "{{ lookup('ansible.builtin.env', 'OCP_AI_OLM_SOURCE_NAMESPACE') | default('openshift-marketplace', true) }}"
+ocp_ai_olm_subscription_retries: "{{ lookup('ansible.builtin.env', 'OCP_AI_OLM_SUBSCRIPTION_RETRIES') | default('30', true) | int }}"
+ocp_ai_olm_csv_retries: "{{ lookup('ansible.builtin.env', 'OCP_AI_OLM_CSV_RETRIES') | default('60', true) | int }}"
+ocp_ai_olm_delay_seconds: "{{ lookup('ansible.builtin.env', 'OCP_AI_OLM_DELAY_SECONDS') | default('10', true) | int }}"
+ocp_ai_dsc_ready_retries: "{{ lookup('ansible.builtin.env', 'OCP_AI_DSC_READY_RETRIES') | default('120', true) | int }}"
+ocp_ai_dsc_ready_delay_seconds: "{{ lookup('ansible.builtin.env', 'OCP_AI_DSC_READY_DELAY_SECONDS') | default('20', true) | int }}"
+
+ocp_ai_nfd_namespace: "{{ lookup('ansible.builtin.env', 'OCP_AI_NFD_NAMESPACE') | default('openshift-nfd', true) }}"
+ocp_ai_nfd_operatorgroup_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_NFD_OPERATORGROUP_NAME') | default('nfd-operatorgroup', true) }}"
+ocp_ai_nfd_subscription_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_NFD_SUBSCRIPTION_NAME') | default('nfd-operator', true) }}"
+ocp_ai_nfd_operator_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_NFD_OPERATOR_NAME') | default('nfd', true) }}"
+ocp_ai_nfd_channel: "{{ lookup('ansible.builtin.env', 'OCP_AI_NFD_CHANNEL') | default('stable', true) }}"
+ocp_ai_nfd_instance_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_NFD_INSTANCE_NAME') | default('nfd-instance', true) }}"
+
+ocp_ai_gpu_namespace: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_NAMESPACE') | default('nvidia-gpu-operator', true) }}"
+ocp_ai_gpu_operatorgroup_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_OPERATORGROUP_NAME') | default('gpu-operatorgroup', true) }}"
+ocp_ai_gpu_subscription_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_SUBSCRIPTION_NAME') | default('gpu-operator-certified', true) }}"
+ocp_ai_gpu_operator_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_OPERATOR_NAME') | default('gpu-operator-certified', true) }}"
+ocp_ai_gpu_channel: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_CHANNEL') | default('v26.3', true) }}"
+ocp_ai_gpu_source: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_SOURCE') | default('certified-operators', true) }}"
+ocp_ai_gpu_clusterpolicy_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_CLUSTERPOLICY_NAME') | default('gpu-cluster-policy', true) }}"
+ocp_ai_gpu_hardware_profile_enabled: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_HARDWARE_PROFILE_ENABLED') | default(ocp_ai_gpu_enabled | ternary('true', 'false'), true) | bool }}"
+ocp_ai_gpu_hardware_profile_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_HARDWARE_PROFILE_NAME') | default('nvidia-gpu-profile', true) }}"
+ocp_ai_gpu_hardware_profile_display_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_HARDWARE_PROFILE_DISPLAY_NAME') | default('NVIDIA GPU (lab)', true) }}"
+ocp_ai_gpu_hardware_profile_description: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_HARDWARE_PROFILE_DESCRIPTION') | default('Single NVIDIA GPU with CPU and memory for workbenches, model serving, and distributed workloads.', true) }}"
+ocp_ai_gpu_hardware_profile_cpu_min: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_HARDWARE_PROFILE_CPU_MIN') | default('1', true) }}"
+ocp_ai_gpu_hardware_profile_cpu_default: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_HARDWARE_PROFILE_CPU_DEFAULT') | default('4', true) }}"
+ocp_ai_gpu_hardware_profile_cpu_max: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_HARDWARE_PROFILE_CPU_MAX') | default('16', true) }}"
+ocp_ai_gpu_hardware_profile_memory_min: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_HARDWARE_PROFILE_MEMORY_MIN') | default('8Gi', true) }}"
+ocp_ai_gpu_hardware_profile_memory_default: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_HARDWARE_PROFILE_MEMORY_DEFAULT') | default('24Gi', true) }}"
+ocp_ai_gpu_hardware_profile_memory_max: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_HARDWARE_PROFILE_MEMORY_MAX') | default('64Gi', true) }}"
+ocp_ai_gpu_hardware_profile_gpu_min: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_HARDWARE_PROFILE_GPU_MIN') | default('1', true) }}"
+ocp_ai_gpu_hardware_profile_gpu_default: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_HARDWARE_PROFILE_GPU_DEFAULT') | default('1', true) }}"
+ocp_ai_gpu_hardware_profile_gpu_max: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_HARDWARE_PROFILE_GPU_MAX') | default('1', true) }}"
+# Node: schedule on GPU workers (nvidia.com/gpu.present). Queue: use Kueue local queue.
+ocp_ai_gpu_hardware_profile_scheduling_type: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_HARDWARE_PROFILE_SCHEDULING_TYPE') | default('Node', true) }}"
+ocp_ai_gpu_hardware_profile_kueue_local_queue: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_HARDWARE_PROFILE_KUEUE_LOCAL_QUEUE') | default(ocp_ai_kueue_default_local_queue_name, true) }}"
+ocp_ai_gpu_hardware_profile_kueue_priority_class: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_HARDWARE_PROFILE_KUEUE_PRIORITY_CLASS') | default('', true) }}"
+ocp_ai_gpu_hardware_profile_node_selector:
+  nvidia.com/gpu.present: "{{ lookup('ansible.builtin.env', 'OCP_AI_GPU_HARDWARE_PROFILE_NODE_SELECTOR_GPU_PRESENT') | default('true', true) }}"
+ocp_ai_gpu_hardware_profile_tolerations: []
+
+ocp_ai_lws_namespace: "{{ lookup('ansible.builtin.env', 'OCP_AI_LWS_NAMESPACE') | default('openshift-lws-operator', true) }}"
+ocp_ai_lws_operatorgroup_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_LWS_OPERATORGROUP_NAME') | default('lws-operatorgroup', true) }}"
+ocp_ai_lws_subscription_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_LWS_SUBSCRIPTION_NAME') | default('leader-worker-set', true) }}"
+ocp_ai_lws_operator_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_LWS_OPERATOR_NAME') | default('leader-worker-set', true) }}"
+ocp_ai_lws_channel: "{{ lookup('ansible.builtin.env', 'OCP_AI_LWS_CHANNEL') | default('stable-v1.0', true) }}"
+
+ocp_ai_jobset_enabled: "{{ lookup('ansible.builtin.env', 'OCP_AI_JOBSET_ENABLED') | default(ocp_ai_distributed_workloads_enabled | ternary('true', 'false'), true) | bool }}"
+ocp_ai_jobset_namespace: "{{ lookup('ansible.builtin.env', 'OCP_AI_JOBSET_NAMESPACE') | default('openshift-jobset-operator', true) }}"
+ocp_ai_jobset_operatorgroup_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_JOBSET_OPERATORGROUP_NAME') | default('jobset-operatorgroup', true) }}"
+ocp_ai_jobset_subscription_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_JOBSET_SUBSCRIPTION_NAME') | default('job-set', true) }}"
+ocp_ai_jobset_operator_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_JOBSET_OPERATOR_NAME') | default('job-set', true) }}"
+ocp_ai_jobset_channel: "{{ lookup('ansible.builtin.env', 'OCP_AI_JOBSET_CHANNEL') | default('stable-v1.0', true) }}"
+
+ocp_ai_kueue_operator_enabled: "{{ lookup('ansible.builtin.env', 'OCP_AI_KUEUE_OPERATOR_ENABLED') | default(ocp_ai_distributed_workloads_enabled | ternary('true', 'false'), true) | bool }}"
+ocp_ai_kueue_namespace: "{{ lookup('ansible.builtin.env', 'OCP_AI_KUEUE_NAMESPACE') | default('openshift-kueue-operator', true) }}"
+ocp_ai_kueue_operatorgroup_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_KUEUE_OPERATORGROUP_NAME') | default('kueue-operatorgroup', true) }}"
+ocp_ai_kueue_subscription_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_KUEUE_SUBSCRIPTION_NAME') | default('kueue-operator', true) }}"
+ocp_ai_kueue_operator_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_KUEUE_OPERATOR_NAME') | default('kueue-operator', true) }}"
+ocp_ai_kueue_channel: "{{ lookup('ansible.builtin.env', 'OCP_AI_KUEUE_CHANNEL') | default('stable-v1.3', true) }}"
+ocp_ai_kueue_cr_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_KUEUE_CR_NAME') | default('cluster', true) }}"
+ocp_ai_kueue_frameworks_raw: "{{ lookup('ansible.builtin.env', 'OCP_AI_KUEUE_FRAMEWORKS') | default('BatchJob', true) }}"
+ocp_ai_kueue_frameworks: "{{ ocp_ai_kueue_frameworks_raw.split(',') | map('trim') | reject('equalto', '') | list }}"
+
+ocp_ai_cma_enabled: "{{ lookup('ansible.builtin.env', 'OCP_AI_CMA_ENABLED') | default((ocp_ai_kserve_wva_state == 'Managed') | ternary('true', 'false'), true) | bool }}"
+ocp_ai_cma_namespace: "{{ lookup('ansible.builtin.env', 'OCP_AI_CMA_NAMESPACE') | default('openshift-keda', true) }}"
+ocp_ai_cma_operatorgroup_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_CMA_OPERATORGROUP_NAME') | default('openshift-custom-metrics-autoscaler-operator', true) }}"
+ocp_ai_cma_subscription_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_CMA_SUBSCRIPTION_NAME') | default('openshift-custom-metrics-autoscaler-operator', true) }}"
+ocp_ai_cma_operator_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_CMA_OPERATOR_NAME') | default('openshift-custom-metrics-autoscaler-operator', true) }}"
+ocp_ai_cma_channel: "{{ lookup('ansible.builtin.env', 'OCP_AI_CMA_CHANNEL') | default('stable', true) }}"
+ocp_ai_cma_keda_name: "{{ lookup('ansible.builtin.env', 'OCP_AI_CMA_KEDA_NAME') | default('keda', true) }}"

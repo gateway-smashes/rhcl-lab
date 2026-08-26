@@ -1,0 +1,100 @@
+---
+# Reusable check: an OLM operator is already installed on the cluster.
+#
+# Used by every role that subscribes an operator when the lab is configured
+# to NOT manage operator subscriptions itself (`operators_install_enabled=false`).
+# In that mode the role expects the customer's platform team to have installed
+# the operator manually — this task verifies that, and fails with an
+# actionable message (the exact Subscription YAML to apply) when it hasn't.
+#
+# Inputs (set by the caller in `vars:`):
+#   operator_display_name     Human label, used in messages (e.g. "Red Hat Connectivity Link")
+#   operator_subscription_name  Subscription resource name (e.g. "rhcl-operator")
+#   operator_namespace        Namespace where the Subscription/CSV lives
+#   operator_package          OLM package name for the manual YAML hint
+#   operator_channel          Channel for the manual YAML hint (e.g. "stable")
+#   operator_source           CatalogSource (default "redhat-operators")
+#   operator_source_namespace CatalogSource namespace (default "openshift-marketplace")
+#   operator_csv_prefix       Optional substring to match the CSV name when the
+#                             Subscription does not exist but the CSV does
+#                             (e.g. "rhcl-operator." matches "rhcl-operator.v1.4.0").
+#                             When omitted, only the Subscription path is used.
+#
+# Callers should include this only when `operators_install_enabled=false`.
+
+- name: "[{{ operator_display_name }}] Look up the Subscription"
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ operator_namespace }}"
+    name: "{{ operator_subscription_name }}"
+  register: _operator_sub
+  changed_when: false
+  failed_when: false
+
+- name: "[{{ operator_display_name }}] Fall back to scanning ClusterServiceVersions"
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ operator_namespace }}"
+  register: _operator_csvs
+  changed_when: false
+  failed_when: false
+  when:
+    - (_operator_sub.resources | default([]) | length) == 0
+    - operator_csv_prefix is defined
+    - operator_csv_prefix | length > 0
+
+- name: "[{{ operator_display_name }}] Resolve a usable CSV"
+  ansible.builtin.set_fact:
+    _operator_csv_name: >-
+      {{
+        (_operator_sub.resources[0].status.currentCSV | default('') )
+        if (_operator_sub.resources | default([]) | length) > 0
+        else
+        ((_operator_csvs.resources | default([]))
+          | selectattr('metadata.name', 'match', '^' ~ (operator_csv_prefix | default('') | regex_escape))
+          | map(attribute='metadata.name')
+          | first | default(''))
+      }}
+
+- name: "[{{ operator_display_name }}] Confirm the CSV has reached Succeeded"
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ operator_namespace }}"
+    name: "{{ _operator_csv_name }}"
+  register: _operator_csv_obj
+  changed_when: false
+  failed_when: false
+  when: _operator_csv_name | length > 0
+
+- name: "[{{ operator_display_name }}] Fail with manual-install instructions when the operator is missing"
+  ansible.builtin.fail:
+    msg: |
+      The {{ operator_display_name }} operator was not found in namespace
+      '{{ operator_namespace }}' and `operators_install_enabled=false`, so
+      the playbook will not install it.
+
+      Please install it (or ask your platform team), then re-run.
+
+      Apply the manifest below — adjust channel/source if your cluster
+      mirrors a different catalog:
+
+        apiVersion: operators.coreos.com/v1alpha1
+        kind: Subscription
+        metadata:
+          name: {{ operator_subscription_name }}
+          namespace: {{ operator_namespace }}
+        spec:
+          channel: {{ operator_channel | default('stable') }}
+          installPlanApproval: Automatic
+          name: {{ operator_package }}
+          source: {{ operator_source | default('redhat-operators') }}
+          sourceNamespace: {{ operator_source_namespace | default('openshift-marketplace') }}
+
+      Wait until the CSV reports Succeeded, then re-run the playbook.
+  when: >-
+    _operator_csv_name | length == 0
+    or (_operator_csv_obj.resources | default([]) | length) == 0
+    or (_operator_csv_obj.resources[0].status.phase | default('')) != 'Succeeded'

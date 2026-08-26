@@ -1,0 +1,9 @@
+{
+  "name": "RHOAI Assistant",
+  "short_name": "RHOAI",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#EE0000",
+  "description": "Chat with Red Hat OpenShift AI models"
+}

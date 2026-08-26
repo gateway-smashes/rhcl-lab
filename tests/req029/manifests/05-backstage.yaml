@@ -1,0 +1,42 @@
+# The Backstage instance — RHDH's CR that assembles the app-config,
+# rbac-policy and dynamic-plugins ConfigMaps into a running Developer Hub.
+#
+# OIDC clientId/secret come from a Secret the developer_hub role creates in
+# Keycloak (rhdh-oidc). The Route subdomain gives a stable hostname the
+# custom console's `internalDeveloperHubUrl` points at.
+apiVersion: rhdh.redhat.com/v1alpha3
+kind: Backstage
+metadata:
+  name: rhdh
+  namespace: rhcl-developer-hub
+spec:
+  application:
+    appConfig:
+      mountPath: /opt/app-root/src
+      configMaps:
+        - name: rhdh-app-config
+    extraFiles:
+      mountPath: /opt/app-root/etc
+      configMaps:
+        - name: rbac-policies
+    extraEnvs:
+      secrets:
+        # rhdh-oidc carries OIDC_ISSUER / OIDC_CLIENT_ID / OIDC_CLIENT_SECRET
+        - name: rhdh-oidc
+        # rhdh-k8s-token carries K8S_SA_TOKEN (required by the Kuadrant
+        # backend plugin — see 03-app-config.yaml).
+        - name: rhdh-k8s-token
+    route:
+      enabled: true
+      subdomain: rhdh
+    dynamicPluginsConfigMapName: dynamic-plugins-rhdh
+  database:
+    enableLocalDb: true
+  deployment:
+    patch:
+      spec:
+        template:
+          spec:
+            # Kuadrant backend plugin needs the SA token to reach the API
+            # server in-cluster.
+            automountServiceAccountToken: true

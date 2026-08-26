@@ -1,0 +1,14 @@
+apiVersion: mcp.kuadrant.io/v1alpha1
+kind: MCPServerRegistration
+metadata:
+  name: {{ mcp_gateway_server_registration_name }}
+  namespace: {{ mcp_gateway_namespace }}
+spec:
+  prefix: {{ mcp_gateway_server_registration_tool_prefix | to_json }}
+  path: {{ mcp_gateway_path | to_json }}
+  state: Enabled
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: {{ mcp_gateway_server_registration_route_name }}
+    namespace: {{ mcp_gateway_namespace }}

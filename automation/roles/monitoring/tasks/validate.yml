@@ -1,0 +1,71 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Read cluster-monitoring-config ConfigMap
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: ConfigMap
+    namespace: "{{ monitoring_namespace }}"
+    name: "{{ monitoring_config_name }}"
+  register: monitoring_existing_cm
+  changed_when: false
+
+- name: Assert that cluster-monitoring-config exists
+  ansible.builtin.assert:
+    that:
+      - monitoring_existing_cm.resources | length == 1
+    fail_msg: >-
+      ConfigMap '{{ monitoring_config_name }}' is missing from namespace
+      '{{ monitoring_namespace }}'. Run monitoring-install.yml to create it.
+
+- name: Parse cluster-monitoring-config payload
+  ansible.builtin.set_fact:
+    monitoring_existing_config: >-
+      {{ ((monitoring_existing_cm.resources[0].data['config.yaml'] | default('') | from_yaml) | default({}, true)) }}
+
+- name: Assert that user-workload monitoring is enabled
+  ansible.builtin.assert:
+    that:
+      - (monitoring_existing_config.enableUserWorkload | default(false)) | bool
+    fail_msg: >-
+      enableUserWorkload is not set to true in
+      '{{ monitoring_config_name }}'. Run monitoring-install.yml.
+
+- name: Query prometheus-user-workload StatefulSet
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: StatefulSet
+    namespace: "{{ monitoring_user_workload_namespace }}"
+    name: prometheus-user-workload
+  register: monitoring_uwm_sts
+  changed_when: false
+
+- name: Assert that prometheus-user-workload is Ready
+  ansible.builtin.assert:
+    that:
+      - monitoring_uwm_sts.resources | length == 1
+      - (monitoring_uwm_sts.resources[0].status.readyReplicas | default(0)) | int >= 1
+    fail_msg: >-
+      prometheus-user-workload StatefulSet is missing or not Ready in
+      '{{ monitoring_user_workload_namespace }}'.
+
+- name: Query thanos-ruler-user-workload StatefulSet
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: StatefulSet
+    namespace: "{{ monitoring_user_workload_namespace }}"
+    name: thanos-ruler-user-workload
+  register: monitoring_uwm_thanos
+  changed_when: false
+
+- name: Assert that thanos-ruler-user-workload is Ready
+  ansible.builtin.assert:
+    that:
+      - monitoring_uwm_thanos.resources | length == 1
+      - (monitoring_uwm_thanos.resources[0].status.readyReplicas | default(0)) | int >= 1
+    fail_msg: >-
+      thanos-ruler-user-workload StatefulSet is missing or not Ready in
+      '{{ monitoring_user_workload_namespace }}'.

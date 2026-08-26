@@ -1,0 +1,118 @@
+# req035 — EnvoyFilter that wires the Envoy OpenTelemetry Access Log Service
+# into the rhcl-apps-gateway HTTP connection manager.
+#
+# We use an EnvoyFilter (low-level) instead of an Istio Telemetry CR (high-
+# level) because the Sail Operator in RHCL 1.3 silently drops
+# `meshConfig.extensionProviders` patches on the Istio CR, which would be
+# the prerequisite for a Telemetry-CR-based pipeline. EnvoyFilter bypasses
+# meshConfig entirely — it patches the live Envoy config that the data plane
+# pods load from xDS.
+#
+# Why this is acceptable: EnvoyFilter is the same mechanism that the
+# kuadrant-tracing-rhcl-apps-gateway filter (already shipped by the
+# observability role) uses, so we're matching the project's existing pattern.
+#
+# Filter behaviour:
+#   - applyTo NETWORK_FILTER ⇒ patches the HCM at the gateway listener level
+#   - access_log[].filter.status_code_filter ⇒ only emit a record when
+#     response.code >= 400 (Comparison Op.GE). The 400 threshold catches 4xx
+#     (Authorino 401/403, Limitador 429) and 5xx (upstream error, timeouts,
+#     Envoy connection failures) in a single line.
+#   - typed_config OpenTelemetryAccessLogConfig ⇒ ships each record as an
+#     OTLP log to the existing Collector cluster_name (the same one the
+#     tracing filter uses, no new outbound cluster needed).
+#   - body / attributes use Envoy command operators (`%REQ()%`, etc.)
+#     to extract method/path/status/duration/headers. Authorization and
+#     api-key headers are deliberately omitted — PII scrubbing starts
+#     at the source.
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: otel-access-logs-rhcl-apps-gateway
+  namespace: openshift-ingress
+spec:
+  workloadSelector:
+    labels:
+      gateway.networking.k8s.io/gateway-name: rhcl-apps-gateway
+  configPatches:
+    - applyTo: NETWORK_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+      patch:
+        operation: MERGE
+        value:
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+            access_log:
+              - name: envoy.access_loggers.open_telemetry
+                # Only emit for responses with status >= 400. Envoy keeps
+                # everything below this threshold out of the OTLP stream —
+                # zero overhead for the happy path.
+                filter:
+                  status_code_filter:
+                    comparison:
+                      op: GE
+                      value:
+                        default_value: 400
+                        runtime_key: rhcl.access_log.min_status
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.access_loggers.open_telemetry.v3.OpenTelemetryAccessLogConfig
+                  common_config:
+                    log_name: rhcl-gateway-access
+                    transport_api_version: V3
+                    grpc_service:
+                      envoy_grpc:
+                        # Same outbound cluster the tracing EnvoyFilter
+                        # already uses. xDS creates it on demand.
+                        cluster_name: outbound|4317||otel-rhcl-collector.observability.svc.cluster.local
+                      timeout: 0.250s
+                  # OpenTelemetry record body. Renders as one OTLP log
+                  # per request with a compact one-line summary; the
+                  # structured attributes below carry the searchable
+                  # fields.
+                  body:
+                    string_value: "%REQ(:METHOD)% %REQ(:PATH)% %RESPONSE_CODE% flags=%RESPONSE_FLAGS% duration_ms=%DURATION% upstream=%UPSTREAM_HOST%"
+                  attributes:
+                    values:
+                      - key: http.method
+                        value: { string_value: "%REQ(:METHOD)%" }
+                      - key: http.path
+                        value: { string_value: "%REQ(:PATH)%" }
+                      - key: http.host
+                        value: { string_value: "%REQ(:AUTHORITY)%" }
+                      - key: response_code
+                        value: { string_value: "%RESPONSE_CODE%" }
+                      - key: response.flags
+                        value: { string_value: "%RESPONSE_FLAGS%" }
+                      - key: duration.ms
+                        value: { string_value: "%DURATION%" }
+                      - key: upstream.host
+                        value: { string_value: "%UPSTREAM_HOST%" }
+                      - key: upstream.cluster
+                        value: { string_value: "%UPSTREAM_CLUSTER%" }
+                      - key: bytes.received
+                        value: { string_value: "%BYTES_RECEIVED%" }
+                      - key: bytes.sent
+                        value: { string_value: "%BYTES_SENT%" }
+                      # Correlation IDs — same `x-request-id` the OTel
+                      # tracing filter emits, so logs and traces can be
+                      # joined by trace_id in Tempo or any SIEM.
+                      - key: request.id
+                        value: { string_value: "%REQ(X-REQUEST-ID)%" }
+                      - key: request.flow_trace_id
+                        value: { string_value: "%REQ(X-FLOW-TRACE-ID)%" }
+                      # Consumer identity (injected by Authorino when
+                      # the api-key path matches). Empty for anonymous
+                      # paths and for unauthenticated 401s.
+                      - key: consumer.id
+                        value: { string_value: "%REQ(X-CONSUMER-ID)%" }
+                      - key: user.agent
+                        value: { string_value: "%REQ(USER-AGENT)%" }
+                      # Path-info for Authorino denial reasons (set as
+                      # response header `x-ext-auth-reason`).
+                      - key: auth.reason
+                        value: { string_value: "%RESP(X-EXT-AUTH-REASON)%" }

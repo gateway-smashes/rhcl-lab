@@ -1,0 +1,11 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: {{ observability_otel_subscription_name }}
+  namespace: {{ observability_otel_namespace }}
+spec:
+  channel: {{ observability_otel_channel }}
+  installPlanApproval: Automatic
+  name: {{ observability_otel_operator_name }}
+  source: {{ observability_otel_source }}
+  sourceNamespace: {{ observability_otel_source_namespace }}

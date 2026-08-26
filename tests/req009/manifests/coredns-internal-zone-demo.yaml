@@ -1,0 +1,172 @@
+# Standalone CoreDNS — Internal Zone Demo (on-premise, no MetalLB)
+#
+# Purpose:
+#   Demonstrate creating a DNS zone in CoreDNS and resolving records from
+#   INSIDE the cluster, without any external LoadBalancer. The CoreDNS
+#   instance is exposed only via a ClusterIP Service, so resolution works
+#   for in-cluster clients (pods) only. Exposing the zone outside the
+#   cluster would require MetalLB (bare metal) or a cloud LoadBalancer —
+#   out of scope for this internal demo.
+#
+# This is self-contained and independent from the Ansible-driven
+# `kuadrant-coredns` flow (automation/roles/coredns_dns). It is meant for a
+# quick, reproducible "create a zone and query it" demonstration.
+#
+# Apply:
+#   oc apply -f coredns-internal-zone-demo.yaml
+#
+# Query (from inside the cluster):
+#   COREDNS_IP=$(oc get svc coredns-poc -n req009-coredns -o jsonpath='{.spec.clusterIP}')
+#   oc run dnsutils --rm -it --restart=Never -n req009-coredns \
+#     --image=registry.k8s.io/e2e-test-images/jessie-dnsutils:1.3 -- \
+#     dig @${COREDNS_IP} banking-api.poc.internal +short
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: req009-coredns
+  labels:
+    app.kubernetes.io/part-of: rhcl-req009
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-poc
+  namespace: req009-coredns
+data:
+  # CoreDNS configuration. Listens on 5353 (unprivileged port, so the pod
+  # runs under the OpenShift restricted-v2 SCC without extra capabilities).
+  # The Service below maps port 53 -> targetPort 5353.
+  Corefile: |
+    poc.internal:5353 {
+        file /etc/coredns/db.poc.internal
+        log
+        errors
+    }
+    .:5353 {
+        forward . /etc/resolv.conf
+        cache 30
+        errors
+    }
+    health :8080
+    ready :8181
+
+  # The actual zone file for poc.internal. Add or edit A records here, then
+  # bump the SOA serial and roll the Deployment to publish the change.
+  db.poc.internal: |
+    $ORIGIN poc.internal.
+    $TTL 60
+    @   IN  SOA ns1.poc.internal. admin.poc.internal. (
+            2026061001 ; serial (YYYYMMDDnn — bump on every change)
+            7200       ; refresh
+            3600       ; retry
+            1209600    ; expire
+            60 )       ; minimum TTL
+    @            IN  NS   ns1.poc.internal.
+    ns1          IN  A    10.96.0.10
+    ; Example API records — point these at real Service ClusterIPs if you
+    ; want the names to resolve to live backends inside the cluster.
+    banking-api  IN  A    10.96.0.20
+    api          IN  A    10.96.0.30
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coredns-poc
+  namespace: req009-coredns
+  labels:
+    app: coredns-poc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coredns-poc
+  template:
+    metadata:
+      labels:
+        app: coredns-poc
+    spec:
+      containers:
+        - name: coredns
+          # Public CoreDNS image. In a restricted/air-gapped client cluster,
+          # mirror this to the internal registry (or reuse the CoreDNS image
+          # already pulled for the kuadrant-coredns instance) and override here.
+          image: registry.k8s.io/coredns/coredns:v1.11.3
+          args: ["-conf", "/etc/coredns/Corefile"]
+          ports:
+            - name: dns-udp
+              containerPort: 5353
+              protocol: UDP
+            - name: dns-tcp
+              containerPort: 5353
+              protocol: TCP
+            - name: health
+              containerPort: 8080
+              protocol: TCP
+            - name: ready
+              containerPort: 8181
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8181
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: config
+              mountPath: /etc/coredns
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+      volumes:
+        - name: config
+          configMap:
+            name: coredns-poc
+            items:
+              - key: Corefile
+                path: Corefile
+              - key: db.poc.internal
+                path: db.poc.internal
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: coredns-poc
+  namespace: req009-coredns
+  labels:
+    app: coredns-poc
+spec:
+  type: ClusterIP
+  selector:
+    app: coredns-poc
+  ports:
+    - name: dns-udp
+      port: 53
+      targetPort: 5353
+      protocol: UDP
+    - name: dns-tcp
+      port: 53
+      targetPort: 5353
+      protocol: TCP

@@ -1,0 +1,21 @@
+# Public MCP browser route AuthPolicy (deny-all override on custom HTTPRoute).
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: mcp-gateway-route-custom-allow-public
+  namespace: mcp-gateway
+  labels:
+    rhcl-lab/requirement: req059-mcp-operator
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: mcp-gateway-route-custom
+  defaults:
+    strategy: atomic
+    rules:
+      authorization:
+        deny-all:
+          opa:
+            rego: |
+              allow = true

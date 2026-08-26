@@ -1,0 +1,24 @@
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: {{ apps_ledger_auth_policy_name }}
+  namespace: {{ apps_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-banking-poc
+    rhcl.poc/item: "38"
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: {{ apps_ledger_route_name }}
+  # Rota pública (allow-all): o caminho banking-api → gateway → ledger-api não
+  # exige API key, simplificando a demo de propagação via gateway. Mesmo padrão
+  # da rota req054.
+  defaults:
+    strategy: atomic
+    rules:
+      authorization:
+        allow-all:
+          opa:
+            rego: |
+              allow = true

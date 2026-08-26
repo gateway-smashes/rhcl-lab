@@ -1,0 +1,28 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: {{ grafana_thanos_datasource_name }}
+  namespace: {{ grafana_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: {{ grafana_instance_label }}
+  datasource:
+    name: {{ grafana_thanos_datasource_display }}
+    type: prometheus
+    access: proxy
+    url: https://thanos-querier.openshift-monitoring.svc.cluster.local:9091
+    isDefault: true
+    editable: true
+    jsonData:
+      httpHeaderName1: Authorization
+      timeInterval: "30s"
+      tlsSkipVerify: true
+    secureJsonData:
+      # Inlined `Bearer <token>` resolved by the role at apply time. The
+      # operator's `valuesFrom` → Secret pathway is broken on v5.24.0 — it
+      # silently leaves `secureJsonFields` empty and dashboards return
+      # 401s, so we hand-roll the substitution here instead.
+      httpHeaderValue1: "Bearer {{ grafana_thanos_token }}"

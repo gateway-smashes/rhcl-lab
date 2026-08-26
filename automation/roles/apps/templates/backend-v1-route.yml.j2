@@ -1,0 +1,14 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ apps_backend_primary_name }}
+  namespace: {{ apps_namespace }}
+spec:
+  to:
+    kind: Service
+    name: {{ apps_backend_primary_name }}
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Allow

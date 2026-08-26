@@ -1,0 +1,47 @@
+# Cluster RBAC so the RHDH ServiceAccount (the Kuadrant backend plugin runs
+# as it) can read Kuadrant / Gateway API CRs and manage the API-key lifecycle
+# (APIKey create/delete + status, and the Authorino-managed Secrets).
+#
+# Subject is the namespace `default` SA per the upstream Kuadrant guide. A
+# hardened install uses a dedicated SA — the developer_hub role parameterises
+# `developer_hub_service_account`.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: rhdh-kuadrant
+rules:
+  - apiGroups: ["kuadrant.io"]
+    resources: ["authpolicies", "ratelimitpolicies", "dnspolicies", "tlspolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["extensions.kuadrant.io"]
+    resources: ["planpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["devportal.kuadrant.io"]
+    resources: ["apiproducts", "apikeys"]
+    verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
+  - apiGroups: ["devportal.kuadrant.io"]
+    resources: ["apikeys/status"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gateways", "httproutes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: rhdh-kuadrant
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: rhdh-kuadrant
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: rhcl-developer-hub

@@ -1,0 +1,164 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Validate Let's Encrypt inputs
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_letsencrypt_inputs.yml
+
+# ---------------------------------------------------------------------------
+# Self-signed CA validation
+# ---------------------------------------------------------------------------
+
+- name: Validate the self-signed CA setup
+  when: selfsigned_issuer_enabled | bool
+  block:
+    - name: Query the bootstrap SelfSigned ClusterIssuer
+      kubernetes.core.k8s_info:
+        api_version: cert-manager.io/v1
+        kind: ClusterIssuer
+        name: "{{ selfsigned_bootstrap_issuer_name }}"
+      register: selfsigned_bootstrap_issuer
+      changed_when: false
+
+    - name: Assert the bootstrap SelfSigned ClusterIssuer is Ready
+      ansible.builtin.assert:
+        that:
+          - selfsigned_bootstrap_issuer.resources | length == 1
+          - >-
+            selfsigned_bootstrap_issuer.resources[0].status.conditions | default([])
+            | selectattr('type', 'equalto', 'Ready')
+            | selectattr('status', 'equalto', 'True')
+            | list | length == 1
+        fail_msg: "ClusterIssuer {{ selfsigned_bootstrap_issuer_name }} is missing or not Ready."
+
+    - name: Query the CA Certificate
+      kubernetes.core.k8s_info:
+        api_version: cert-manager.io/v1
+        kind: Certificate
+        namespace: "{{ selfsigned_ca_namespace }}"
+        name: "{{ selfsigned_ca_certificate_name }}"
+      register: selfsigned_ca_cert
+      changed_when: false
+
+    - name: Assert the CA Certificate is Ready
+      ansible.builtin.assert:
+        that:
+          - selfsigned_ca_cert.resources | length == 1
+          - >-
+            selfsigned_ca_cert.resources[0].status.conditions | default([])
+            | selectattr('type', 'equalto', 'Ready')
+            | selectattr('status', 'equalto', 'True')
+            | list | length == 1
+        fail_msg: >-
+          Certificate {{ selfsigned_ca_namespace }}/{{ selfsigned_ca_certificate_name }}
+          is missing or not Ready.
+
+    - name: Query the CA secret
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        namespace: "{{ selfsigned_ca_namespace }}"
+        name: "{{ selfsigned_ca_secret_name }}"
+      register: selfsigned_ca_secret
+      changed_when: false
+
+    - name: Assert the CA secret contains tls.crt and tls.key
+      ansible.builtin.assert:
+        that:
+          - selfsigned_ca_secret.resources | length == 1
+          - "'tls.crt' in selfsigned_ca_secret.resources[0].data"
+          - "'tls.key' in selfsigned_ca_secret.resources[0].data"
+        fail_msg: >-
+          Secret {{ selfsigned_ca_namespace }}/{{ selfsigned_ca_secret_name }}
+          is missing or does not contain tls.crt/tls.key.
+
+    - name: Query the CA ClusterIssuer
+      kubernetes.core.k8s_info:
+        api_version: cert-manager.io/v1
+        kind: ClusterIssuer
+        name: "{{ selfsigned_ca_issuer_name }}"
+      register: selfsigned_ca_issuer
+      changed_when: false
+
+    - name: Assert the CA ClusterIssuer is Ready
+      ansible.builtin.assert:
+        that:
+          - selfsigned_ca_issuer.resources | length == 1
+          - >-
+            selfsigned_ca_issuer.resources[0].status.conditions | default([])
+            | selectattr('type', 'equalto', 'Ready')
+            | selectattr('status', 'equalto', 'True')
+            | list | length == 1
+        fail_msg: "ClusterIssuer {{ selfsigned_ca_issuer_name }} is missing or not Ready."
+
+# ---------------------------------------------------------------------------
+# Let's Encrypt ACME validation (skipped under self-signed flow)
+# ---------------------------------------------------------------------------
+
+- name: Validate the Let's Encrypt ACME setup
+  when: not (selfsigned_issuer_enabled | bool)
+  block:
+    - name: Query the DNS-01 solver credentials secret
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        namespace: "{{ letsencrypt_secret_namespace }}"
+        name: "{{ letsencrypt_secret_name }}"
+      register: letsencrypt_secret
+      changed_when: false
+
+    - name: Assert that the solver credentials secret exists
+      ansible.builtin.assert:
+        that:
+          - letsencrypt_secret.resources | length == 1
+        fail_msg: "Let's Encrypt solver secret {{ letsencrypt_secret_namespace }}/{{ letsencrypt_secret_name }} is missing."
+
+    - name: Query the staging ClusterIssuer
+      kubernetes.core.k8s_info:
+        api_version: cert-manager.io/v1
+        kind: ClusterIssuer
+        name: "{{ letsencrypt_staging_name }}"
+      register: letsencrypt_staging_issuer
+      changed_when: false
+
+    - name: Assert that the staging ClusterIssuer is Ready
+      ansible.builtin.assert:
+        that:
+          - letsencrypt_staging_issuer.resources | length == 1
+          - >-
+            {{
+              letsencrypt_staging_issuer.resources[0].status.conditions | default([])
+              | selectattr('type', 'equalto', 'Ready')
+              | selectattr('status', 'equalto', 'True')
+              | list
+              | length == 1
+            }}
+        fail_msg: "ClusterIssuer {{ letsencrypt_staging_name }} is missing or not Ready."
+
+    - name: Query the production ClusterIssuer
+      kubernetes.core.k8s_info:
+        api_version: cert-manager.io/v1
+        kind: ClusterIssuer
+        name: "{{ letsencrypt_prod_name }}"
+      register: letsencrypt_prod_issuer
+      changed_when: false
+      when: letsencrypt_prod_enabled
+
+    - name: Assert that the production ClusterIssuer is Ready
+      ansible.builtin.assert:
+        that:
+          - letsencrypt_prod_issuer.resources | length == 1
+          - >-
+            {{
+              letsencrypt_prod_issuer.resources[0].status.conditions | default([])
+              | selectattr('type', 'equalto', 'Ready')
+              | selectattr('status', 'equalto', 'True')
+              | list
+              | length == 1
+            }}
+        fail_msg: "ClusterIssuer {{ letsencrypt_prod_name }} is missing or not Ready."
+      when: letsencrypt_prod_enabled

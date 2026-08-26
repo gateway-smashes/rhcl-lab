@@ -1,0 +1,218 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+# Quando o usuário NÃO passa RHCL_DNS_AWS_*, tenta usar as creds do instalador
+# (kube-system/aws-creds) — self-healing pra qualquer sandbox AWS novo.
+- name: Auto-discover AWS credentials from kube-system/aws-creds when not provided
+  ansible.builtin.include_tasks: discover_aws_credentials.yml
+  when:
+    - not (selfsigned_issuer_enabled | default(false) | bool)
+    - letsencrypt_dns_provider == "aws"
+    - rhcl_dns_aws_access_key_id | length == 0
+
+- name: Validate Let's Encrypt inputs
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_letsencrypt_inputs.yml
+
+# ---------------------------------------------------------------------------
+# Self-signed CA flow (PoC / on-prem). Bypasses every ACME step below.
+# ---------------------------------------------------------------------------
+
+- name: Ensure the cert-manager namespace for the CA secret exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ selfsigned_ca_namespace }}"
+    state: present
+  when: selfsigned_issuer_enabled
+
+- name: Apply the bootstrap SelfSigned ClusterIssuer
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'clusterissuer-selfsigned-bootstrap.yml.j2') | from_yaml }}"
+  when: selfsigned_issuer_enabled
+
+- name: Wait for the bootstrap SelfSigned ClusterIssuer to be Ready
+  kubernetes.core.k8s_info:
+    api_version: cert-manager.io/v1
+    kind: ClusterIssuer
+    name: "{{ selfsigned_bootstrap_issuer_name }}"
+  register: selfsigned_bootstrap_issuer
+  changed_when: false
+  failed_when: false
+  until:
+    - selfsigned_bootstrap_issuer.resources | length == 1
+    - >-
+      selfsigned_bootstrap_issuer.resources[0].status.conditions | default([])
+      | selectattr('type', 'equalto', 'Ready')
+      | selectattr('status', 'equalto', 'True')
+      | list | length == 1
+  retries: 30
+  delay: 10
+  when: selfsigned_issuer_enabled
+
+- name: Apply the CA Certificate (signed by the bootstrap issuer)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'certificate-selfsigned-ca.yml.j2') | from_yaml }}"
+  when: selfsigned_issuer_enabled
+
+- name: Wait for the CA Certificate to be Ready
+  kubernetes.core.k8s_info:
+    api_version: cert-manager.io/v1
+    kind: Certificate
+    namespace: "{{ selfsigned_ca_namespace }}"
+    name: "{{ selfsigned_ca_certificate_name }}"
+  register: selfsigned_ca_cert
+  changed_when: false
+  failed_when: false
+  until:
+    - selfsigned_ca_cert.resources | length == 1
+    - >-
+      selfsigned_ca_cert.resources[0].status.conditions | default([])
+      | selectattr('type', 'equalto', 'Ready')
+      | selectattr('status', 'equalto', 'True')
+      | list | length == 1
+  retries: 30
+  delay: 10
+  when: selfsigned_issuer_enabled
+
+- name: Apply the CA ClusterIssuer
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'clusterissuer-selfsigned.yml.j2') | from_yaml }}"
+  when: selfsigned_issuer_enabled
+
+- name: Wait for the CA ClusterIssuer to be Ready
+  kubernetes.core.k8s_info:
+    api_version: cert-manager.io/v1
+    kind: ClusterIssuer
+    name: "{{ selfsigned_ca_issuer_name }}"
+  register: selfsigned_ca_issuer
+  changed_when: false
+  failed_when: false
+  until:
+    - selfsigned_ca_issuer.resources | length == 1
+    - >-
+      selfsigned_ca_issuer.resources[0].status.conditions | default([])
+      | selectattr('type', 'equalto', 'Ready')
+      | selectattr('status', 'equalto', 'True')
+      | list | length == 1
+  retries: 30
+  delay: 10
+  when: selfsigned_issuer_enabled
+
+- name: Summarise the self-signed CA issuer setup
+  ansible.builtin.debug:
+    msg:
+      - "Self-signed CA flow is ready."
+      - "ClusterIssuer '{{ selfsigned_ca_issuer_name }}' signs app certs using CA"
+      - "'{{ selfsigned_ca_certificate_name }}' (Secret '{{ selfsigned_ca_namespace }}/{{ selfsigned_ca_secret_name }}')."
+      - ""
+      - "To trust every PoC hostname in your OS / browser once, import the CA:"
+      - "  oc get secret -n {{ selfsigned_ca_namespace }} {{ selfsigned_ca_secret_name }} \\"
+      - "    -o jsonpath='{.data.ca\\.crt}' | base64 -d > rhcl-lab-ca.crt"
+      - "Then add 'rhcl-lab-ca.crt' to your OS / browser trust store."
+      - ""
+      - "Point the apps Gateway at this issuer:"
+      - "  export APPS_CONNECTIVITY_TLS_ISSUER_NAME={{ selfsigned_ca_issuer_name }}"
+  when: selfsigned_issuer_enabled
+
+- name: End play when self-signed CA flow is the active issuer
+  ansible.builtin.meta: end_play
+  when: selfsigned_issuer_enabled
+
+# ---------------------------------------------------------------------------
+# Let's Encrypt ACME flow (default). Skipped entirely when selfsigned is on.
+# ---------------------------------------------------------------------------
+
+- name: Resolve the gateway connectivity FQDN that drives Route53 zone selection
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: resolve_apps_connectivity_fqdn.yml
+  vars:
+    resolve_fqdn_result_var: letsencrypt_gateway_fqdn
+  when: letsencrypt_dns_provider == "aws"
+
+- name: Auto-detect or validate the Route53 hosted zone for the gateway FQDN
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: auto_detect_route53_zone.yml
+  vars:
+    auto_route53_target_fqdn: "{{ letsencrypt_gateway_fqdn }}"
+    auto_route53_aws_access_key_id: "{{ rhcl_dns_aws_access_key_id }}"
+    auto_route53_aws_secret_access_key: "{{ rhcl_dns_aws_secret_access_key }}"
+    auto_route53_aws_region: "{{ rhcl_dns_aws_region }}"
+    auto_route53_supplied_zone_id: "{{ letsencrypt_aws_hosted_zone_id }}"
+    auto_route53_result_var: letsencrypt_aws_hosted_zone_id_resolved
+    auto_route53_role_context: letsencrypt
+  when: letsencrypt_dns_provider == "aws"
+
+- name: Default the resolved Route53 hosted zone id to empty for non-AWS providers
+  ansible.builtin.set_fact:
+    letsencrypt_aws_hosted_zone_id_resolved: ""
+  when: letsencrypt_dns_provider != "aws"
+
+- name: Ensure the Let's Encrypt secret namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ letsencrypt_secret_namespace }}"
+    state: present
+
+- name: Create or update the DNS-01 solver credentials secret
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'secret-' ~ letsencrypt_dns_provider ~ '.yml.j2') | from_yaml }}"
+
+- name: Apply the Let's Encrypt staging ClusterIssuer
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'clusterissuer-staging.yml.j2') | from_yaml }}"
+
+- name: Apply the Let's Encrypt production ClusterIssuer
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'clusterissuer-prod.yml.j2') | from_yaml }}"
+  when: letsencrypt_prod_enabled
+
+- name: Wait for the staging ClusterIssuer to be Ready
+  kubernetes.core.k8s_info:
+    api_version: cert-manager.io/v1
+    kind: ClusterIssuer
+    name: "{{ letsencrypt_staging_name }}"
+  register: letsencrypt_staging_issuer
+  changed_when: false
+  failed_when: false
+  until:
+    - letsencrypt_staging_issuer.resources | length == 1
+    - >-
+      letsencrypt_staging_issuer.resources[0].status.conditions | default([])
+      | selectattr('type', 'equalto', 'Ready')
+      | selectattr('status', 'equalto', 'True')
+      | list | length == 1
+  retries: 30
+  delay: 10
+
+- name: Wait for the production ClusterIssuer to be Ready
+  kubernetes.core.k8s_info:
+    api_version: cert-manager.io/v1
+    kind: ClusterIssuer
+    name: "{{ letsencrypt_prod_name }}"
+  register: letsencrypt_prod_issuer
+  changed_when: false
+  failed_when: false
+  until:
+    - letsencrypt_prod_issuer.resources | length == 1
+    - >-
+      letsencrypt_prod_issuer.resources[0].status.conditions | default([])
+      | selectattr('type', 'equalto', 'Ready')
+      | selectattr('status', 'equalto', 'True')
+      | list | length == 1
+  retries: 30
+  delay: 10
+  when: letsencrypt_prod_enabled

@@ -1,0 +1,33 @@
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: demo-auth-policy
+  namespace: item-15-api
+  labels:
+    app.kubernetes.io/part-of: connectivity-link-rbac-demo
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: demo-api-route
+  defaults:
+    when:
+    - predicate: "request.path != '/health'"
+    rules:
+      authentication:
+        api-key-auth:
+          apiKey:
+            selector:
+              matchLabels:
+                app: demo-api
+          credentials:
+            authorizationHeader:
+              prefix: "APIKEY"
+      response:
+        success:
+          filters:
+            identity:
+              json:
+                properties:
+                  userid:
+                    selector: auth.identity.metadata.annotations.secret\.kuadrant\.io/user-id

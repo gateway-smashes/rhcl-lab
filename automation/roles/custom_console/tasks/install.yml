@@ -1,0 +1,131 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Ensure the custom console namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ custom_console_namespace }}"
+    state: present
+
+# The Developer Portal / Developer Hub links are absolute URLs the browser
+# opens directly, so they can't be relative — but hard-coding them per cluster
+# would break every other install. Derive them from the cluster's own apps
+# domain when the operator didn't pin them, and skip the API call entirely
+# when all three are already set (customer-run portal/RHDH).
+- name: Query the cluster ingress domain (console plugin link defaults)
+  kubernetes.core.k8s_info:
+    api_version: config.openshift.io/v1
+    kind: Ingress
+    name: cluster
+  register: custom_console_cluster_ingress
+  changed_when: false
+  when: >-
+    (custom_console_developer_portal_url | default('') | length == 0)
+    or (custom_console_internal_developer_hub_url | default('') | length == 0)
+    or (custom_console_dns_prober_url | default('') | length == 0)
+
+- name: Resolve the console plugin link URLs
+  ansible.builtin.set_fact:
+    custom_console_apps_domain: >-
+      {{
+        custom_console_cluster_ingress.resources[0].spec.domain
+        if (custom_console_cluster_ingress.resources | default([]) | length > 0)
+        else ''
+      }}
+
+- name: Compose the console plugin link URLs
+  ansible.builtin.set_fact:
+    custom_console_developer_portal_url_resolved: >-
+      {{
+        custom_console_developer_portal_url
+        if (custom_console_developer_portal_url | default('') | length > 0)
+        else (('https://' ~ custom_console_developer_portal_route_prefix ~ '.' ~ custom_console_apps_domain)
+              if (custom_console_apps_domain | length > 0) else '')
+      }}
+    custom_console_internal_developer_hub_url_resolved: >-
+      {{
+        custom_console_internal_developer_hub_url
+        if (custom_console_internal_developer_hub_url | default('') | length > 0)
+        else (('https://' ~ custom_console_internal_developer_hub_route_prefix ~ '.' ~ custom_console_apps_domain)
+              if (custom_console_apps_domain | length > 0) else '')
+      }}
+    custom_console_dns_prober_url_resolved: >-
+      {{
+        custom_console_dns_prober_url
+        if (custom_console_dns_prober_url | default('') | length > 0)
+        else (('https://' ~ custom_console_dns_prober_route_prefix ~ '.' ~ custom_console_apps_domain)
+              if (custom_console_apps_domain | length > 0) else '')
+      }}
+
+# Plugin reads this via useK8sWatchResource — apply BEFORE the
+# Deployment so the first poll on startup already sees the override
+# values instead of a brief window of plugin defaults.
+- name: Render the plugin runtime config ConfigMap
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'config-configmap.yml.j2') | from_yaml }}"
+
+- name: Deploy the custom console plugin server (Deployment + Service)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'deployment.yml.j2') | from_yaml_all | list }}"
+
+- name: Wait for the custom console deployment to be available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ custom_console_namespace }}"
+    name: "{{ custom_console_name }}"
+  register: custom_console_deploy
+  changed_when: false
+  failed_when: false
+  until:
+    - custom_console_deploy.resources | length == 1
+    - (custom_console_deploy.resources[0].status.availableReplicas | default(0)) >= 1
+  retries: 30
+  delay: 10
+
+- name: Register the ConsolePlugin
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'consoleplugin.yml.j2') | from_yaml }}"
+
+# --- Enable the plugin in the OpenShift Console operator (idempotent merge) ---
+- name: Query the OpenShift Console configuration
+  kubernetes.core.k8s_info:
+    api_version: operator.openshift.io/v1
+    kind: Console
+    name: cluster
+  register: custom_console_console
+  changed_when: false
+
+- name: Resolve enabled OpenShift Console plugins
+  ansible.builtin.set_fact:
+    custom_console_plugins_resolved: >-
+      {{
+        (
+          custom_console_console.resources[0].spec.plugins | default([])
+          + [custom_console_plugin_name]
+        ) | unique
+      }}
+
+- name: Enable the custom console plugin
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: operator.openshift.io/v1
+      kind: Console
+      metadata:
+        name: cluster
+      spec:
+        plugins: "{{ custom_console_plugins_resolved }}"
+
+- name: Report custom console enablement
+  ansible.builtin.debug:
+    msg: >-
+      Custom RHCL Console enabled ('{{ custom_console_display_name }}'). The OpenShift
+      Console reloads in a few seconds; look for it in the admin navigation.

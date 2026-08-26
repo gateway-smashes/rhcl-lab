@@ -1,0 +1,2 @@
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+COPY request_logger.wasm /plugin.wasm

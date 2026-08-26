@@ -1,0 +1,68 @@
+---
+# Skip every ACME validation when the self-signed CA flow is active.
+- name: Validate Let's Encrypt ACME inputs
+  when: not (selfsigned_issuer_enabled | default(false) | bool)
+  block:
+    - name: Validate Let's Encrypt email
+      ansible.builtin.assert:
+        that:
+          - letsencrypt_email | length > 0
+          - "'@' in letsencrypt_email"
+        fail_msg: "letsencrypt_email is required (set LETSENCRYPT_EMAIL to a valid ACME contact address)."
+
+    - name: Validate supported solver
+      ansible.builtin.assert:
+        that:
+          - letsencrypt_solver in ["dns01"]
+        fail_msg: "letsencrypt_solver must be dns01."
+
+    - name: Validate supported DNS provider for solver
+      ansible.builtin.assert:
+        that:
+          - letsencrypt_dns_provider in ["aws", "azure", "gcp"]
+        fail_msg: "letsencrypt_dns_provider must be one of aws, azure, or gcp."
+      when: letsencrypt_solver == "dns01"
+
+    - name: Validate AWS solver inputs
+      ansible.builtin.assert:
+        that:
+          - rhcl_dns_aws_access_key_id | length > 0
+          - rhcl_dns_aws_secret_access_key | length > 0
+          - rhcl_dns_aws_region | length > 0
+        fail_msg: >-
+          AWS DNS-01 solver requires RHCL_DNS_AWS_ACCESS_KEY_ID,
+          RHCL_DNS_AWS_SECRET_ACCESS_KEY, and RHCL_DNS_AWS_REGION.
+      when:
+        - letsencrypt_solver == "dns01"
+        - letsencrypt_dns_provider == "aws"
+
+    - name: Validate Azure solver inputs
+      ansible.builtin.assert:
+        that:
+          - (rhcl_dns_azure_json | length > 0) or (rhcl_dns_azure_json_file | length > 0)
+          - letsencrypt_azure_hosted_zone_name | length > 0
+        fail_msg: >-
+          Azure DNS-01 solver requires RHCL_DNS_AZURE_JSON or RHCL_DNS_AZURE_JSON_FILE,
+          plus LETSENCRYPT_AZURE_HOSTED_ZONE_NAME (the DNS zone name in Azure).
+      when:
+        - letsencrypt_solver == "dns01"
+        - letsencrypt_dns_provider == "azure"
+
+    - name: Validate GCP solver inputs
+      ansible.builtin.assert:
+        that:
+          - rhcl_dns_gcp_project_id | length > 0
+          - (rhcl_dns_gcp_google | length > 0) or (rhcl_dns_gcp_google_file | length > 0)
+        fail_msg: >-
+          GCP DNS-01 solver requires RHCL_DNS_GCP_PROJECT_ID and either
+          RHCL_DNS_GCP_GOOGLE or RHCL_DNS_GCP_GOOGLE_FILE.
+      when:
+        - letsencrypt_solver == "dns01"
+        - letsencrypt_dns_provider == "gcp"
+
+    - name: Validate production opt-in fields
+      ansible.builtin.assert:
+        that:
+          - letsencrypt_prod_name | length > 0
+        fail_msg: "letsencrypt_prod_name must be set when letsencrypt_prod_enabled is true."
+      when: letsencrypt_prod_enabled

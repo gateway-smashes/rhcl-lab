@@ -1,0 +1,79 @@
+# The RHCL front for the model — identical to what would sit before a real MaaS.
+#
+#   HTTPRoute            expose the model's OpenAI surface (/v1/*) on the gateway
+#   AuthPolicy           require an API key (the same authorino keys as banking)
+#   TokenRateLimitPolicy meter response usage.total_tokens → a per-minute budget
+#
+# The route reuses the banking host so it inherits the working TLS/DNS; the
+# banking app lives under /api/*, the model under /v1/* — no collision. Set the
+# host with deploy.sh (auto-detected) or replace AI_ROUTE_HOST_CHANGE_ME.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: maas-model
+  namespace: rhcl-apps
+  labels:
+    rhcl.poc/role: maas
+spec:
+  parentRefs:
+    - { name: rhcl-apps-gateway, namespace: openshift-ingress }
+  hostnames:
+    - AI_ROUTE_HOST_CHANGE_ME
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /v1/ }
+      backendRefs:
+        - { name: ollama, port: 11434 }
+---
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: maas-model-apikey
+  namespace: rhcl-apps
+  labels:
+    rhcl.poc/role: maas
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: maas-model
+  rules:
+    authentication:
+      api-key-header:
+        apiKey:
+          allNamespaces: true
+          selector:
+            matchLabels:
+              app: banking-api-apikey
+              authorino.kuadrant.io/managed-by: authorino
+        credentials:
+          customHeader:
+            name: api-key
+    response:
+      success:
+        filters:
+          identity:
+            json:
+              properties:
+                consumer:
+                  selector: auth.identity.metadata.name
+---
+apiVersion: kuadrant.io/v1alpha1
+kind: TokenRateLimitPolicy
+metadata:
+  name: maas-model-tokens
+  namespace: rhcl-apps
+  labels:
+    rhcl.poc/role: maas
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: maas-model
+  limits:
+    model-tokens:
+      rates:
+        - limit: 500
+          window: 1m
+      when:
+        - predicate: 'request.path.startsWith("/v1/chat/completions")'

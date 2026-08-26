@@ -1,0 +1,17 @@
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: {{ apps_connectivity_gateway_deny_all_policy_name }}
+  namespace: {{ apps_connectivity_gateway_namespace }}
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: {{ apps_connectivity_gateway_name }}
+  defaults:
+    rules:
+      authorization:
+        deny-all:
+          opa:
+            rego: |
+              allow = false

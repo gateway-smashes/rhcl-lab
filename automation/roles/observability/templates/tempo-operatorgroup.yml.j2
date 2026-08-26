@@ -1,0 +1,7 @@
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: {{ observability_tempo_operatorgroup_name }}
+  namespace: {{ observability_tempo_namespace }}
+spec:
+  upgradeStrategy: Default

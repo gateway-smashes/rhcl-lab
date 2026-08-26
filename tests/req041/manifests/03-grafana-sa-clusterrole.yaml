@@ -1,0 +1,18 @@
+# ClusterRoleBinding granting the Grafana ServiceAccount read access to
+# the OpenShift Thanos Querier. This is required so the GrafanaDatasource
+# can authenticate via the SA token to query user-workload metrics.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: rhcl-grafana-cluster-monitoring-view
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+    rhcl.redhat.com/requirement: req041
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-monitoring-view
+subjects:
+  - kind: ServiceAccount
+    name: rhcl-grafana-sa
+    namespace: rhcl-grafana

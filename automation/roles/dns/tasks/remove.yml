@@ -1,0 +1,21 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Remove the DNSPolicy
+  kubernetes.core.k8s:
+    api_version: kuadrant.io/v1
+    kind: DNSPolicy
+    namespace: "{{ rhcl_dns_policy_target_gateway_namespace }}"
+    name: "{{ rhcl_dns_policy_name }}"
+    state: absent
+
+- name: Remove the DNS provider secret
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Secret
+    namespace: "{{ rhcl_dns_namespace }}"
+    name: "{{ rhcl_dns_secret_name }}"
+    state: absent

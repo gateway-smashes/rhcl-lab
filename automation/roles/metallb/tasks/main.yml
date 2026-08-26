@@ -1,0 +1,9 @@
+---
+- name: Validate metallb role action
+  ansible.builtin.assert:
+    that:
+      - (component_action | default(rhcl_action)) in ["install", "remove", "validate"]
+    fail_msg: "Requested metallb action must be install, remove, or validate."
+
+- name: Run metallb action
+  ansible.builtin.include_tasks: "{{ component_action | default(rhcl_action) }}.yml"

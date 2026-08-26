@@ -1,0 +1,1382 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Validate oc CLI availability
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_oc_cli.yml
+
+- name: Validate connectivity TLS inputs
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_apps_tls_inputs.yml
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_tls_enabled
+
+- name: Assert root domain is provided when wildcard listener mode is enabled
+  ansible.builtin.assert:
+    that:
+      - rhcl_zone_root_domain | length > 0
+    fail_msg: >-
+      APPS_CONNECTIVITY_LISTENER_WILDCARD_ENABLED=true requires RHCL_ZONE_ROOT_DOMAIN
+      (or KUADRANT_ZONE_ROOT_DOMAIN) to be set so the listener hostname can render
+      as '*.<root-domain>'. Set the root domain or disable wildcard mode.
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_listener_wildcard_enabled
+
+- name: Resolve application source directories
+  ansible.builtin.set_fact:
+    apps_backend_source_dir_resolved: >-
+      {{
+        (apps_backend_source_dir | trim)
+        if (apps_backend_source_dir | trim | length) > 0
+        else (playbook_dir ~ '/../../apps/backend/banking-api')
+      }}
+    apps_frontend_source_dir_resolved: >-
+      {{
+        (apps_frontend_source_dir | trim)
+        if (apps_frontend_source_dir | trim | length) > 0
+        else (playbook_dir ~ '/../../apps/frontend/mobile-bank')
+      }}
+    apps_ipfilter_source_dir_resolved: >-
+      {{
+        (apps_ipfilter_source_dir | trim)
+        if (apps_ipfilter_source_dir | trim | length) > 0
+        else (playbook_dir ~ '/../../apps/backend/ipfilter-php')
+      }}
+    apps_rhoai_backend_source_dir_resolved: >-
+      {{
+        (apps_rhoai_backend_source_dir | trim)
+        if (apps_rhoai_backend_source_dir | trim | length) > 0
+        else (playbook_dir ~ '/../../apps/rhoai-assistant/backend')
+      }}
+    apps_rhoai_frontend_source_dir_resolved: >-
+      {{
+        (apps_rhoai_frontend_source_dir | trim)
+        if (apps_rhoai_frontend_source_dir | trim | length) > 0
+        else (playbook_dir ~ '/../../apps/rhoai-assistant/frontend')
+      }}
+    apps_ledger_source_dir_resolved: >-
+      {{
+        (apps_ledger_source_dir | trim)
+        if (apps_ledger_source_dir | trim | length) > 0
+        else (playbook_dir ~ '/../../apps/backend/ledger-api')
+      }}
+
+- name: Assert RHOAI MaaS API key is set when RHOAI app is enabled
+  ansible.builtin.assert:
+    that:
+      - apps_rhoai_maas_api_key | length > 0
+    fail_msg: >-
+      APPS_RHOAI_ENABLED=true requires APPS_RHOAI_MAAS_API_KEY (Bearer token for the
+      MaaS LiteLLM gateway).
+  when: apps_rhoai_enabled
+
+- name: Stat resolved application source directories
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  register: apps_source_dir_stats
+  loop:
+    - name: backend
+      env: APPS_BACKEND_SOURCE_DIR
+      path: "{{ apps_backend_source_dir_resolved | trim }}"
+    - name: frontend
+      env: APPS_FRONTEND_SOURCE_DIR
+      path: "{{ apps_frontend_source_dir_resolved | trim }}"
+    - name: ipfilter
+      env: APPS_IPFILTER_SOURCE_DIR
+      path: "{{ apps_ipfilter_source_dir_resolved | trim }}"
+    - name: rhoai-backend
+      env: APPS_RHOAI_BACKEND_SOURCE_DIR
+      path: "{{ apps_rhoai_backend_source_dir_resolved | trim }}"
+    - name: rhoai-frontend
+      env: APPS_RHOAI_FRONTEND_SOURCE_DIR
+      path: "{{ apps_rhoai_frontend_source_dir_resolved | trim }}"
+    - name: ledger
+      env: APPS_LEDGER_SOURCE_DIR
+      path: "{{ apps_ledger_source_dir_resolved | trim }}"
+  loop_control:
+    label: "{{ item.name }} -> {{ item.path }}"
+  when:
+    - not apps_skip_build
+    - apps_image_source != 'quay'
+    - item.name != 'ipfilter' or apps_ipfilter_enabled
+    - item.name not in ['rhoai-backend', 'rhoai-frontend'] or apps_rhoai_enabled
+    - item.name != 'ledger' or apps_ledger_enabled
+
+- name: Stat Dockerfile inside each resolved source directory
+  ansible.builtin.stat:
+    path: "{{ item.path }}/Dockerfile"
+  register: apps_source_dockerfile_stats
+  loop:
+    - name: backend
+      env: APPS_BACKEND_SOURCE_DIR
+      path: "{{ apps_backend_source_dir_resolved | trim }}"
+    - name: frontend
+      env: APPS_FRONTEND_SOURCE_DIR
+      path: "{{ apps_frontend_source_dir_resolved | trim }}"
+    - name: ipfilter
+      env: APPS_IPFILTER_SOURCE_DIR
+      path: "{{ apps_ipfilter_source_dir_resolved | trim }}"
+    - name: rhoai-backend
+      env: APPS_RHOAI_BACKEND_SOURCE_DIR
+      path: "{{ apps_rhoai_backend_source_dir_resolved | trim }}"
+    - name: rhoai-frontend
+      env: APPS_RHOAI_FRONTEND_SOURCE_DIR
+      path: "{{ apps_rhoai_frontend_source_dir_resolved | trim }}"
+    - name: ledger
+      env: APPS_LEDGER_SOURCE_DIR
+      path: "{{ apps_ledger_source_dir_resolved | trim }}"
+  loop_control:
+    label: "{{ item.name }} -> {{ item.path }}/Dockerfile"
+  when:
+    - not apps_skip_build
+    - apps_image_source != 'quay'
+    - item.name != 'ipfilter' or apps_ipfilter_enabled
+    - item.name not in ['rhoai-backend', 'rhoai-frontend'] or apps_rhoai_enabled
+    - item.name != 'ledger' or apps_ledger_enabled
+
+- name: Assert resolved source directories exist
+  ansible.builtin.assert:
+    that:
+      - (item.item.path | length) > 0
+      - item.stat.exists
+      - item.stat.isdir | default(false)
+    fail_msg: >-
+      Resolved {{ item.item.name }} source directory '{{ item.item.path }}' is
+      missing or not a directory. The OpenShift binary BuildConfig requires a
+      valid source tree; otherwise 'oc start-build' will create a Build with an
+      empty spec.source and the API rejects it with
+      "must provide a value for at least one source input(git, binary, dockerfile, images)".
+      Set {{ item.item.env }} to an absolute path containing the Dockerfile, or
+      run the playbook so '<playbook_dir>/../../apps/{{ item.item.name }}/<app>'
+      resolves to the source tree. Set apps_skip_build=true to bypass builds.
+  loop: "{{ apps_source_dir_stats.results }}"
+  loop_control:
+    label: "{{ item.item.name }} -> {{ item.item.path }}"
+  when:
+    - not apps_skip_build
+    - apps_image_source != 'quay'
+    - item.item.name != 'ipfilter' or apps_ipfilter_enabled
+    - item.item.name not in ['rhoai-backend', 'rhoai-frontend'] or apps_rhoai_enabled
+    - item.item.name != 'ledger' or apps_ledger_enabled
+
+- name: Assert each resolved source directory contains a Dockerfile
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg | default(false)
+    fail_msg: >-
+      Resolved {{ item.item.name }} source directory '{{ item.item.path }}'
+      does not contain a Dockerfile. The BuildConfig uses dockerStrategy with
+      dockerfilePath=Dockerfile, so the binary upload must include it at the
+      tree root. Point {{ item.item.env }} at the directory that holds the
+      Dockerfile, or fix the default lab layout under
+      apps/{{ item.item.name }}/<app>/Dockerfile.
+  loop: "{{ apps_source_dockerfile_stats.results }}"
+  loop_control:
+    label: "{{ item.item.name }} -> {{ item.item.path }}/Dockerfile"
+  when:
+    - not apps_skip_build
+    - apps_image_source != 'quay'
+    - item.item.name != 'ipfilter' or apps_ipfilter_enabled
+    - item.item.name not in ['rhoai-backend', 'rhoai-frontend'] or apps_rhoai_enabled
+    - item.item.name != 'ledger' or apps_ledger_enabled
+
+- name: Assert IP filter settings are valid
+  ansible.builtin.assert:
+    that:
+      - apps_ipfilter_acl_mode in ['allow-list', 'deny-list']
+      - (apps_image_source != 'quay') or (apps_ipfilter_image_quay | length > 0)
+      - (apps_ipfilter_acl_mode != 'allow-list') or (apps_ipfilter_allowed_cidrs | length > 0)
+      - (apps_ipfilter_acl_mode != 'deny-list') or (apps_ipfilter_denied_cidrs | length > 0)
+    fail_msg: >-
+      IP filter app settings are invalid. APPS_IPFILTER_ACL_MODE must be
+      allow-list or deny-list; APPS_IPFILTER_IMAGE_QUAY is required when
+      APPS_IMAGE_SOURCE=quay; and the selected CIDR list cannot be empty.
+  when: apps_ipfilter_enabled
+
+- name: Assert backend TLS demo route requires HTTPS on banking-api
+  ansible.builtin.assert:
+    that:
+      - apps_backend_tls_enabled
+    fail_msg: >-
+      APPS_BACKEND_TLS_ROUTE_ENABLED=true requires APPS_BACKEND_TLS_ENABLED=true
+      so banking-api exposes HTTPS on port {{ apps_backend_https_port }}.
+  when: apps_backend_tls_route_enabled
+
+- name: Ensure the applications namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ apps_namespace }}"
+    state: present
+
+- name: Query the cluster ingress domain for connectivity link
+  kubernetes.core.k8s_info:
+    api_version: config.openshift.io/v1
+    kind: Ingress
+    name: cluster
+  register: apps_cluster_ingress
+  changed_when: false
+  when: apps_connectivity_link_enabled
+
+- name: Resolve the effective DNS suffix for hostname fallbacks
+  ansible.builtin.set_fact:
+    apps_effective_dns_suffix: >-
+      {{
+        rhcl_zone_root_domain
+        if rhcl_zone_root_domain | length > 0
+        else apps_cluster_ingress.resources[0].spec.domain
+      }}
+  when: apps_connectivity_link_enabled
+
+- name: Resolve the connectivity link hostname
+  ansible.builtin.set_fact:
+    apps_connectivity_route_hostname_resolved: >-
+      {{
+        apps_connectivity_route_hostname
+        if apps_connectivity_route_hostname | length > 0
+        else apps_connectivity_route_name ~ '.' ~ apps_effective_dns_suffix
+      }}
+    apps_connectivity_frontend_route_hostname_resolved: >-
+      {{
+        apps_connectivity_frontend_route_hostname
+        if apps_connectivity_frontend_route_hostname | length > 0
+        else apps_frontend_name ~ '-' ~ apps_namespace ~ '.' ~ apps_effective_dns_suffix
+      }}
+    apps_ipfilter_route_hostname_resolved: >-
+      {{
+        apps_ipfilter_route_hostname
+        if apps_ipfilter_route_hostname | length > 0
+        else apps_ipfilter_route_name ~ '.' ~ apps_effective_dns_suffix
+      }}
+    apps_backend_tls_route_hostname_resolved: >-
+      {{
+        apps_backend_tls_route_hostname
+        if apps_backend_tls_route_hostname | length > 0
+        else 'tls.' ~ apps_effective_dns_suffix
+      }}
+    apps_req054_route_hostname_resolved: >-
+      {{
+        apps_req054_route_hostname
+        if apps_req054_route_hostname | length > 0
+        else apps_req054_route_name ~ '.' ~ apps_effective_dns_suffix
+      }}
+    apps_req048_route_hostname_resolved: >-
+      {{
+        apps_req048_route_hostname
+        if apps_req048_route_hostname | length > 0
+        else apps_req048_route_name ~ '.' ~ apps_effective_dns_suffix
+      }}
+    apps_ledger_route_hostname_resolved: >-
+      {{
+        apps_ledger_route_hostname
+        if apps_ledger_route_hostname | length > 0
+        else apps_ledger_route_name ~ '.' ~ apps_effective_dns_suffix
+      }}
+    apps_pix_route_hostname_resolved: >-
+      {{
+        apps_pix_route_hostname
+        if apps_pix_route_hostname | length > 0
+        else 'pix-api.' ~ apps_effective_dns_suffix
+      }}
+    apps_frontend_mcp_gateway_url_resolved: >-
+      {{
+        apps_frontend_mcp_gateway_url
+        if apps_frontend_mcp_gateway_url | length > 0
+        else 'http://' ~ mcp_gateway_extension_name ~ '.' ~ apps_effective_dns_suffix ~ ':' ~ (mcp_gateway_port | string) ~ mcp_gateway_path
+      }}
+  when: apps_connectivity_link_enabled
+
+- name: Resolve frontend build URLs
+  ansible.builtin.set_fact:
+    apps_frontend_rhcl_gateway_url_resolved: >-
+      {{
+        apps_frontend_rhcl_gateway_url
+        if apps_frontend_rhcl_gateway_url | length > 0
+        else 'https://' ~ apps_connectivity_route_hostname_resolved ~ '/api/v1/accounts/summary'
+      }}
+  when: apps_connectivity_link_enabled
+
+- name: Apply application resources
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', item) | from_yaml }}"
+  loop: >-
+    {{
+      ['backend-imagestream.yml.j2', 'frontend-imagestream.yml.j2']
+      + (apps_ipfilter_enabled | ternary(['ipfilter-imagestream.yml.j2'], []))
+      + (apps_rhoai_enabled | ternary(['rhoai-backend-imagestream.yml.j2', 'rhoai-frontend-imagestream.yml.j2'], []))
+      + (apps_ledger_enabled | ternary(['ledger-imagestream.yml.j2'], []))
+      + ((apps_image_source == 'quay')
+         | ternary([],
+                   ['backend-buildconfig.yml.j2', 'frontend-buildconfig.yml.j2']
+                   + (apps_ipfilter_enabled | ternary(['ipfilter-buildconfig.yml.j2'], []))
+                   + (apps_rhoai_enabled | ternary(['rhoai-backend-buildconfig.yml.j2', 'rhoai-frontend-buildconfig.yml.j2'], []))
+                   + (apps_ledger_enabled | ternary(['ledger-buildconfig.yml.j2'], []))))
+      + ['backend-v1-service.yml.j2',
+         'backend-v2-service.yml.j2',
+         'frontend-service.yml.j2',
+         ]
+      + (apps_ipfilter_enabled | ternary(['ipfilter-service.yml.j2'], []))
+      + (apps_req054_enabled | ternary(['req054-service-http11.yml.j2', 'req054-service-h2c.yml.j2'], []))
+      + (apps_req048_enabled | ternary(['req048-service-grpc.yml.j2'], []))
+      + (apps_ledger_enabled | ternary(['ledger-service.yml.j2'], []))
+      + (apps_pix_enabled | ternary(['pix-service.yml.j2', 'pix-configmap.yml.j2'], []))
+      + (apps_rhoai_enabled | ternary(['rhoai-backend-rbac.yml.j2', 'rhoai-backend-secret.yml.j2', 'rhoai-backend-service.yml.j2', 'rhoai-frontend-service.yml.j2'], []))
+      + [
+         'backend-destinationrule.yml.j2',
+         'backend-v2-destinationrule.yml.j2']
+    }}
+
+- name: Wait for backend TLS serving cert secrets
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    namespace: "{{ apps_namespace }}"
+    name: "{{ item }}"
+  register: apps_backend_tls_secret
+  changed_when: false
+  until:
+    - apps_backend_tls_secret.resources | length == 1
+    - (apps_backend_tls_secret.resources[0].data['tls.crt'] | default('')) | length > 0
+    - (apps_backend_tls_secret.resources[0].data['tls.key'] | default('')) | length > 0
+  retries: 60
+  delay: 5
+  loop:
+    - "{{ apps_backend_primary_tls_secret_name }}"
+    - "{{ apps_backend_secondary_tls_secret_name }}"
+  when: apps_backend_tls_enabled
+
+- name: Read OpenShift service serving CA
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: ConfigMap
+    name: service-ca.crt
+    namespace: openshift-config-managed
+  register: apps_openshift_service_ca_cm
+  changed_when: false
+  when: apps_backend_tls_route_enabled
+
+- name: Apply backend TLS route service CA configmap for BackendTLSPolicy
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'backend-tls-service-ca-configmap.yml.j2') | from_yaml }}"
+  vars:
+    apps_backend_tls_route_service_ca_pem: "{{ apps_openshift_service_ca_cm.resources[0].data['service-ca.crt'] }}"
+  when:
+    - apps_backend_tls_route_enabled
+    - apps_openshift_service_ca_cm.resources | length == 1
+
+# OTel Instrumentation CR must exist before the backend Deployments are
+# applied — the OpenTelemetry Operator only injects the Java agent into
+# pods that get scheduled AFTER the CR is in place. Gated by
+# apps_otel_instrumentation_enabled (default true); also gated on the
+# Instrumentation CRD being installed on the cluster so the apply doesn't
+# fail on environments where the OTel operator is absent.
+- name: Probe Instrumentation CRD availability (OTel operator installed?)
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: instrumentations.opentelemetry.io
+  register: apps_instrumentation_crd_query
+  changed_when: false
+  failed_when: false
+  when: apps_otel_instrumentation_enabled
+
+- name: Compute Instrumentation CRD availability fact
+  ansible.builtin.set_fact:
+    apps_instrumentation_crd_present: >-
+      {{
+        apps_otel_instrumentation_enabled
+        and ((apps_instrumentation_crd_query.resources | default([])) | length > 0)
+      }}
+
+# The CRD being present does not mean the CR can be written: an Instrumentation
+# goes through the OTel operator's mutating webhook, so an operator that is
+# down rejects the apply with a 500 even though the CRD is installed. When the
+# CR already exists the cluster is in the desired state and already-running
+# pods keep their injected agent, so a failed re-apply must not stop the play.
+- name: Check whether the Instrumentation CR already exists
+  kubernetes.core.k8s_info:
+    api_version: opentelemetry.io/v1alpha1
+    kind: Instrumentation
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_namespace }}-java"
+  register: apps_instrumentation_existing
+  changed_when: false
+  failed_when: false
+  when: apps_instrumentation_crd_present
+
+- name: Apply the OTel Instrumentation CR (banking-api auto-tracing)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'connectivity-instrumentation.yml.j2') | from_yaml }}"
+  register: apps_instrumentation_apply
+  when: apps_instrumentation_crd_present
+  failed_when:
+    - apps_instrumentation_apply is failed
+    - (apps_instrumentation_existing.resources | default([]) | length) == 0
+
+- name: Warn that the Instrumentation CR could not be reconciled
+  ansible.builtin.debug:
+    msg: >-
+      Could not re-apply Instrumentation '{{ apps_namespace }}/{{ apps_namespace }}-java'
+      — the OpenTelemetry operator webhook is not answering — but the CR
+      already exists, so pods already running keep the Java agent that was
+      injected into them and the play continues. Two caveats while the
+      operator stays down: this CR is not reconciled against the role's
+      template, and NEWLY created pods get no agent injected, because that
+      injection is itself done by the operator's pod webhook.
+  when:
+    - apps_instrumentation_crd_present
+    - apps_instrumentation_apply is failed
+    - (apps_instrumentation_existing.resources | default([]) | length) > 0
+
+- name: Warn when OTel auto-instrumentation requested but CRD missing
+  ansible.builtin.debug:
+    msg: >-
+      APPS_OTEL_INSTRUMENTATION_ENABLED=true but the
+      instrumentations.opentelemetry.io CRD is not installed. The Java
+      agent will NOT be injected into banking-api pods — Tempo will show
+      only the gateway span for each request. Install the OpenTelemetry
+      Operator (run the observability role or
+      `playbooks/observability-install.yml`) to enable end-to-end traces.
+  when:
+    - apps_otel_instrumentation_enabled
+    - not apps_instrumentation_crd_present
+
+- name: Apply application deployments and routes
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', item) | from_yaml }}"
+  loop: >-
+    {{
+      ['backend-v1-deployment.yml.j2',
+       'backend-v2-deployment.yml.j2',
+       'frontend-deployment.yml.j2']
+      + (apps_ipfilter_enabled | ternary(['ipfilter-deployment.yml.j2'], []))
+      + (apps_pix_enabled | ternary(['pix-deployment.yml.j2'], []))
+      + (apps_rhoai_enabled | ternary(['rhoai-backend-deployment.yml.j2', 'rhoai-frontend-deployment.yml.j2'], []))
+      + (apps_ledger_enabled | ternary(['ledger-deployment.yml.j2'], []))
+      + ['backend-v1-route.yml.j2',
+         'backend-v2-route.yml.j2',
+         'frontend-route.yml.j2']
+      + (apps_rhoai_enabled | ternary(['rhoai-frontend-route.yml.j2'], []))
+      + (apps_ledger_enabled | ternary(['ledger-route.yml.j2'], []))
+    }}
+
+- name: Apply banking-api ServiceMonitor (req018 — bank_ai_tokens_total scrape)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'banking-api-servicemonitor.yml.j2') | from_yaml }}"
+  when: apps_backend_servicemonitor_enabled | bool
+
+# BackendTLSPolicy is an EXPERIMENTAL Gateway API resource (still alpha as of
+# Gateway API 1.2; not shipped by the GA install path Kuadrant 1.3/1.4 uses).
+# Probe whether the cluster has it before any task that would touch the kind;
+# every consumer downstream gates itself on `apps_backendtlspolicy_crd_present`
+# so a missing CRD doesn't fail the install or the remove flow.
+- name: Probe BackendTLSPolicy CRD availability
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: backendtlspolicies.gateway.networking.k8s.io
+  register: apps_backendtlspolicy_crd_query
+  changed_when: false
+  failed_when: false
+
+- name: Compute BackendTLSPolicy availability fact
+  ansible.builtin.set_fact:
+    apps_backendtlspolicy_crd_present: "{{ (apps_backendtlspolicy_crd_query.resources | default([])) | length > 0 }}"
+
+- name: Warn when BackendTLSPolicy is requested but the CRD is absent
+  ansible.builtin.debug:
+    msg: >-
+      APPS_BACKEND_TLS_ROUTE_ENABLED=true but the BackendTLSPolicy CRD is not
+      installed on this cluster. The backend-tls demo route and policy will
+      be skipped (the rest of the install proceeds). Install the experimental
+      Gateway API channel to enable it: 'oc apply -f
+      https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/experimental-install.yaml'
+  when:
+    - apps_connectivity_link_enabled
+    - apps_backend_tls_route_enabled
+    - not apps_backendtlspolicy_crd_present
+
+- name: Apply connectivity link resources
+  tags: [connectivity_link]
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', item) | from_yaml }}"
+  loop: >-
+    {{
+      ['connectivity-gateway.yml.j2', 'connectivity-httproute.yml.j2']
+      + (apps_connectivity_frontend_route_enabled | ternary(['connectivity-frontend-httproute.yml.j2'], []))
+      + (apps_ipfilter_enabled | ternary(['ipfilter-httproute.yml.j2'], []))
+      + (apps_req054_enabled | ternary(['req054-httproute.yml.j2'], []))
+      + (apps_req048_enabled | ternary(['req048-httproute.yml.j2'], []))
+      + (apps_ledger_enabled | ternary(['ledger-httproute.yml.j2'], []))
+      + (apps_pix_enabled | ternary(['pix-httproute.yml.j2'], []))
+      + ((apps_backend_tls_route_enabled and apps_backendtlspolicy_crd_present) | ternary(['backend-tls-httproute.yml.j2', 'backend-tls-backendtlspolicy.yml.j2'], []))
+    }}
+  when: apps_connectivity_link_enabled
+
+- name: Resolve OpenShift Route target Service name
+  ansible.builtin.set_fact:
+    apps_openshift_route_target_service_resolved: >-
+      {{
+        (apps_openshift_route_target_service | trim)
+        if (apps_openshift_route_target_service | trim | length) > 0
+        else (apps_connectivity_gateway_name ~ '-' ~ gateway_api_gatewayclass_name)
+      }}
+  when:
+    - apps_connectivity_link_enabled
+    - apps_openshift_route_enabled
+
+- name: Apply OpenShift Route fronting the Gateway Service
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'connectivity-openshift-route.yml.j2') | from_yaml }}"
+  vars:
+    route_hostname: "{{ item }}"
+  loop: >-
+    {{
+      [apps_connectivity_route_hostname_resolved]
+      + (apps_connectivity_frontend_route_enabled
+         | ternary([apps_connectivity_frontend_route_hostname_resolved], []))
+      + (apps_ipfilter_enabled | ternary([apps_ipfilter_route_hostname_resolved], []))
+      + (apps_backend_tls_route_enabled | ternary([apps_backend_tls_route_hostname_resolved], []))
+      + (apps_req054_enabled | ternary([apps_req054_route_hostname_resolved], []))
+      + (apps_req048_enabled | ternary([apps_req048_route_hostname_resolved], []))
+      + (apps_ledger_enabled | ternary([apps_ledger_route_hostname_resolved], []))
+    }}
+  loop_control:
+    label: "{{ item }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_openshift_route_enabled
+
+- name: Ensure API key secret namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ apps_connectivity_apikey_secret_namespace }}"
+    state: present
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_apikey_enabled
+
+- name: Apply tiered connectivity API key secrets
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'connectivity-apikey-secret.yml.j2') | from_yaml }}"
+  vars:
+    apikey: "{{ item }}"
+  loop: "{{ apps_connectivity_apikeys }}"
+  loop_control:
+    label: "{{ item.name }} ({{ item.user }}/{{ item.plan }})"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_apikey_enabled
+
+- name: Apply connectivity API key auth policy
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'connectivity-authpolicy-apikey.yml.j2') | from_yaml }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_apikey_enabled
+
+# ---------------------------------------------------------------------------
+# PIX demo product — second product on the same gateway. Mock backend
+# (mock-api image) + own HTTPRoute + AuthPolicy + a single APIKey Secret.
+# Gated wholly by apps_pix_enabled so disabling cleans up via remove.yml
+# without touching the banking app.
+# ---------------------------------------------------------------------------
+- name: Apply PIX API auth policy
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'pix-authpolicy.yml.j2') | from_yaml }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_pix_enabled
+
+- name: Apply PIX API key Secret
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'pix-apikey-secret.yml.j2') | from_yaml }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_pix_enabled
+
+- name: Apply connectivity APIProduct
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'connectivity-apiproduct.yml.j2') | from_yaml }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_apiproduct_enabled
+
+# Tiered plans on banking-api — backed by either PlanPolicy (different rates
+# per tier, shared bucket) or a hand-rolled RateLimitPolicy (per-key bucket,
+# uniform rate). Controlled by apps_connectivity_plans_mode; see all.yml.
+# Whichever mode is active gets applied AND the other one gets cleaned up,
+# so flipping the var between runs leaves no stale resource behind.
+- name: Apply tiered PlanPolicy on banking-api (apps_connectivity_plans_mode=planpolicy)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'connectivity-planpolicy.yml.j2') | from_yaml }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_planpolicy_enabled
+    - apps_connectivity_plans_mode == 'planpolicy'
+
+- name: Remove the manual per-consumer RateLimitPolicy when switching to PlanPolicy
+  kubernetes.core.k8s:
+    state: absent
+    api_version: kuadrant.io/v1
+    kind: RateLimitPolicy
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_connectivity_planpolicy_name }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_planpolicy_enabled
+    - apps_connectivity_plans_mode == 'planpolicy'
+
+- name: Apply manual per-consumer RateLimitPolicy (apps_connectivity_plans_mode=manual-rlp)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'connectivity-ratelimitpolicy-plans.yml.j2') | from_yaml }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_planpolicy_enabled
+    - apps_connectivity_plans_mode == 'manual-rlp'
+
+- name: Remove the PlanPolicy when switching to manual per-consumer RateLimitPolicy
+  kubernetes.core.k8s:
+    state: absent
+    api_version: extensions.kuadrant.io/v1alpha1
+    kind: PlanPolicy
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_connectivity_planpolicy_name }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_planpolicy_enabled
+    - apps_connectivity_plans_mode == 'manual-rlp'
+
+# Developer-portal APIKey CRs (request/approval flow shown in the custom console).
+# Left Pending — the controller only mints a Secret on approval; real auth keeps
+# using the fixed-value Secrets above. Requires the APIProduct (and the dev portal
+# controller, enabled via rhcl_developer_portal_enabled) to be reconciled.
+- name: Apply developer-portal APIKey CRs (Pending — request/approval demo)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'connectivity-apikey-cr.yml.j2') | from_yaml }}"
+  vars:
+    apikey: "{{ item }}"
+  loop: "{{ apps_connectivity_apikeys }}"
+  loop_control:
+    label: "{{ apps_connectivity_apiproduct_name }}-{{ item.user }} ({{ item.plan }})"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_apikey_cr_enabled
+    - apps_connectivity_apiproduct_enabled
+
+# Do not use force: true — Kuadrant rejects replace without a live metadata.resourceVersion (422).
+- name: Apply frontend connectivity allow auth policy
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'connectivity-frontend-authpolicy.yml.j2') | from_yaml }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_frontend_route_enabled
+    - apps_connectivity_frontend_auth_policy_enabled
+
+- name: Apply IP filter app auth policy
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'ipfilter-authpolicy.yml.j2') | from_yaml }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_ipfilter_enabled
+    - apps_ipfilter_auth_policy_enabled
+
+- name: Apply req054 HTTP versions allow auth policy
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'req054-authpolicy.yml.j2') | from_yaml }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_req054_enabled
+
+- name: Apply req048 gRPC backend allow auth policy
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'req048-authpolicy.yml.j2') | from_yaml }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_req048_enabled
+
+- name: Apply req038 ledger-api allow auth policy (trace propagation via gateway)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'ledger-authpolicy.yml.j2') | from_yaml }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_ledger_enabled
+
+- name: Remove frontend connectivity HTTPRoute when disabled
+  kubernetes.core.k8s:
+    api_version: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_connectivity_frontend_route_name }}"
+    state: absent
+  when:
+    - apps_connectivity_link_enabled
+    - not apps_connectivity_frontend_route_enabled
+
+- name: Remove IP filter app HTTPRoute when disabled
+  kubernetes.core.k8s:
+    api_version: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_ipfilter_route_name }}"
+    state: absent
+  when:
+    - apps_connectivity_link_enabled
+    - not apps_ipfilter_enabled
+
+- name: Remove frontend connectivity allow auth policy when disabled
+  kubernetes.core.k8s:
+    api_version: kuadrant.io/v1
+    kind: AuthPolicy
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_connectivity_frontend_auth_policy_name }}"
+    state: absent
+  when:
+    - apps_connectivity_link_enabled
+    - (not apps_connectivity_frontend_route_enabled) or (not apps_connectivity_frontend_auth_policy_enabled)
+
+- name: Remove IP filter app auth policy when disabled
+  kubernetes.core.k8s:
+    api_version: kuadrant.io/v1
+    kind: AuthPolicy
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_ipfilter_auth_policy_name }}"
+    state: absent
+  when:
+    - apps_connectivity_link_enabled
+    - (not apps_ipfilter_enabled) or (not apps_ipfilter_auth_policy_enabled)
+
+- name: Remove req054 HTTP versions HTTPRoute when disabled
+  kubernetes.core.k8s:
+    api_version: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_req054_route_name }}"
+    state: absent
+  when:
+    - apps_connectivity_link_enabled
+    - not apps_req054_enabled
+
+- name: Remove req054 HTTP versions auth policy when disabled
+  kubernetes.core.k8s:
+    api_version: kuadrant.io/v1
+    kind: AuthPolicy
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_req054_auth_policy_name }}"
+    state: absent
+  when:
+    - apps_connectivity_link_enabled
+    - not apps_req054_enabled
+
+- name: Remove req054 HTTP versions services when disabled
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Service
+    namespace: "{{ apps_namespace }}"
+    name: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ apps_req054_service_http11_name }}"
+    - "{{ apps_req054_service_h2c_name }}"
+  when:
+    - apps_connectivity_link_enabled
+    - not apps_req054_enabled
+
+- name: Remove req048 gRPC backend HTTPRoute when disabled
+  kubernetes.core.k8s:
+    api_version: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_req048_route_name }}"
+    state: absent
+  when:
+    - apps_connectivity_link_enabled
+    - not apps_req048_enabled
+
+- name: Remove req048 gRPC backend auth policy when disabled
+  kubernetes.core.k8s:
+    api_version: kuadrant.io/v1
+    kind: AuthPolicy
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_req048_auth_policy_name }}"
+    state: absent
+  when:
+    - apps_connectivity_link_enabled
+    - not apps_req048_enabled
+
+- name: Remove req048 gRPC backend service when disabled
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Service
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_req048_service_name }}"
+    state: absent
+  when:
+    - apps_connectivity_link_enabled
+    - not apps_req048_enabled
+
+- name: Remove req038 ledger-api HTTPRoute when disabled
+  kubernetes.core.k8s:
+    api_version: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_ledger_route_name }}"
+    state: absent
+  when:
+    - apps_connectivity_link_enabled
+    - not apps_ledger_enabled
+
+- name: Remove req038 ledger-api auth policy when disabled
+  kubernetes.core.k8s:
+    api_version: kuadrant.io/v1
+    kind: AuthPolicy
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_ledger_auth_policy_name }}"
+    state: absent
+  when:
+    - apps_connectivity_link_enabled
+    - not apps_ledger_enabled
+
+- name: Remove req038 ledger-api Deployment/Service/Route when disabled
+  kubernetes.core.k8s:
+    api_version: "{{ item.api_version }}"
+    kind: "{{ item.kind }}"
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_ledger_name }}"
+    state: absent
+  loop:
+    - {api_version: apps/v1, kind: Deployment}
+    - {api_version: v1, kind: Service}
+    - {api_version: route.openshift.io/v1, kind: Route}
+  loop_control:
+    label: "{{ item.kind }}/{{ apps_ledger_name }}"
+  when: not apps_ledger_enabled
+
+- name: Remove backend TLS demo HTTPRoute when disabled
+  kubernetes.core.k8s:
+    api_version: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_backend_tls_route_name }}"
+    state: absent
+  when:
+    - apps_connectivity_link_enabled
+    - not apps_backend_tls_route_enabled
+
+- name: Remove backend TLS demo BackendTLSPolicy when disabled
+  kubernetes.core.k8s:
+    api_version: gateway.networking.k8s.io/v1
+    kind: BackendTLSPolicy
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_backend_tls_route_policy_name }}"
+    state: absent
+  when:
+    - apps_connectivity_link_enabled
+    - not apps_backend_tls_route_enabled
+    # Skip cleanup entirely when the CRD isn't installed — `oc delete` on an
+    # unknown kind fails ("Failed to find exact match for ...") even though
+    # there's nothing to clean up, and that aborts the whole apps install.
+    - apps_backendtlspolicy_crd_present | default(false)
+
+- name: Apply connectivity gateway deny-all auth policy
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'connectivity-gateway-deny-all-authpolicy.yml.j2') | from_yaml }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_gateway_deny_all_enabled
+
+- name: Apply connectivity link rate limit policy
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'connectivity-ratelimitpolicy.yml.j2') | from_yaml }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_ratelimit_enabled
+
+- name: Remove connectivity link rate limit policy when disabled
+  kubernetes.core.k8s:
+    api_version: kuadrant.io/v1
+    kind: RateLimitPolicy
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_connectivity_ratelimit_policy_name }}"
+    state: absent
+  when:
+    - apps_connectivity_link_enabled
+    - not apps_connectivity_ratelimit_enabled
+
+# req026 — gateway-enforced max request body for /api/files/upload.
+# Paired with the per-rule `timeouts.request` block added to
+# connectivity-httproute.yml.j2, gated on `apps_streaming_enabled`. The
+# HTTPRoute change reconverges automatically on the existing apply task,
+# so this block only needs to manage the EnvoyFilter lifecycle.
+- name: Apply streaming body-size EnvoyFilter (req026)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'connectivity-streaming-envoyfilter.yml.j2') | from_yaml }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_streaming_enabled
+
+- name: Remove streaming body-size EnvoyFilter when disabled (req026)
+  kubernetes.core.k8s:
+    api_version: networking.istio.io/v1alpha3
+    kind: EnvoyFilter
+    namespace: "{{ apps_streaming_envoyfilter_namespace }}"
+    name: "{{ apps_streaming_envoyfilter_name }}"
+    state: absent
+  when:
+    - apps_connectivity_link_enabled
+    - not apps_streaming_enabled
+
+- name: Apply connectivity link TLS policy
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'connectivity-tlspolicy.yml.j2') | from_yaml }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_tls_enabled
+
+- name: Annotate gateway service for AWS ELB TCP passthrough
+  block:
+    - name: Query gateway service
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Service
+        namespace: "{{ apps_connectivity_gateway_namespace }}"
+        label_selectors:
+          - "gateway.networking.k8s.io/gateway-name={{ apps_connectivity_gateway_name }}"
+      register: apps_connectivity_gateway_svc
+      changed_when: false
+      until: apps_connectivity_gateway_svc.resources | length >= 1
+      retries: 30
+      delay: 5
+
+    - name: Extract status-port NodePort
+      ansible.builtin.set_fact:
+        apps_connectivity_gateway_status_nodeport: >-
+          {{
+            apps_connectivity_gateway_svc.resources[0].spec.ports
+            | selectattr('name', 'equalto', 'status-port')
+            | map(attribute='nodePort')
+            | first
+          }}
+
+    - name: Apply ELB TCP passthrough annotations
+      kubernetes.core.k8s:
+        state: patched
+        api_version: v1
+        kind: Service
+        namespace: "{{ apps_connectivity_gateway_namespace }}"
+        name: "{{ apps_connectivity_gateway_svc.resources[0].metadata.name }}"
+        definition:
+          metadata:
+            annotations:
+              service.beta.kubernetes.io/aws-load-balancer-backend-protocol: tcp
+              service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol: HTTP
+              service.beta.kubernetes.io/aws-load-balancer-healthcheck-path: /healthz/ready
+              service.beta.kubernetes.io/aws-load-balancer-healthcheck-port: "{{ apps_connectivity_gateway_status_nodeport | string }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_tls_enabled
+    - apps_connectivity_gateway_elb_annotations_enabled
+
+- name: Wait for connectivity TLS secret to be issued
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    namespace: "{{ apps_connectivity_gateway_namespace }}"
+    name: "{{ apps_connectivity_tls_secret_name }}"
+  register: apps_connectivity_tls_secret
+  changed_when: false
+  failed_when: false
+  until:
+    - apps_connectivity_tls_secret.resources | length == 1
+    - (apps_connectivity_tls_secret.resources[0].data['tls.crt'] | default('')) | length > 0
+    - (apps_connectivity_tls_secret.resources[0].data['tls.key'] | default('')) | length > 0
+  retries: "{{ apps_wait_retries_long | int }}"
+  delay: "{{ apps_wait_delay | int }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_tls_enabled
+
+- name: Start the backend image build
+  ansible.builtin.command:
+    argv:
+      - oc
+      - start-build
+      - "bc/{{ apps_backend_image_name }}"
+      - "--from-dir={{ apps_backend_source_dir_resolved }}"
+      - -n
+      - "{{ apps_namespace }}"
+      - --wait=true
+      - --follow=true
+  register: apps_backend_build
+  changed_when: true
+  when:
+    - not apps_skip_build
+    - apps_image_source != 'quay'
+
+- name: Start the ledger-api image build (REQ 038 trace propagation downstream)
+  ansible.builtin.command:
+    argv:
+      - oc
+      - start-build
+      - "bc/{{ apps_ledger_image_name }}"
+      - "--from-dir={{ apps_ledger_source_dir_resolved }}"
+      - -n
+      - "{{ apps_namespace }}"
+      - --wait=true
+      - --follow=true
+  register: apps_ledger_build
+  changed_when: true
+  when:
+    - apps_ledger_enabled
+    - not apps_skip_build
+    - apps_image_source != 'quay'
+
+- name: Start the frontend image build
+  ansible.builtin.command:
+    argv:
+      - oc
+      - start-build
+      - "bc/{{ apps_frontend_image_name }}"
+      - "--from-dir={{ apps_frontend_source_dir_resolved }}"
+      - -n
+      - "{{ apps_namespace }}"
+      - --wait=true
+      - --follow=true
+  register: apps_frontend_build
+  changed_when: true
+  when:
+    - not apps_skip_build
+    - apps_image_source != 'quay'
+
+- name: Start the IP filter app image build
+  ansible.builtin.command:
+    argv:
+      - oc
+      - start-build
+      - "bc/{{ apps_ipfilter_image_name }}"
+      - "--from-dir={{ apps_ipfilter_source_dir_resolved }}"
+      - -n
+      - "{{ apps_namespace }}"
+      - --wait=true
+      - --follow=true
+  register: apps_ipfilter_build
+  changed_when: true
+  when:
+    - apps_ipfilter_enabled
+    - not apps_skip_build
+    - apps_image_source != 'quay'
+
+- name: Start the RHOAI backend image build
+  ansible.builtin.command:
+    argv:
+      - oc
+      - start-build
+      - "bc/{{ apps_rhoai_backend_image_name }}"
+      - "--from-dir={{ apps_rhoai_backend_source_dir_resolved }}"
+      - -n
+      - "{{ apps_namespace }}"
+      - --wait=true
+      - --follow=true
+  register: apps_rhoai_backend_build
+  changed_when: true
+  when:
+    - apps_rhoai_enabled
+    - not apps_skip_build
+    - apps_image_source != 'quay'
+
+- name: Start the RHOAI frontend image build
+  ansible.builtin.command:
+    argv:
+      - oc
+      - start-build
+      - "bc/{{ apps_rhoai_frontend_image_name }}"
+      - "--from-dir={{ apps_rhoai_frontend_source_dir_resolved }}"
+      - -n
+      - "{{ apps_namespace }}"
+      - --wait=true
+      - --follow=true
+  register: apps_rhoai_frontend_build
+  changed_when: true
+  when:
+    - apps_rhoai_enabled
+    - not apps_skip_build
+    - apps_image_source != 'quay'
+
+- name: Trigger manual rollouts when image builds are skipped or coming from Quay
+  ansible.builtin.command:
+    argv:
+      - oc
+      - rollout
+      - restart
+      - "deployment/{{ item }}"
+      - -n
+      - "{{ apps_namespace }}"
+  loop:
+    - "{{ apps_backend_primary_name }}"
+    - "{{ apps_backend_secondary_name }}"
+    - "{{ apps_frontend_name }}"
+    - "{{ apps_ipfilter_name }}"
+    - "{{ apps_rhoai_backend_name }}"
+    - "{{ apps_rhoai_frontend_name }}"
+    - "{{ apps_ledger_name }}"
+  changed_when: true
+  when:
+    - apps_skip_build or apps_image_source == 'quay'
+    - item != apps_ipfilter_name or apps_ipfilter_enabled
+    - item not in [apps_rhoai_backend_name, apps_rhoai_frontend_name] or apps_rhoai_enabled
+    - item != apps_ledger_name or apps_ledger_enabled
+
+- name: Wait for backend v1 deployment availability
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_backend_primary_name }}"
+  register: apps_backend_v1_deployment
+  changed_when: false
+  failed_when: false
+  until:
+    - apps_backend_v1_deployment.resources | length == 1
+    - (apps_backend_v1_deployment.resources[0].status.availableReplicas | default(0)) | int >= 1
+  retries: "{{ apps_wait_retries | int }}"
+  delay: "{{ apps_wait_delay | int }}"
+
+- name: Wait for ledger-api deployment availability (REQ 038 trace propagation)
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_ledger_name }}"
+  register: apps_ledger_deployment
+  changed_when: false
+  failed_when: false
+  until:
+    - apps_ledger_deployment.resources | length == 1
+    - (apps_ledger_deployment.resources[0].status.availableReplicas | default(0)) | int >= 1
+  retries: "{{ apps_wait_retries | int }}"
+  delay: "{{ apps_wait_delay | int }}"
+  when: apps_ledger_enabled
+
+- name: Wait for RHOAI backend deployment availability
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_rhoai_backend_name }}"
+  register: apps_rhoai_backend_deployment
+  changed_when: false
+  failed_when: false
+  until:
+    - apps_rhoai_backend_deployment.resources | length == 1
+    - (apps_rhoai_backend_deployment.resources[0].status.availableReplicas | default(0)) | int >= 1
+  retries: "{{ apps_wait_retries | int }}"
+  delay: "{{ apps_wait_delay | int }}"
+  when: apps_rhoai_enabled
+
+- name: Wait for RHOAI frontend deployment availability
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_rhoai_frontend_name }}"
+  register: apps_rhoai_frontend_deployment
+  changed_when: false
+  failed_when: false
+  until:
+    - apps_rhoai_frontend_deployment.resources | length == 1
+    - (apps_rhoai_frontend_deployment.resources[0].status.availableReplicas | default(0)) | int >= 1
+  retries: "{{ apps_wait_retries | int }}"
+  delay: "{{ apps_wait_delay | int }}"
+  when: apps_rhoai_enabled
+
+- name: Wait for connectivity gateway programming
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: Gateway
+    namespace: "{{ apps_connectivity_gateway_namespace }}"
+    name: "{{ apps_connectivity_gateway_name }}"
+  register: apps_connectivity_gateway
+  changed_when: false
+  failed_when: false
+  until:
+    - apps_connectivity_gateway.resources | length == 1
+    - >-
+      apps_connectivity_gateway.resources[0].status.conditions | default([])
+      | selectattr('type', 'equalto', 'Programmed')
+      | selectattr('status', 'equalto', 'True')
+      | list | length == 1
+  retries: "{{ apps_wait_retries | int }}"
+  delay: "{{ apps_wait_delay | int }}"
+  when: apps_connectivity_link_enabled
+
+- name: Wait for frontend connectivity HTTPRoute acceptance
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_connectivity_frontend_route_name }}"
+  register: apps_connectivity_frontend_httproute
+  changed_when: false
+  failed_when: false
+  until:
+    - apps_connectivity_frontend_httproute.resources | length == 1
+    - >-
+      apps_connectivity_frontend_httproute.resources[0].status.parents | default([])
+      | selectattr('conditions', 'defined')
+      | map(attribute='conditions') | flatten
+      | selectattr('type', 'equalto', 'Accepted')
+      | selectattr('status', 'equalto', 'True')
+      | list | length >= 1
+    - >-
+      apps_connectivity_frontend_httproute.resources[0].status.parents | default([])
+      | selectattr('conditions', 'defined')
+      | map(attribute='conditions') | flatten
+      | selectattr('type', 'equalto', 'ResolvedRefs')
+      | selectattr('status', 'equalto', 'True')
+      | list | length >= 1
+  retries: "{{ apps_wait_retries | int }}"
+  delay: "{{ apps_wait_delay | int }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_connectivity_frontend_route_enabled
+
+- name: Wait for IP filter connectivity HTTPRoute acceptance
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_ipfilter_route_name }}"
+  register: apps_ipfilter_httproute
+  changed_when: false
+  failed_when: false
+  until:
+    - apps_ipfilter_httproute.resources | length == 1
+    - >-
+      apps_ipfilter_httproute.resources[0].status.parents | default([])
+      | selectattr('conditions', 'defined')
+      | map(attribute='conditions') | flatten
+      | selectattr('type', 'equalto', 'Accepted')
+      | selectattr('status', 'equalto', 'True')
+      | list | length >= 1
+    - >-
+      apps_ipfilter_httproute.resources[0].status.parents | default([])
+      | selectattr('conditions', 'defined')
+      | map(attribute='conditions') | flatten
+      | selectattr('type', 'equalto', 'ResolvedRefs')
+      | selectattr('status', 'equalto', 'True')
+      | list | length >= 1
+  retries: "{{ apps_wait_retries | int }}"
+  delay: "{{ apps_wait_delay | int }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_ipfilter_enabled
+
+- name: Wait for backend TLS demo HTTPRoute acceptance
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_backend_tls_route_name }}"
+  register: apps_backend_tls_httproute
+  changed_when: false
+  failed_when: false
+  until:
+    - apps_backend_tls_httproute.resources | length == 1
+    - >-
+      apps_backend_tls_httproute.resources[0].status.parents | default([])
+      | selectattr('conditions', 'defined')
+      | map(attribute='conditions') | flatten
+      | selectattr('type', 'equalto', 'Accepted')
+      | selectattr('status', 'equalto', 'True')
+      | list | length >= 1
+    - >-
+      apps_backend_tls_httproute.resources[0].status.parents | default([])
+      | selectattr('conditions', 'defined')
+      | map(attribute='conditions') | flatten
+      | selectattr('type', 'equalto', 'ResolvedRefs')
+      | selectattr('status', 'equalto', 'True')
+      | list | length >= 1
+  retries: "{{ apps_wait_retries | int }}"
+  delay: "{{ apps_wait_delay | int }}"
+  when:
+    - apps_connectivity_link_enabled
+    - apps_backend_tls_route_enabled
+
+- name: Wait for backend v2 deployment availability
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_backend_secondary_name }}"
+  register: apps_backend_v2_deployment
+  changed_when: false
+  failed_when: false
+  until:
+    - apps_backend_v2_deployment.resources | length == 1
+    - (apps_backend_v2_deployment.resources[0].status.availableReplicas | default(0)) | int >= 1
+  retries: "{{ apps_wait_retries | int }}"
+  delay: "{{ apps_wait_delay | int }}"
+
+- name: Wait for frontend deployment availability
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_frontend_name }}"
+  register: apps_frontend_deployment
+  changed_when: false
+  failed_when: false
+  until:
+    - apps_frontend_deployment.resources | length == 1
+    - (apps_frontend_deployment.resources[0].status.availableReplicas | default(0)) | int >= 1
+  retries: "{{ apps_wait_retries | int }}"
+  delay: "{{ apps_wait_delay | int }}"
+
+- name: Wait for IP filter deployment availability
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_ipfilter_name }}"
+  register: apps_ipfilter_deployment
+  changed_when: false
+  failed_when: false
+  until:
+    - apps_ipfilter_deployment.resources | length == 1
+    - (apps_ipfilter_deployment.resources[0].status.availableReplicas | default(0)) | int >= 1
+  retries: "{{ apps_wait_retries | int }}"
+  delay: "{{ apps_wait_delay | int }}"
+  when: apps_ipfilter_enabled

@@ -1,0 +1,33 @@
+# Getting started — Passo 3/6: PlanPolicy
+#
+# Define os "tiers" (planos) que a API oferece — a estrutura comercial
+# que o dev portal apresenta na hora de subscribe. Cada tier tem seu
+# próprio rate limit, e o Kuadrant escolhe qual aplicar olhando a
+# annotation `secret.kuadrant.io/plan-id` na chave da requisição.
+#
+# Para o getting-started declaramos UM tier só (`demo`) com 60 req/min.
+# Em produção você normalmente tem gold/silver/bronze com limites
+# escalonados.
+#
+# targetRef → mesma HTTPRoute do passo 1. É por isso que precisou vir
+# depois: o Kuadrant só valida a policy se o HTTPRoute existir.
+apiVersion: extensions.kuadrant.io/v1alpha1
+kind: PlanPolicy
+metadata:
+  name: banking-lite-plans
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-getting-started
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: banking-lite
+  plans:
+    - tier: demo
+      predicate: |
+        has(auth.identity) && auth.identity.metadata.annotations["secret.kuadrant.io/plan-id"] == "demo"
+      limits:
+        custom:
+          - limit: 60
+            window: "1m"

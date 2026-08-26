@@ -1,0 +1,674 @@
+---
+# Opt-in role: set MCP_GATEWAY_ENABLED=true to install. When false (the
+# default), end the play so install-all runs don't drag in the preview-channel
+# MCP operator on clusters that don't need it.
+#
+# Compatibility note: the preview-channel MCP Gateway bundle (v0.7.x as of
+# this writing) depends on the Kuadrant 1.4 stack — in particular it brings
+# an apikeys.devportal.kuadrant.io CRD whose schema requires spec.secretRef,
+# which doesn't exist in 1.3.x. OLM refuses to upgrade the CRD when
+# pre-existing APIKey CRs from 1.3 are on the cluster ("updated validation
+# is too restrictive"), so the InstallPlan never completes and the operator
+# never lands. With the lab's default now on RHCL 1.4.1+ this just works;
+# it only bites on clusters explicitly pinned to 1.3.x via
+# RHCL_PIN_V13_ENABLED=true — unpin RHCL or migrate the existing APIKey
+# CRs to the 1.4 schema first.
+- name: Skip mcp_gateway role when disabled
+  ansible.builtin.meta: end_play
+  when: not (mcp_gateway_enabled | bool)
+
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Query the cluster ingress domain for MCP gateway hostname
+  kubernetes.core.k8s_info:
+    api_version: config.openshift.io/v1
+    kind: Ingress
+    name: cluster
+  register: mcp_gateway_cluster_ingress
+  changed_when: false
+  when: mcp_gateway_hostname | length == 0 or mcp_gateway_server_route_hostname | length == 0
+
+- name: Resolve MCP gateway hostname and route management mode
+  ansible.builtin.set_fact:
+    mcp_gateway_hostname_resolved: >-
+      {{
+        mcp_gateway_hostname
+        if mcp_gateway_hostname | length > 0
+        else mcp_gateway_extension_name ~ '.' ~ mcp_gateway_cluster_ingress.resources[0].spec.domain
+      }}
+    mcp_gateway_http_route_management_resolved: >-
+      {{
+        'Disabled'
+        if mcp_gateway_custom_route_enabled
+        else mcp_gateway_http_route_management
+      }}
+    mcp_gateway_listener_hostname_resolved: >-
+      {{
+        mcp_gateway_listener_hostname
+        if mcp_gateway_listener_hostname | length > 0
+        else (
+          mcp_gateway_hostname
+          if mcp_gateway_hostname | length > 0
+          else mcp_gateway_extension_name ~ '.' ~ mcp_gateway_cluster_ingress.resources[0].spec.domain
+        )
+      }}
+    mcp_gateway_server_route_hostname_resolved: >-
+      {{
+        mcp_gateway_server_route_hostname
+        if mcp_gateway_server_route_hostname | length > 0
+        else mcp_gateway_server_registration_route_name ~ '.' ~ mcp_gateway_cluster_ingress.resources[0].spec.domain
+      }}
+    mcp_gateway_server_listener_hostname_resolved: >-
+      {{
+        mcp_gateway_server_listener_hostname
+        if mcp_gateway_server_listener_hostname | length > 0
+        else (
+          mcp_gateway_server_route_hostname
+          if mcp_gateway_server_route_hostname | length > 0
+          else mcp_gateway_server_registration_route_name ~ '.' ~ mcp_gateway_cluster_ingress.resources[0].spec.domain
+        )
+      }}
+
+- name: Ensure the MCP gateway namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ mcp_gateway_namespace }}"
+    state: present
+
+# OLM install gated by mcp_gateway_install_operator (defaults to the global
+# operators_install_enabled). Skip when the operator is managed out-of-band.
+- name: Query existing OperatorGroups in the MCP Gateway namespace
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    namespace: "{{ mcp_gateway_namespace }}"
+  register: mcp_gateway_existing_ogs
+  changed_when: false
+  when: mcp_gateway_install_operator | bool
+
+- name: Remove pre-existing OperatorGroups with a different name
+  kubernetes.core.k8s:
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ item.metadata.name }}"
+    state: absent
+  loop: "{{ mcp_gateway_existing_ogs.resources | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  when:
+    - mcp_gateway_install_operator | bool
+    - item.metadata.name != mcp_gateway_operatorgroup_name
+
+- name: Ensure the MCP Gateway OperatorGroup exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'operatorgroup.yml.j2') | from_yaml }}"
+  when: mcp_gateway_install_operator | bool
+
+- name: Ensure the MCP Gateway Subscription exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'subscription.yml.j2') | from_yaml }}"
+  when: mcp_gateway_install_operator | bool
+
+- name: Wait for the MCP Gateway subscription to report a current CSV
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_subscription_name }}"
+  register: mcp_gateway_subscription
+  changed_when: false
+  failed_when: false
+  until:
+    - mcp_gateway_subscription.resources | length == 1
+    - mcp_gateway_subscription.resources[0].status.currentCSV is defined
+  retries: 60
+  delay: 10
+  when: mcp_gateway_install_operator | bool
+
+- name: Assert that the MCP Gateway subscription resolved a CSV
+  ansible.builtin.assert:
+    that:
+      - mcp_gateway_subscription.resources | length == 1
+      - mcp_gateway_subscription.resources[0].status.currentCSV is defined
+    fail_msg: >-
+      MCP Gateway Subscription {{ mcp_gateway_namespace }}/{{ mcp_gateway_subscription_name }}
+      did not resolve a currentCSV. Check dependent OLM resources in the namespace with
+      `oc -n {{ mcp_gateway_namespace }} get subscription,csv,installplan -o wide`.
+      Subscription conditions:
+      {{ mcp_gateway_subscription.resources[0].status.conditions | default([]) | to_nice_yaml(indent=2) }}
+  when: mcp_gateway_install_operator | bool
+
+- name: Wait for the MCP Gateway CSV to succeed
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_subscription.resources[0].status.currentCSV }}"
+  register: mcp_gateway_csv
+  changed_when: false
+  failed_when: false
+  until:
+    - mcp_gateway_csv.resources | length == 1
+    - mcp_gateway_csv.resources[0].status.phase == "Succeeded"
+  retries: 60
+  delay: 10
+  when: mcp_gateway_install_operator | bool
+
+- name: Probe required MCP Gateway CRDs (MCP_GATEWAY_INSTALL_OPERATOR=false)
+  ansible.builtin.command:
+    cmd: "oc get crd {{ item }} --ignore-not-found -o name"
+  register: mcp_gateway_crd_probe
+  changed_when: false
+  loop:
+    - mcpgatewayextensions.mcp.kuadrant.io
+    - mcpserverregistrations.mcp.kuadrant.io
+  when: not (mcp_gateway_install_operator | bool)
+
+- name: Verify required MCP Gateway CRDs are present
+  ansible.builtin.assert:
+    that:
+      - (item.stdout | default('') | length) > 0
+    fail_msg: >-
+      MCP_GATEWAY_INSTALL_OPERATOR=false but the required CRD
+      '{{ item.item }}' is missing on the cluster. Install the MCP
+      Gateway operator manually first, or set MCP_GATEWAY_INSTALL_OPERATOR=true.
+    quiet: true
+  loop: "{{ mcp_gateway_crd_probe.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: not (mcp_gateway_install_operator | bool)
+
+- name: Ensure the MCP gateway namespace for Gateway exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ mcp_gateway_gateway_namespace }}"
+    state: present
+  when: mcp_gateway_manage_gateway
+
+- name: Ensure the MCP Gateway object exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'gateway.yml.j2') | from_yaml }}"
+  when: mcp_gateway_manage_gateway
+
+- name: Query the target Gateway for MCP listener reuse
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: Gateway
+    namespace: "{{ mcp_gateway_gateway_namespace }}"
+    name: "{{ mcp_gateway_gateway_name }}"
+  register: mcp_gateway_target_gateway
+  changed_when: false
+
+- name: Assert that the target Gateway exists
+  ansible.builtin.assert:
+    that:
+      - mcp_gateway_target_gateway.resources | length == 1
+    fail_msg: >-
+      Target Gateway {{ mcp_gateway_gateway_namespace }}/{{ mcp_gateway_gateway_name }} does not exist.
+      Set MCP_GATEWAY_MANAGE_GATEWAY=true (default) to create the dedicated Istio MCP gateway,
+      or install it manually from tests/req059/manifests/30-rhcl-mcp-gateway.yaml.
+
+- name: Resolve whether the MCP listener already exists
+  ansible.builtin.set_fact:
+    mcp_gateway_listener_names: "{{ mcp_gateway_target_gateway.resources[0].spec.listeners | default([]) | map(attribute='name') | list }}"
+    mcp_gateway_listener_exists: >-
+      {{
+        (mcp_gateway_target_gateway.resources[0].spec.listeners | default([])
+        | selectattr('name', 'equalto', mcp_gateway_listener_name)
+        | list | length) >= 1
+      }}
+    mcp_gateway_server_listener_exists: >-
+      {{
+        (mcp_gateway_target_gateway.resources[0].spec.listeners | default([])
+        | selectattr('name', 'equalto', mcp_gateway_server_listener_name)
+        | list | length) >= 1
+      }}
+
+# Gateway API rejects duplicate (port, protocol, hostname) across listeners. The role
+# already matches by name; this block skips "add" when another listener already owns the same trio.
+- name: Build desired MCP broker and server listener objects
+  ansible.builtin.set_fact:
+    mcp_gateway_desired_broker_listener: "{{ lookup('template', 'listener.yml.j2') | from_yaml }}"
+    mcp_gateway_desired_server_listener: "{{ lookup('template', 'mcpserver-listener.yml.j2') | from_yaml }}"
+
+- name: Derive listener hostname keys for Gateway API uniqueness checks
+  ansible.builtin.set_fact:
+    mcp_gateway_broker_hostname_key: "{{ mcp_gateway_desired_broker_listener.hostname | default('', true) | string }}"
+    mcp_gateway_server_hostname_key: "{{ mcp_gateway_desired_server_listener.hostname | default('', true) | string }}"
+
+- name: Detect broker listener trio conflict (same port, protocol, hostname as another listener name)
+  ansible.builtin.set_fact:
+    mcp_gateway_broker_trio_conflicts: "{{ (mcp_gateway_broker_trio_conflicts | default([])) + [item.name] }}"
+  loop: "{{ mcp_gateway_target_gateway.resources[0].spec.listeners | default([]) }}"
+  when:
+    - item.name is defined
+    - item.name | string != mcp_gateway_listener_name | string
+    - (item.port | int) == (mcp_gateway_desired_broker_listener.port | int)
+    - item.protocol | string == mcp_gateway_desired_broker_listener.protocol | string
+    - (item.hostname | default('', true) | string) == (mcp_gateway_broker_hostname_key | string)
+
+- name: Normalize broker trio conflict list
+  ansible.builtin.set_fact:
+    mcp_gateway_broker_trio_conflicts: "{{ mcp_gateway_broker_trio_conflicts | default([]) }}"
+
+- name: Detect server listener trio conflict
+  ansible.builtin.set_fact:
+    mcp_gateway_server_trio_conflicts: "{{ (mcp_gateway_server_trio_conflicts | default([])) + [item.name] }}"
+  loop: "{{ mcp_gateway_target_gateway.resources[0].spec.listeners | default([]) }}"
+  when:
+    - item.name is defined
+    - item.name | string != mcp_gateway_server_listener_name | string
+    - (item.port | int) == (mcp_gateway_desired_server_listener.port | int)
+    - item.protocol | string == mcp_gateway_desired_server_listener.protocol | string
+    - (item.hostname | default('', true) | string) == (mcp_gateway_server_hostname_key | string)
+
+- name: Normalize server trio conflict list
+  ansible.builtin.set_fact:
+    mcp_gateway_server_trio_conflicts: "{{ mcp_gateway_server_trio_conflicts | default([]) }}"
+
+- name: Explain skipped broker listener create (duplicate port, protocol, hostname)
+  ansible.builtin.debug:
+    msg: >-
+      Skipping add of listener '{{ mcp_gateway_listener_name }}': the Gateway already has listener(s)
+      {{ mcp_gateway_broker_trio_conflicts | join(', ') }} with the same port, protocol, and hostname.
+      Use MCP_GATEWAY_LISTENER_NAME / MCP_GATEWAY_LISTENER_HOSTNAME (or remove the duplicate listener) and re-run.
+  when:
+    - not mcp_gateway_listener_exists
+    - mcp_gateway_broker_trio_conflicts | length > 0
+
+- name: Explain skipped server listener create (duplicate port, protocol, hostname)
+  ansible.builtin.debug:
+    msg: >-
+      Skipping add of listener '{{ mcp_gateway_server_listener_name }}': the Gateway already has listener(s)
+      {{ mcp_gateway_server_trio_conflicts | join(', ') }} with the same port, protocol, and hostname.
+      Adjust MCP_GATEWAY_SERVER_LISTENER_NAME / MCP_GATEWAY_SERVER_LISTENER_HOSTNAME or remove the duplicate listener.
+  when:
+    - not mcp_gateway_server_listener_exists
+    - mcp_gateway_server_trio_conflicts | length > 0
+
+- name: Add the MCP listener to the existing Gateway
+  kubernetes.core.k8s_json_patch:
+    api_version: gateway.networking.k8s.io/v1
+    kind: Gateway
+    namespace: "{{ mcp_gateway_gateway_namespace }}"
+    name: "{{ mcp_gateway_gateway_name }}"
+    patch:
+      - op: add
+        path: /spec/listeners/-
+        value: "{{ mcp_gateway_desired_broker_listener }}"
+  when:
+    - not mcp_gateway_listener_exists
+    - mcp_gateway_broker_trio_conflicts | length == 0
+
+- name: Replace existing MCP broker listener with template
+  kubernetes.core.k8s_json_patch:
+    api_version: gateway.networking.k8s.io/v1
+    kind: Gateway
+    namespace: "{{ mcp_gateway_gateway_namespace }}"
+    name: "{{ mcp_gateway_gateway_name }}"
+    patch:
+      - op: replace
+        path: "/spec/listeners/{{ mcp_gateway_listener_names.index(mcp_gateway_listener_name) }}"
+        value: "{{ mcp_gateway_desired_broker_listener }}"
+  when:
+    - mcp_gateway_listener_exists
+    - mcp_gateway_listener_update_if_exists | bool
+
+- name: Skip MCP broker listener replace (listener already present)
+  ansible.builtin.debug:
+    msg: >-
+      Listener '{{ mcp_gateway_listener_name }}' already exists; leaving Gateway spec unchanged
+      (set MCP_GATEWAY_LISTENER_UPDATE_IF_EXISTS=true to replace it with the template).
+  when:
+    - mcp_gateway_listener_exists
+    - not (mcp_gateway_listener_update_if_exists | bool)
+
+- name: Add the backend MCP server listener to the existing Gateway
+  kubernetes.core.k8s_json_patch:
+    api_version: gateway.networking.k8s.io/v1
+    kind: Gateway
+    namespace: "{{ mcp_gateway_gateway_namespace }}"
+    name: "{{ mcp_gateway_gateway_name }}"
+    patch:
+      - op: add
+        path: /spec/listeners/-
+        value: "{{ mcp_gateway_desired_server_listener }}"
+  when:
+    - not mcp_gateway_server_listener_exists
+    - mcp_gateway_server_trio_conflicts | length == 0
+
+- name: Replace existing MCP server listener with template
+  kubernetes.core.k8s_json_patch:
+    api_version: gateway.networking.k8s.io/v1
+    kind: Gateway
+    namespace: "{{ mcp_gateway_gateway_namespace }}"
+    name: "{{ mcp_gateway_gateway_name }}"
+    patch:
+      - op: replace
+        path: "/spec/listeners/{{ mcp_gateway_listener_names.index(mcp_gateway_server_listener_name) }}"
+        value: "{{ mcp_gateway_desired_server_listener }}"
+  when:
+    - mcp_gateway_server_listener_exists
+    - mcp_gateway_listener_update_if_exists | bool
+
+- name: Skip MCP server listener replace (listener already present)
+  ansible.builtin.debug:
+    msg: >-
+      Listener '{{ mcp_gateway_server_listener_name }}' already exists; leaving Gateway spec unchanged
+      (set MCP_GATEWAY_LISTENER_UPDATE_IF_EXISTS=true to replace it with the template).
+  when:
+    - mcp_gateway_server_listener_exists
+    - not (mcp_gateway_listener_update_if_exists | bool)
+
+- name: Ensure the MCP Gateway compatibility Service exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'gateway-compat-service.yml.j2') | from_yaml }}"
+  when: mcp_gateway_compat_service_enabled
+
+- name: Apply MCP gateway deny-all auth policy
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'gateway-deny-all-authpolicy.yml.j2') | from_yaml }}"
+  when: mcp_gateway_gateway_deny_all_enabled
+
+- name: Ensure cross-namespace Gateway reference is allowed
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'referencegrant.yml.j2') | from_yaml }}"
+  when: mcp_gateway_namespace != mcp_gateway_gateway_namespace
+
+- name: Ensure cross-namespace backend service reference is allowed for the MCP server route
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'mcpserver-httproute-referencegrant.yml.j2') | from_yaml }}"
+  when: mcp_gateway_namespace != mcp_gateway_server_backend_service_namespace
+
+- name: Ensure the MCPGatewayExtension exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'mcpgatewayextension.yml.j2') | from_yaml }}"
+
+- name: Ensure the backend MCP server HTTPRoute exists for registration
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'mcpserver-httproute.yml.j2') | from_yaml }}"
+
+# HTTPRoute must be Accepted before Kuadrant can reconcile an AuthPolicy that targets it.
+- name: Wait for the backend MCP server HTTPRoute to be accepted
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_server_registration_route_name }}"
+  register: mcp_gateway_server_route
+  changed_when: false
+  failed_when: false
+  until:
+    - mcp_gateway_server_route.resources | length == 1
+    - >-
+      (mcp_gateway_server_route.resources[0].status.parents | default([])
+      | map(attribute='conditions') | flatten
+      | selectattr('type', 'equalto', 'Accepted')
+      | selectattr('status', 'equalto', 'True')
+      | list | length) >= 1
+    - >-
+      (mcp_gateway_server_route.resources[0].status.parents | default([])
+      | map(attribute='conditions') | flatten
+      | selectattr('type', 'equalto', 'ResolvedRefs')
+      | selectattr('status', 'equalto', 'True')
+      | list | length) >= 1
+  retries: 45
+  delay: 10
+
+# Do not use force: true — Kuadrant rejects replace without a live metadata.resourceVersion (422).
+# Patch/merge via state=present still applies the intended atomic deny-all override.
+- name: Ensure the backend MCP server route allows MCP discovery
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'mcpserver-authpolicy.yml.j2') | from_yaml }}"
+  when: mcp_gateway_server_route_auth_policy_enabled
+
+- name: Wait for the backend MCP server route AuthPolicy to be accepted
+  kubernetes.core.k8s_info:
+    api_version: kuadrant.io/v1
+    kind: AuthPolicy
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_server_route_auth_policy_name }}"
+  register: mcp_gateway_server_route_auth_policy
+  changed_when: false
+  failed_when: false
+  until:
+    - mcp_gateway_server_route_auth_policy.resources | length == 1
+    - >-
+      (mcp_gateway_server_route_auth_policy.resources[0].status.conditions | default([])
+      | selectattr('type', 'equalto', 'Accepted')
+      | selectattr('status', 'equalto', 'True')
+      | list | length) >= 1
+  retries: 45
+  delay: 10
+  when: mcp_gateway_server_route_auth_policy_enabled
+
+- name: Query existing banking MCP server registration
+  kubernetes.core.k8s_info:
+    api_version: mcp.kuadrant.io/v1alpha1
+    kind: MCPServerRegistration
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_server_registration_name }}"
+  register: mcp_gateway_existing_server_registration
+  changed_when: false
+
+- name: Remove stale banking MCP server registration
+  kubernetes.core.k8s:
+    api_version: mcp.kuadrant.io/v1alpha1
+    kind: MCPServerRegistration
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_server_registration_name }}"
+    state: absent
+    wait: true
+    wait_timeout: 120
+  when:
+    - mcp_gateway_existing_server_registration.resources | length == 1
+    - >-
+      (mcp_gateway_existing_server_registration.resources[0].status.conditions | default([])
+      | selectattr('type', 'equalto', 'Ready')
+      | selectattr('status', 'equalto', 'True')
+      | list | length) == 0
+
+- name: Ensure the banking MCP server is registered
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'mcpserverregistration.yml.j2') | from_yaml }}"
+
+- name: Remove the managed MCP HTTPRoute when a custom route is enabled
+  kubernetes.core.k8s:
+    api_version: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_auto_route_name }}"
+    state: absent
+  when:
+    - mcp_gateway_custom_route_enabled
+    - mcp_gateway_auto_route_name != mcp_gateway_custom_route_name
+
+- name: Ensure the custom MCP HTTPRoute exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'httproute-custom.yml.j2') | from_yaml }}"
+  when: mcp_gateway_custom_route_enabled
+
+- name: Ensure the custom MCP route allows browser access
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'httproute-custom-authpolicy.yml.j2') | from_yaml }}"
+  when:
+    - mcp_gateway_custom_route_enabled
+    - mcp_gateway_custom_route_auth_policy_enabled
+
+- name: Remove the custom MCP route AuthPolicy when disabled
+  kubernetes.core.k8s:
+    api_version: kuadrant.io/v1
+    kind: AuthPolicy
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_custom_route_auth_policy_name }}"
+    state: absent
+  when:
+    - (not mcp_gateway_custom_route_enabled) or (not mcp_gateway_custom_route_auth_policy_enabled)
+
+- name: Query existing browser route to the MCP Gateway listener
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    namespace: "{{ mcp_gateway_gateway_namespace }}"
+    name: "{{ mcp_gateway_browser_route_name }}"
+  register: mcp_gateway_browser_route
+  changed_when: false
+  when:
+    - mcp_gateway_custom_route_enabled
+    - mcp_gateway_browser_route_enabled
+
+- name: Remove stale TLS browser route to the MCP Gateway listener
+  kubernetes.core.k8s:
+    api_version: route.openshift.io/v1
+    kind: Route
+    namespace: "{{ mcp_gateway_gateway_namespace }}"
+    name: "{{ mcp_gateway_browser_route_name }}"
+    state: absent
+  when:
+    - mcp_gateway_custom_route_enabled
+    - mcp_gateway_browser_route_enabled
+    - mcp_gateway_browser_route.resources | length == 1
+    - mcp_gateway_browser_route.resources[0].spec.tls is defined
+
+- name: Ensure the browser HTTP route to the MCP Gateway listener exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'browser-route.yml.j2') | from_yaml }}"
+  when:
+    - mcp_gateway_custom_route_enabled
+    - mcp_gateway_browser_route_enabled
+
+- name: Remove the browser HTTP route when disabled
+  kubernetes.core.k8s:
+    api_version: route.openshift.io/v1
+    kind: Route
+    namespace: "{{ mcp_gateway_gateway_namespace }}"
+    name: "{{ mcp_gateway_browser_route_name }}"
+    state: absent
+  when:
+    - (not mcp_gateway_custom_route_enabled) or (not mcp_gateway_browser_route_enabled)
+
+- name: Ensure the CORS EnvoyFilter exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'cors-envoyfilter.yml.j2') | from_yaml }}"
+  when:
+    - mcp_gateway_cors_envoyfilter_enabled
+
+- name: Remove the CORS EnvoyFilter when disabled
+  kubernetes.core.k8s:
+    api_version: networking.istio.io/v1alpha3
+    kind: EnvoyFilter
+    namespace: "{{ mcp_gateway_gateway_namespace }}"
+    name: "{{ mcp_gateway_cors_envoyfilter_name }}"
+    state: absent
+  when:
+    - not mcp_gateway_cors_envoyfilter_enabled
+
+- name: Wait for MCPGatewayExtension to become Ready
+  kubernetes.core.k8s_info:
+    api_version: mcp.kuadrant.io/v1alpha1
+    kind: MCPGatewayExtension
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_extension_name }}"
+  register: mcp_gateway_extension
+  changed_when: false
+  failed_when: false
+  until:
+    - mcp_gateway_extension.resources | length == 1
+    - >-
+      (mcp_gateway_extension.resources[0].status.conditions | default([])
+      | selectattr('type', 'equalto', 'Ready')
+      | selectattr('status', 'equalto', 'True')
+      | list | length) >= 1
+  retries: 30
+  delay: 10
+
+- name: Wait for MCPServerRegistration to become Ready
+  kubernetes.core.k8s_info:
+    api_version: mcp.kuadrant.io/v1alpha1
+    kind: MCPServerRegistration
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_server_registration_name }}"
+  register: mcp_gateway_server_registration
+  changed_when: false
+  failed_when: false
+  until:
+    - mcp_gateway_server_registration.resources | length == 1
+    - >-
+      (mcp_gateway_server_registration.resources[0].status.conditions | default([])
+      | selectattr('type', 'equalto', 'Ready')
+      | selectattr('status', 'equalto', 'True')
+      | list | length) >= 1
+  retries: 30
+  delay: 10
+
+- name: Wait for the managed MCP HTTPRoute to exist
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_auto_route_name }}"
+  register: mcp_gateway_auto_route
+  changed_when: false
+  failed_when: false
+  until:
+    - mcp_gateway_auto_route.resources | length == 1
+  retries: 30
+  delay: 10
+  when:
+    - not mcp_gateway_custom_route_enabled
+    - mcp_gateway_http_route_management_resolved == "Enabled"
+
+- name: Wait for custom MCP HTTPRoute to be accepted
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    namespace: "{{ mcp_gateway_namespace }}"
+    name: "{{ mcp_gateway_custom_route_name }}"
+  register: mcp_gateway_custom_route
+  changed_when: false
+  failed_when: false
+  until:
+    - mcp_gateway_custom_route.resources | length == 1
+    - >-
+      (mcp_gateway_custom_route.resources[0].status.parents | default([])
+      | map(attribute='conditions') | flatten
+      | selectattr('type', 'equalto', 'Accepted')
+      | selectattr('status', 'equalto', 'True')
+      | list | length) >= 1
+  retries: 30
+  delay: 10
+  when: mcp_gateway_custom_route_enabled
+
+# ---------------------------------------------------------------
+# Observability. The MCP gateway's istio-proxy emits istio_requests_total but
+# nothing scrapes port 15020 by default, so the gateway is invisible to Grafana
+# (absent from the "Gateway" dashboard variable) and every MCP throughput panel
+# reads "No data". This PodMonitor closes that gap; user-workload monitoring
+# (from the `monitoring` role) collects it and thanos-querier federates it for
+# the Grafana thanos datasource and the console plugin.
+# ---------------------------------------------------------------
+- name: Ensure the PodMonitor scraping the MCP gateway istio-proxy metrics exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'podmonitor-mcp-gateway-istio.yml.j2') | from_yaml }}"

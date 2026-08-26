@@ -1,0 +1,64 @@
+# BuildConfigs — images are produced with `scripts/build-images.sh`
+# (`oc start-build --from-dir=../servers/<name>`).
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: rhcl-lab-info-mcp
+  namespace: rhcl-mcp-lab
+  labels:
+    rhcl-lab/requirement: req017-mcp-catalog
+spec:
+  source:
+    type: Binary
+  output:
+    to:
+      kind: ImageStreamTag
+      name: rhcl-lab-info-mcp:latest
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Containerfile
+  triggers:
+    - type: ConfigChange
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: rhcl-text-tools-mcp
+  namespace: rhcl-mcp-lab
+  labels:
+    rhcl-lab/requirement: req017-mcp-catalog
+spec:
+  source:
+    type: Binary
+  output:
+    to:
+      kind: ImageStreamTag
+      name: rhcl-text-tools-mcp:latest
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Containerfile
+  triggers:
+    - type: ConfigChange
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: rhcl-time-tools-mcp
+  namespace: rhcl-mcp-lab
+  labels:
+    rhcl-lab/requirement: req017-mcp-catalog
+spec:
+  source:
+    type: Binary
+  output:
+    to:
+      kind: ImageStreamTag
+      name: rhcl-time-tools-mcp:latest
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Containerfile
+  triggers:
+    - type: ConfigChange

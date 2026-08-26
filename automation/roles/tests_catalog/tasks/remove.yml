@@ -1,0 +1,13 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Remove the tests catalog namespace (Deployment, Service, Route, IS, BC)
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ tests_catalog_namespace }}"
+    state: absent
+  when: tests_catalog_remove_namespace | bool

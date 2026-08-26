@@ -1,0 +1,27 @@
+# REQ 024 — LiteLLM ExternalModel: llama-31-70b-cpu
+# Reuses Secret litellm-api-key in namespace external-models (same upstream endpoint).
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: ExternalModel
+metadata:
+  name: llama-31-70b-external
+  namespace: external-models
+  labels:
+    app.kubernetes.io/part-of: rhcl-req024-external-model
+spec:
+  provider: openai
+  endpoint: maas-rhdp.apps.maas.redhatworkshops.io
+  targetModel: llama-31-70b-cpu
+  credentialRef:
+    name: litellm-api-key
+---
+apiVersion: maas.opendatahub.io/v1alpha1
+kind: MaaSModelRef
+metadata:
+  name: llama-31-70b-external
+  namespace: external-models
+  labels:
+    app.kubernetes.io/part-of: rhcl-req024-external-model
+spec:
+  modelRef:
+    kind: ExternalModel
+    name: llama-31-70b-external

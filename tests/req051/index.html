@@ -1,0 +1,631 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RHCL Lab — REQ 051 + 056: Gateway mTLS enforcement</title>
+<style>
+  :root {
+    --rh-red: #EE0000;
+    --rh-red-dark: #A30000;
+    --rh-black: #151515;
+    --rh-gray-100: #F5F5F5;
+    --rh-gray-200: #E0E0E0;
+    --rh-gray-700: #4D4D4D;
+    --rh-success: #3E8635;
+    --rh-warn: #F0AB00;
+    --rh-info: #2B9AF3;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: "Red Hat Display", "Red Hat Text", -apple-system, BlinkMacSystemFont,
+            "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    color: var(--rh-black);
+    background: var(--rh-gray-100);
+    line-height: 1.45;
+  }
+  header.rh-header {
+    background: var(--rh-black);
+    color: #fff;
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 4px solid var(--rh-red);
+  }
+  header.rh-header .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 0.5px;
+    color: inherit;
+    text-decoration: none;
+  }
+  header.rh-header a.logo:hover { color: var(--rh-red); }
+  header.rh-header a.logo:focus-visible {
+    outline: 2px solid var(--rh-red);
+    outline-offset: 4px;
+    border-radius: 2px;
+  }
+  header.rh-header .title {
+    margin-left: auto;
+    font-size: 14px;
+    color: #cfcfcf;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px;
+  }
+  h1 { font-size: 28px; margin: 0 0 4px 0; }
+  h2 {
+    font-size: 16px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--rh-gray-700);
+    margin: 32px 0 12px 0;
+    border-bottom: 1px solid var(--rh-gray-200);
+    padding-bottom: 8px;
+  }
+  .subtitle { color: var(--rh-gray-700); margin: 0 0 24px 0; }
+  .panel {
+    background: #fff;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 4px;
+    padding: 20px;
+  }
+  .panel + .panel { margin-top: 16px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .row + .row { margin-top: 12px; }
+  label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--rh-gray-700);
+    display: block;
+    margin-bottom: 4px;
+  }
+  input[type="text"], input[type="url"], select, textarea {
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 8px 10px;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 3px;
+    background: #fff;
+    color: var(--rh-black);
+    flex: 1;
+    min-width: 280px;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: 2px solid var(--rh-red);
+    outline-offset: -1px;
+    border-color: var(--rh-red);
+  }
+  button {
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    padding: 8px 16px;
+    border: 1px solid var(--rh-red);
+    background: var(--rh-red);
+    color: #fff;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  button:hover { background: var(--rh-red-dark); border-color: var(--rh-red-dark); }
+  button.secondary {
+    background: #fff;
+    color: var(--rh-black);
+    border-color: var(--rh-gray-200);
+  }
+  button.secondary:hover { background: var(--rh-gray-100); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .log {
+    background: var(--rh-black);
+    color: #e8e8e8;
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 16px;
+    border-radius: 3px;
+    max-height: 480px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .log .entry { padding: 4px 0; border-bottom: 1px solid #2a2a2a; }
+  .log .entry:last-child { border-bottom: none; }
+  .log .ts { color: #6a6a6a; margin-right: 8px; }
+  .log .lvl { font-weight: 700; margin-right: 8px; }
+  .log .lvl.info    { color: var(--rh-info); }
+  .log .lvl.success { color: #6EC664; }
+  .log .lvl.warn    { color: var(--rh-warn); }
+  .log .lvl.error   { color: #F87171; }
+
+  .callout {
+    background: #FFF8E1;
+    border-left: 4px solid var(--rh-warn);
+    padding: 12px 16px;
+    font-size: 13px;
+    margin: 16px 0;
+  }
+  .callout strong { color: var(--rh-red-dark); }
+  .callout code {
+    font-family: var(--mono);
+    background: rgba(0,0,0,.06);
+    padding: 1px 4px;
+    border-radius: 2px;
+  }
+
+  pre.scenario {
+    background: var(--rh-gray-100);
+    border: 1px solid var(--rh-gray-200);
+    padding: 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    overflow-x: auto;
+    margin: 0;
+  }
+  pre.curl {
+    background: #1f1f1f;
+    color: #e8e8e8;
+    border: 1px solid #1f1f1f;
+    padding: 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    overflow-x: auto;
+    margin: 0;
+  }
+  .curl-block { position: relative; margin-top: 8px; }
+  .curl-block .copy {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 11px;
+    padding: 4px 8px;
+    background: #fff;
+    color: var(--rh-black);
+    border: 1px solid var(--rh-gray-200);
+  }
+  .curl-block .copy:hover { background: var(--rh-gray-100); border-color: var(--rh-red); }
+
+  table.matrix {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin-top: 12px;
+  }
+  table.matrix th, table.matrix td {
+    border: 1px solid var(--rh-gray-200);
+    padding: 8px 10px;
+    text-align: left;
+  }
+  table.matrix th {
+    background: var(--rh-gray-100);
+    font-weight: 600;
+    color: var(--rh-gray-700);
+  }
+  table.matrix .pass { color: var(--rh-success); font-weight: 700; }
+  table.matrix .fail { color: #C9190B; font-weight: 700; }
+
+  .card-title {
+    font-weight: 700;
+    font-size: 13px;
+    margin-bottom: 8px;
+    color: var(--rh-black);
+  }
+
+  footer {
+    max-width: 1100px;
+    margin: 32px auto;
+    padding: 0 32px;
+    color: var(--rh-gray-700);
+    font-size: 12px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header class="rh-header">
+  <a class="logo" href="/" aria-label="Back to test catalog">
+    <svg width="36" height="28" viewBox="0 0 36 28" xmlns="http://www.w3.org/2000/svg" aria-label="Red Hat">
+      <path fill="#EE0000" d="M26 14c2.5 0 5 .8 5 3 0 .8-.3 1.4-.7 2H5.7c-.4-.6-.7-1.2-.7-2 0-2.2 2.5-3 5-3 0-3 3-7 8-7 2 0 3 1 4 1 1.5 0 2-1 3.5-1 1 0 2 1 2 3 0 2-1 4-1.5 4z"/>
+      <rect x="3" y="20" width="30" height="4" rx="1" fill="#151515"/>
+    </svg>
+    RHCL Lab
+  </a>
+  <div class="title">REQ 051 + 056</div>
+</header>
+
+<main>
+  <h1>Gateway mTLS enforcement</h1>
+  <p class="subtitle">
+    Demonstrate that the RHCL Gateway requires mutual TLS, validating client
+    certificates against a <strong>single CA</strong> (REQ 056) and through a
+    <strong>certificate chain</strong> (REQ 051).
+  </p>
+
+  <h2>Scenario</h2>
+  <div class="panel">
+    <pre class="scenario">
+                       ┌──────────────────────────────────────────────────────┐
+                       │         Gateway: req051-mtls-gateway                 │
+                       │         (gatewayClassName: istio)                    │
+                       │                                                      │
+[ client ]             │  Listener: https-single-ca (REQ 056)                │
+    │                  │    hostname: req056-mtls.<domain>                    │
+    │  TLS handshake   │    EnvoyFilter: require_client_certificate=true      │
+    │  + client cert   │      trusted_ca: intermediate-ca                    │
+    ├────────────────► │                                                      │  ──► banking-api-v1
+    │                  │  Listener: https-chain-ca (REQ 051)                 │       (rhcl-apps)
+    │                  │    hostname: req051-mtls.<domain>                    │
+    │                  │    EnvoyFilter: require_client_certificate=true      │
+    │                  │      trusted_ca: root-ca                            │
+    │                  │                                                      │
+                       └──────────────────────────────────────────────────────┘
+                                         │
+                                         ▼
+                              x-forwarded-client-cert (XFCC)
+                              injected by Istio into backend request
+    </pre>
+    <div class="callout">
+      <strong>Browser limitation.</strong> Browsers cannot present arbitrary client
+      certificates from JavaScript. This page provides <code>curl</code> commands
+      to execute from a terminal. The browser-based fetch below will <strong>fail</strong>
+      (as expected) unless you import the client cert into your OS certificate store.
+    </div>
+  </div>
+
+  <h2>Controls</h2>
+  <div class="panel" id="controls">
+    <div class="row">
+      <div style="flex:1; min-width:280px;">
+        <label for="domainInput">Cluster zone root domain (RHCL_ZONE_ROOT_DOMAIN)</label>
+        <input id="domainInput" type="text" placeholder="e.g. sandbox2314.opentlc.com" />
+      </div>
+      <div style="align-self:flex-end;">
+        <button id="saveDomainBtn">Save</button>
+        <button class="secondary" id="clearLogButton">Clear log</button>
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px;">
+      <div style="flex:1; min-width:280px;">
+        <label>REQ 056 (single-CA) endpoint</label>
+        <input id="req056Url" type="url" readonly />
+      </div>
+      <div style="flex:1; min-width:280px;">
+        <label>REQ 051 (chain-CA) endpoint</label>
+        <input id="req051Url" type="url" readonly />
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px;">
+      <button id="fetchBtn056" disabled>Fetch REQ 056 (browser)</button>
+      <button id="fetchBtn051" disabled>Fetch REQ 051 (browser)</button>
+    </div>
+  </div>
+
+  <h2>Log</h2>
+  <div class="log" id="log" aria-live="polite"></div>
+
+  <h2>Validation matrix</h2>
+  <div class="panel">
+    <table class="matrix">
+      <thead>
+        <tr>
+          <th>Listener</th>
+          <th>Hostname</th>
+          <th>Trusted CA</th>
+          <th>Client cert</th>
+          <th>Expected</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>https-single-ca</td>
+          <td><code id="host056a">req056-mtls.*</code></td>
+          <td>Intermediate only</td>
+          <td>client-chain.crt (signed by Intermediate)</td>
+          <td class="pass">PASS</td>
+        </tr>
+        <tr>
+          <td>https-single-ca</td>
+          <td><code>req056-mtls.*</code></td>
+          <td>Intermediate only</td>
+          <td>client-direct.crt (signed by Root)</td>
+          <td class="fail">FAIL</td>
+        </tr>
+        <tr>
+          <td>https-single-ca</td>
+          <td><code>req056-mtls.*</code></td>
+          <td>Intermediate only</td>
+          <td>client-untrusted.crt</td>
+          <td class="fail">FAIL</td>
+        </tr>
+        <tr>
+          <td>https-single-ca</td>
+          <td><code>req056-mtls.*</code></td>
+          <td>Intermediate only</td>
+          <td>(no cert)</td>
+          <td class="fail">FAIL</td>
+        </tr>
+        <tr>
+          <td>https-chain-ca</td>
+          <td><code id="host051a">req051-mtls.*</code></td>
+          <td>Root only</td>
+          <td>client-chain-bundle.crt (Intermediate chain)</td>
+          <td class="pass">PASS</td>
+        </tr>
+        <tr>
+          <td>https-chain-ca</td>
+          <td><code>req051-mtls.*</code></td>
+          <td>Root only</td>
+          <td>client-direct.crt (signed by Root)</td>
+          <td class="pass">PASS</td>
+        </tr>
+        <tr>
+          <td>https-chain-ca</td>
+          <td><code>req051-mtls.*</code></td>
+          <td>Root only</td>
+          <td>client-untrusted.crt</td>
+          <td class="fail">FAIL</td>
+        </tr>
+        <tr>
+          <td>https-chain-ca</td>
+          <td><code>req051-mtls.*</code></td>
+          <td>Root only</td>
+          <td>(no cert)</td>
+          <td class="fail">FAIL</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Shell commands — REQ 056 (single-CA)</h2>
+  <div class="panel">
+    <div class="card-title">PASS — client cert signed by Intermediate</div>
+    <div class="curl-block">
+      <pre class="curl" id="curl056pass"></pre>
+      <button class="copy" data-target="curl056pass">Copy</button>
+    </div>
+
+    <div class="card-title" style="margin-top:16px;">FAIL — client cert signed by Root (not directly trusted)</div>
+    <div class="curl-block">
+      <pre class="curl" id="curl056failRoot"></pre>
+      <button class="copy" data-target="curl056failRoot">Copy</button>
+    </div>
+
+    <div class="card-title" style="margin-top:16px;">FAIL — untrusted CA</div>
+    <div class="curl-block">
+      <pre class="curl" id="curl056failUntrusted"></pre>
+      <button class="copy" data-target="curl056failUntrusted">Copy</button>
+    </div>
+
+    <div class="card-title" style="margin-top:16px;">FAIL — no client cert</div>
+    <div class="curl-block">
+      <pre class="curl" id="curl056failNone"></pre>
+      <button class="copy" data-target="curl056failNone">Copy</button>
+    </div>
+  </div>
+
+  <h2>Shell commands — REQ 051 (chain-CA)</h2>
+  <div class="panel">
+    <div class="card-title">PASS — client cert signed by Intermediate (full chain bundle)</div>
+    <div class="curl-block">
+      <pre class="curl" id="curl051passChain"></pre>
+      <button class="copy" data-target="curl051passChain">Copy</button>
+    </div>
+
+    <div class="card-title" style="margin-top:16px;">PASS — client cert signed directly by Root</div>
+    <div class="curl-block">
+      <pre class="curl" id="curl051passDirect"></pre>
+      <button class="copy" data-target="curl051passDirect">Copy</button>
+    </div>
+
+    <div class="card-title" style="margin-top:16px;">FAIL — untrusted CA</div>
+    <div class="curl-block">
+      <pre class="curl" id="curl051failUntrusted"></pre>
+      <button class="copy" data-target="curl051failUntrusted">Copy</button>
+    </div>
+
+    <div class="card-title" style="margin-top:16px;">FAIL — no client cert</div>
+    <div class="curl-block">
+      <pre class="curl" id="curl051failNone"></pre>
+      <button class="copy" data-target="curl051failNone">Copy</button>
+    </div>
+  </div>
+</main>
+
+<footer>
+  RHCL Lab — REQ 051 + 056 · Gateway mTLS enforcement (single-CA + chain-CA)
+</footer>
+
+<script>
+  const logEl = document.getElementById("log");
+  const domainInput = document.getElementById("domainInput");
+  const req056UrlInput = document.getElementById("req056Url");
+  const req051UrlInput = document.getElementById("req051Url");
+
+  function logLine(message, level = "info") {
+    const ts = new Date().toISOString().split("T")[1].replace("Z", "");
+    const entry = document.createElement("div");
+    entry.className = "entry";
+    entry.innerHTML =
+      `<span class="ts">${ts}</span>` +
+      `<span class="lvl ${level}">${level.toUpperCase()}</span>` +
+      escapeHtml(message);
+    logEl.appendChild(entry);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+  }
+
+  document.getElementById("clearLogButton").addEventListener("click", () => {
+    logEl.innerHTML = "";
+  });
+
+  // --- Domain persistence ---
+  const STORAGE_KEY = "rhcl.req051.domain";
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) {
+    domainInput.value = saved;
+    refreshAll();
+  }
+
+  // Try loading from env.json
+  fetch("/env.json").then(r => r.json()).then(env => {
+    if (env.rhclZoneRootDomain && !domainInput.value) {
+      domainInput.value = env.rhclZoneRootDomain;
+      refreshAll();
+      logLine(`Domain loaded from env.json: ${env.rhclZoneRootDomain}`, "info");
+    }
+  }).catch(() => {});
+
+  document.getElementById("saveDomainBtn").addEventListener("click", () => {
+    const v = domainInput.value.trim();
+    if (!v) {
+      localStorage.removeItem(STORAGE_KEY);
+      logLine("Domain cleared.", "warn");
+    } else {
+      localStorage.setItem(STORAGE_KEY, v);
+      logLine(`Domain saved: ${v}`, "success");
+    }
+    refreshAll();
+  });
+
+  function refreshAll() {
+    const domain = domainInput.value.trim();
+    const host056 = `req056-mtls.${domain || "DOMAIN"}`;
+    const host051 = `req051-mtls.${domain || "DOMAIN"}`;
+    const url056 = `https://${host056}/api/tls/info`;
+    const url051 = `https://${host051}/api/tls/info`;
+
+    req056UrlInput.value = url056;
+    req051UrlInput.value = url051;
+
+    document.getElementById("fetchBtn056").disabled = !domain;
+    document.getElementById("fetchBtn051").disabled = !domain;
+
+    const certs = "tests/req051/manifests/certs";
+
+    document.getElementById("curl056pass").textContent =
+`curl -v --cacert ${certs}/root-ca.crt \\
+  --cert ${certs}/client-chain.crt --key ${certs}/client-chain.key \\
+  https://${host056}/api/tls/info`;
+
+    document.getElementById("curl056failRoot").textContent =
+`# Expected: TLS alert (certificate not trusted by Intermediate CA)
+curl -v --cacert ${certs}/root-ca.crt \\
+  --cert ${certs}/client-direct.crt --key ${certs}/client-direct.key \\
+  https://${host056}/api/tls/info`;
+
+    document.getElementById("curl056failUntrusted").textContent =
+`# Expected: TLS alert (untrusted CA)
+curl -v --cacert ${certs}/root-ca.crt \\
+  --cert ${certs}/client-untrusted.crt --key ${certs}/client-untrusted.key \\
+  https://${host056}/api/tls/info`;
+
+    document.getElementById("curl056failNone").textContent =
+`# Expected: TLS alert (no client certificate)
+curl -v --cacert ${certs}/root-ca.crt \\
+  https://${host056}/api/tls/info`;
+
+    document.getElementById("curl051passChain").textContent =
+`curl -v --cacert ${certs}/root-ca.crt \\
+  --cert ${certs}/client-chain-bundle.crt --key ${certs}/client-chain.key \\
+  https://${host051}/api/tls/info`;
+
+    document.getElementById("curl051passDirect").textContent =
+`curl -v --cacert ${certs}/root-ca.crt \\
+  --cert ${certs}/client-direct.crt --key ${certs}/client-direct.key \\
+  https://${host051}/api/tls/info`;
+
+    document.getElementById("curl051failUntrusted").textContent =
+`# Expected: TLS alert (untrusted CA)
+curl -v --cacert ${certs}/root-ca.crt \\
+  --cert ${certs}/client-untrusted.crt --key ${certs}/client-untrusted.key \\
+  https://${host051}/api/tls/info`;
+
+    document.getElementById("curl051failNone").textContent =
+`# Expected: TLS alert (no client certificate)
+curl -v --cacert ${certs}/root-ca.crt \\
+  https://${host051}/api/tls/info`;
+  }
+
+  refreshAll();
+
+  // --- Copy buttons ---
+  document.querySelectorAll("button.copy").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.target;
+      const txt = document.getElementById(id)?.textContent || "";
+      try {
+        await navigator.clipboard.writeText(txt);
+        const old = btn.textContent;
+        btn.textContent = "Copied!";
+        setTimeout(() => (btn.textContent = old), 1200);
+      } catch {
+        logLine("Clipboard copy failed — select the text manually.", "warn");
+      }
+    });
+  });
+
+  // --- Browser fetch (will fail without client cert in browser) ---
+  async function doFetch(url, label) {
+    if (!url || url.includes("DOMAIN")) {
+      logLine("Set the domain first.", "warn");
+      return;
+    }
+    logLine(`[${label}] GET ${url}`, "info");
+    const t0 = performance.now();
+    try {
+      const res = await fetch(url, {
+        method: "GET",
+        headers: { "Accept": "application/json" },
+        mode: "cors",
+        cache: "no-store",
+      });
+      const ms = Math.round(performance.now() - t0);
+      const body = await res.text();
+      const preview = body.length > 400 ? body.slice(0, 400) + "…" : body;
+      logLine(`[${label}] ${res.status} ${res.statusText} (${ms} ms)`, res.ok ? "success" : "warn");
+      logLine(`[${label}] Body: ${preview}`, "info");
+
+      if (res.ok) {
+        try {
+          const json = JSON.parse(body);
+          if (json.xForwardedClientCert) {
+            logLine(`[${label}] XFCC: ${json.xForwardedClientCert}`, "success");
+          }
+        } catch {}
+      }
+    } catch (err) {
+      const ms = Math.round(performance.now() - t0);
+      logLine(`[${label}] FAILED after ${ms} ms: ${err.name}: ${err.message}`, "error");
+      logLine(`[${label}] This is expected — browsers cannot present client certs via fetch().`, "warn");
+    }
+  }
+
+  document.getElementById("fetchBtn056").addEventListener("click", () => {
+    doFetch(req056UrlInput.value, "REQ056");
+  });
+  document.getElementById("fetchBtn051").addEventListener("click", () => {
+    doFetch(req051UrlInput.value, "REQ051");
+  });
+
+  logLine("Page loaded. Set your cluster domain and use the curl commands below to test mTLS.", "info");
+</script>
+</body>
+</html>

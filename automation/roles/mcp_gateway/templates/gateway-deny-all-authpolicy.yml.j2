@@ -1,0 +1,17 @@
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: {{ mcp_gateway_gateway_deny_all_policy_name }}
+  namespace: {{ mcp_gateway_gateway_namespace }}
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: {{ mcp_gateway_gateway_name }}
+  defaults:
+    rules:
+      authorization:
+        deny-all:
+          opa:
+            rego: |
+              allow = false

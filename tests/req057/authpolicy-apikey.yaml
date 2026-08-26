@@ -1,0 +1,21 @@
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: banking-api-route-apikey
+  namespace: req057
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: banking-api-route
+  rules:
+    authentication:
+      api-key-auth:
+        apiKey:
+          selector:
+            matchLabels:
+              authorino.kuadrant.io/managed-by: authorino
+              app: banking-api-apikey
+        credentials:
+          customHeader:
+            name: api-key

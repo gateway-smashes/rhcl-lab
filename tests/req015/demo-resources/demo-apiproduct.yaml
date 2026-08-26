@@ -1,0 +1,31 @@
+apiVersion: devportal.kuadrant.io/v1alpha1
+kind: APIProduct
+metadata:
+  name: demo-api-product
+  namespace: item-15-api
+  labels:
+    app.kubernetes.io/part-of: connectivity-link-rbac-demo
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: demo-api-route
+  displayName: Demo API
+  description: |
+    A demonstration API for showcasing Connectivity Link RBAC features.
+    This API provides sample endpoints for testing authentication,
+    rate limiting, and access control policies.
+  version: v1
+  approvalMode: manual
+  publishStatus: Published
+  tags:
+  - demo
+  - connectivity-link
+  - rbac
+  contact:
+    team: Platform Team
+    email: platform@example.com
+    slack: "#platform-support"
+  documentation:
+    docsURL: https://docs.example.com/demo-api
+    openAPISpecURL: https://api.example.com/openapi.yaml

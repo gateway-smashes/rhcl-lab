@@ -1,0 +1,9 @@
+---
+- name: Check whether kustomize is available on the control host
+  ansible.builtin.command:
+    argv:
+      - "{{ coredns_kustomize_binary }}"
+      - version
+  register: coredns_kustomize_check
+  changed_when: false
+  failed_when: coredns_kustomize_check.rc != 0

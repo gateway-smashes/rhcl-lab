@@ -1,0 +1,309 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: rhcl-ai-consumer-access-logs
+  namespace: rhcl-grafana
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+    rhcl.redhat.com/requirement: req040
+spec:
+  resyncPeriod: 5m
+  instanceSelector:
+    matchLabels:
+      dashboards: rhcl
+  json: >
+    {
+      "id": null,
+      "uid": "rhcl-ai-consumer-logs",
+      "title": "RHCL AI Consumer Access Logs",
+      "description": "Req 40 — per-consumer AI traffic from RHCL gateway RHCL_ACCESS log lines (x-consumer-id) shipped to Loki via Alloy. Complements the Limitador Prometheus dashboard (authorized_hits has no consumer label).",
+      "tags": ["rhcl", "ai", "tokens", "req040", "loki", "consumer", "gateway"],
+      "timezone": "browser",
+      "editable": true,
+      "graphTooltip": 1,
+      "refresh": "30s",
+      "time": { "from": "now-1h", "to": "now" },
+      "schemaVersion": 38,
+      "version": 2,
+      "templating": {
+        "list": [
+          {
+            "current": { "selected": true, "text": "All", "value": "$__all" },
+            "datasource": { "type": "loki", "uid": "rhcl-loki" },
+            "definition": "topk(50, sum by (consumer) (count_over_time({job=\"rhcl-gateway\"} |= \"RHCL_ACCESS\" | regexp `consumer=(?P<consumer>[^ ]+)` | consumer != \"-\" [6h])))",
+            "hide": 0,
+            "includeAll": true,
+            "allValue": ".*",
+            "multi": true,
+            "name": "consumer",
+            "label": "Consumer (x-consumer-id)",
+            "query": "topk(50, sum by (consumer) (count_over_time({job=\"rhcl-gateway\"} |= \"RHCL_ACCESS\" | regexp `consumer=(?P<consumer>[^ ]+)` | consumer != \"-\" [6h])))",
+            "refresh": 2,
+            "sort": 1,
+            "type": "query"
+          },
+          {
+            "current": { "selected": true, "text": "/api/v1/chat/completions", "value": "/api/v1/chat/completions" },
+            "hide": 0,
+            "includeAll": false,
+            "multi": false,
+            "name": "ai_path",
+            "label": "AI path filter",
+            "options": [
+              { "selected": true, "text": "/api/v1/chat/completions", "value": "/api/v1/chat/completions" },
+              { "selected": false, "text": "All OpenAI paths", "value": "/api/v1/(chat/completions|embeddings|responses|completions).*" }
+            ],
+            "query": "/api/v1/chat/completions,/api/v1/(chat/completions|embeddings|responses|completions).*",
+            "type": "custom"
+          }
+        ]
+      },
+      "panels": [
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+          "id": 1,
+          "title": "AI calls by consumer (gateway access log)",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "rhcl-loki" },
+          "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 } },
+          "gridPos": { "h": 5, "w": 5, "x": 0, "y": 1 },
+          "id": 2,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "title": "AI calls in range",
+          "description": "Count of gateway access-log lines for the selected AI path(s) and consumer filter.",
+          "type": "stat",
+          "targets": [
+            {
+              "expr": "sum(count_over_time({job=\"rhcl-gateway\"} |= \"RHCL_ACCESS\" | regexp `consumer=(?P<consumer>[^ ]+)` | regexp `path=(?P<path>[^ ]+)` | consumer=~\"$consumer\" | path=~\"$ai_path\" | consumer != \"-\" [$__range]))",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "datasource": { "type": "loki", "uid": "rhcl-loki" },
+          "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } } },
+          "gridPos": { "h": 5, "w": 5, "x": 5, "y": 1 },
+          "id": 3,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "title": "Rate-limited calls (HTTP 429)",
+          "description": "Gateway access-log lines with status=429 for the selected AI path(s).",
+          "type": "stat",
+          "targets": [
+            {
+              "expr": "sum(count_over_time({job=\"rhcl-gateway\"} |= \"RHCL_ACCESS\" | regexp `consumer=(?P<consumer>[^ ]+)` | regexp `path=(?P<path>[^ ]+)` | regexp `status=(?P<status>[^ ]+)` | consumer=~\"$consumer\" | path=~\"$ai_path\" | status=\"429\" [$__range]))",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "datasource": { "type": "loki", "uid": "rhcl-loki" },
+          "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 } },
+          "gridPos": { "h": 5, "w": 4, "x": 10, "y": 1 },
+          "id": 4,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "title": "Distinct consumers",
+          "description": "Number of unique x-consumer-id values seen in the window.",
+          "type": "stat",
+          "targets": [
+            {
+              "expr": "count(sum by (consumer) (count_over_time({job=\"rhcl-gateway\"} |= \"RHCL_ACCESS\" | regexp `consumer=(?P<consumer>[^ ]+)` | regexp `path=(?P<path>[^ ]+)` | consumer=~\"$consumer\" | path=~\"$ai_path\" | consumer != \"-\" [$__range])))",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "datasource": { "type": "loki", "uid": "rhcl-loki" },
+          "fieldConfig": { "defaults": { "unit": "ms", "decimals": 0 } },
+          "gridPos": { "h": 5, "w": 5, "x": 14, "y": 1 },
+          "id": 5,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["mean"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "title": "Avg gateway duration",
+          "description": "Mean duration_ms from the Envoy access log for AI paths.",
+          "type": "stat",
+          "targets": [
+            {
+              "expr": "avg(avg_over_time({job=\"rhcl-gateway\"} |= \"RHCL_ACCESS\" | regexp `consumer=(?P<consumer>[^ ]+)` | regexp `path=(?P<path>[^ ]+)` | regexp `duration_ms=(?P<duration_ms>[^ ]+)` | consumer=~\"$consumer\" | path=~\"$ai_path\" | unwrap duration_ms [$__range]))",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "datasource": { "type": "loki", "uid": "rhcl-loki" },
+          "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "fixed", "fixedColor": "purple" } } },
+          "gridPos": { "h": 5, "w": 5, "x": 19, "y": 1 },
+          "id": 11,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "title": "AI tokens in range",
+          "description": "Sum of tokens= extracted at the gateway from response body usage.total_tokens (Lua filter, dynamic metadata rhcl.ai/total_tokens).",
+          "type": "stat",
+          "targets": [
+            {
+              "expr": "sum(sum_over_time({job=\"rhcl-gateway\"} |= \"RHCL_ACCESS\" | regexp `consumer=(?P<consumer>[^ ]+)` | regexp `path=(?P<path>[^ ]+)` | regexp `tokens=(?P<tokens>[^ ]+)` | consumer=~\"$consumer\" | path=~\"$ai_path\" | consumer != \"-\" | tokens != \"-\" | unwrap tokens [$__range]))",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "datasource": { "type": "loki", "uid": "rhcl-loki" },
+          "fieldConfig": {
+            "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 15, "showPoints": "never" }, "unit": "short" }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+          "id": 6,
+          "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "title": "AI calls / minute by consumer",
+          "description": "Per-consumer call rate derived from gateway access logs.",
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "sum by (consumer) (rate({job=\"rhcl-gateway\"} |= \"RHCL_ACCESS\" | regexp `consumer=(?P<consumer>[^ ]+)` | regexp `path=(?P<path>[^ ]+)` | consumer=~\"$consumer\" | path=~\"$ai_path\" | consumer != \"-\" [5m])) * 60",
+              "legendFormat": "{{consumer}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "datasource": { "type": "loki", "uid": "rhcl-loki" },
+          "fieldConfig": {
+            "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 15, "showPoints": "never" }, "unit": "short" }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+          "id": 7,
+          "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "title": "HTTP 429 / minute by consumer",
+          "description": "Rate-limited AI calls per consumer (Limitador budget exceeded).",
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "sum by (consumer) (rate({job=\"rhcl-gateway\"} |= \"RHCL_ACCESS\" | regexp `consumer=(?P<consumer>[^ ]+)` | regexp `path=(?P<path>[^ ]+)` | regexp `status=(?P<status>[^ ]+)` | consumer=~\"$consumer\" | path=~\"$ai_path\" | status=\"429\" [5m])) * 60",
+              "legendFormat": "{{consumer}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "datasource": { "type": "loki", "uid": "rhcl-loki" },
+          "fieldConfig": {
+            "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 15, "showPoints": "never" }, "unit": "short" }
+          },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 14 },
+          "id": 12,
+          "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "title": "AI tokens / minute by consumer",
+          "description": "Per-consumer token consumption rate. Tokens are parsed from the response body (usage.total_tokens) by the gateway Lua filter — no backend instrumentation.",
+          "type": "timeseries",
+          "targets": [
+            {
+              "expr": "sum by (consumer) (rate({job=\"rhcl-gateway\"} |= \"RHCL_ACCESS\" | regexp `consumer=(?P<consumer>[^ ]+)` | regexp `path=(?P<path>[^ ]+)` | regexp `tokens=(?P<tokens>[^ ]+)` | consumer=~\"$consumer\" | path=~\"$ai_path\" | consumer != \"-\" | tokens != \"-\" | unwrap tokens [5m])) * 60",
+              "legendFormat": "{{consumer}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "datasource": { "type": "loki", "uid": "rhcl-loki" },
+          "fieldConfig": { "defaults": {} },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 22 },
+          "id": 8,
+          "options": { "showHeader": true, "sortBy": [{ "displayName": "Calls", "desc": true }] },
+          "title": "Top consumers by AI calls",
+          "description": "Breakdown by x-consumer-id for the selected AI path filter.",
+          "type": "table",
+          "transformations": [
+            { "id": "merge" },
+            { "id": "organize", "options": { "renameByName": { "consumer": "Consumer", "Value #A": "Calls", "Value #B": "429", "Value #C": "Avg duration (ms)", "Value #D": "Tokens" } } }
+          ],
+          "targets": [
+            {
+              "expr": "topk(20, sum by (consumer) (count_over_time({job=\"rhcl-gateway\"} |= \"RHCL_ACCESS\" | regexp `consumer=(?P<consumer>[^ ]+)` | regexp `path=(?P<path>[^ ]+)` | consumer=~\"$consumer\" | path=~\"$ai_path\" | consumer != \"-\" [$__range])))",
+              "refId": "A",
+              "instant": true
+            },
+            {
+              "expr": "sum by (consumer) (count_over_time({job=\"rhcl-gateway\"} |= \"RHCL_ACCESS\" | regexp `consumer=(?P<consumer>[^ ]+)` | regexp `path=(?P<path>[^ ]+)` | regexp `status=(?P<status>[^ ]+)` | consumer=~\"$consumer\" | path=~\"$ai_path\" | status=\"429\" [$__range]))",
+              "refId": "B",
+              "instant": true
+            },
+            {
+              "expr": "avg by (consumer) (avg_over_time({job=\"rhcl-gateway\"} |= \"RHCL_ACCESS\" | regexp `consumer=(?P<consumer>[^ ]+)` | regexp `path=(?P<path>[^ ]+)` | regexp `duration_ms=(?P<duration_ms>[^ ]+)` | consumer=~\"$consumer\" | path=~\"$ai_path\" | consumer != \"-\" | unwrap duration_ms [$__range]))",
+              "refId": "C",
+              "instant": true
+            },
+            {
+              "expr": "sum by (consumer) (sum_over_time({job=\"rhcl-gateway\"} |= \"RHCL_ACCESS\" | regexp `consumer=(?P<consumer>[^ ]+)` | regexp `path=(?P<path>[^ ]+)` | regexp `tokens=(?P<tokens>[^ ]+)` | consumer=~\"$consumer\" | path=~\"$ai_path\" | consumer != \"-\" | tokens != \"-\" | unwrap tokens [$__range]))",
+              "refId": "D",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 },
+          "id": 9,
+          "title": "Raw access log stream",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "rhcl-loki" },
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 30 },
+          "id": 10,
+          "options": {
+            "dedupStrategy": "none",
+            "enableLogDetails": true,
+            "prettifyLogMessage": true,
+            "showCommonLabels": false,
+            "showLabels": true,
+            "showTime": true,
+            "sortOrder": "Descending",
+            "wrapLogMessage": true
+          },
+          "title": "Gateway AI access logs",
+          "description": "Live tail of JSON access-log lines from rhcl-apps-gateway istio-proxy.",
+          "type": "logs",
+          "targets": [
+            {
+              "expr": "{job=\"rhcl-gateway\"} |= \"RHCL_ACCESS\" | regexp `consumer=(?P<consumer>[^ ]+)` | regexp `path=(?P<path>[^ ]+)` | consumer=~\"$consumer\" | path=~\"$ai_path\" | consumer != \"-\"",
+              "refId": "A"
+            }
+          ]
+        }
+      ]
+    }

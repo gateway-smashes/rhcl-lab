@@ -1,0 +1,37 @@
+# id	status	note
+req001	not-started	
+req003	done	
+req004	done	
+req005	done	
+req007	done	
+req008	in-progress	ACM hub console — add screenshots under req008/manifests/screenshots/
+req009	done	
+req013	done	
+req014	done	
+req015	done	
+req016	done
+req017	done
+req019	done
+req022	done	
+req023	done	
+req025	done	
+req027	done (documentation)
+req030	done	ext_authz + RequestMirror on dedicated gateway (req030-extauthz.* / req030-mirror.*)
+req031	done	
+req032	done	
+req033	done	
+req038	done	trace propagation backend→backend via ledger-api (PoC Console: aba Trace Propagation; GET /api/test/propagate)
+req040	done	
+req041	done	
+req046	done	
+req047	done	
+req050	done	OCSP stapling + CRL revocation on mTLS gateway (EnvoyFilter DownstreamTlsContext)
+req055	done
+req057	done	
+req058	done	
+req059	done	
+req060	done	
+req061-65-RateLimit	done	
+req067	done	
+req071	done	
+req072	done	

@@ -1,0 +1,311 @@
+<!--
+  RHCL Lab — base template for test pages.
+
+  How to use:
+    1. Copy this file into tests/reqXXX/index.html
+    2. Replace blocks marked with: <!-- TEMPLATE: ... -->
+    3. Add your controls inside #controls and your custom JS at the bottom
+    4. Use logLine(text, level) to append to the on-screen log
+       levels: "info" | "success" | "error" | "warn"
+
+  Section order (do NOT change):
+    Scenario  ->  Controls  ->  Log  ->  any extra sections (results,
+    matrices, YAML snippets, shell commands, etc.)
+
+    The Log panel must sit IMMEDIATELY after Controls so that running a
+    test and reading its output happen on the same fold of the page,
+    without scrolling past unrelated content. Add new sections AFTER the
+    Log block, never between Controls and Log.
+
+  Cores Red Hat:
+    --rh-red:   #EE0000
+    --rh-black: #151515
+    --rh-gray:  #F0F0F0
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<!-- TEMPLATE: page title -->
+<title>RHCL Lab — Test Template</title>
+<style>
+  :root {
+    --rh-red: #EE0000;
+    --rh-red-dark: #A30000;
+    --rh-black: #151515;
+    --rh-gray-100: #F5F5F5;
+    --rh-gray-200: #E0E0E0;
+    --rh-gray-700: #4D4D4D;
+    --rh-success: #3E8635;
+    --rh-warn: #F0AB00;
+    --rh-info: #2B9AF3;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: "Red Hat Display", "Red Hat Text", -apple-system, BlinkMacSystemFont,
+            "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    color: var(--rh-black);
+    background: var(--rh-gray-100);
+    line-height: 1.45;
+  }
+  header.rh-header {
+    background: var(--rh-black);
+    color: #fff;
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 4px solid var(--rh-red);
+  }
+  header.rh-header .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 0.5px;
+    color: inherit;
+    text-decoration: none;
+  }
+  header.rh-header a.logo:hover { color: var(--rh-red); }
+  header.rh-header a.logo:focus-visible {
+    outline: 2px solid var(--rh-red);
+    outline-offset: 4px;
+    border-radius: 2px;
+  }
+  header.rh-header .logo svg { display: block; }
+  header.rh-header .title {
+    margin-left: auto;
+    font-size: 14px;
+    color: #cfcfcf;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px;
+  }
+  h1 {
+    font-size: 28px;
+    margin: 0 0 4px 0;
+    color: var(--rh-black);
+  }
+  h2 {
+    font-size: 16px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--rh-gray-700);
+    margin: 32px 0 12px 0;
+    border-bottom: 1px solid var(--rh-gray-200);
+    padding-bottom: 8px;
+  }
+  .subtitle {
+    color: var(--rh-gray-700);
+    margin: 0 0 24px 0;
+  }
+  .panel {
+    background: #fff;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 4px;
+    padding: 20px;
+  }
+  .panel + .panel { margin-top: 16px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .row + .row { margin-top: 12px; }
+  label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--rh-gray-700);
+    display: block;
+    margin-bottom: 4px;
+  }
+  input[type="text"], input[type="url"], select, textarea {
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 8px 10px;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 3px;
+    background: #fff;
+    color: var(--rh-black);
+    flex: 1;
+    min-width: 280px;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: 2px solid var(--rh-red);
+    outline-offset: -1px;
+    border-color: var(--rh-red);
+  }
+  button {
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    padding: 8px 16px;
+    border: 1px solid var(--rh-red);
+    background: var(--rh-red);
+    color: #fff;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  button:hover { background: var(--rh-red-dark); border-color: var(--rh-red-dark); }
+  button.secondary {
+    background: #fff;
+    color: var(--rh-black);
+    border-color: var(--rh-gray-200);
+  }
+  button.secondary:hover { background: var(--rh-gray-100); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .log {
+    background: var(--rh-black);
+    color: #e8e8e8;
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 16px;
+    border-radius: 3px;
+    max-height: 480px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .log .entry { padding: 4px 0; border-bottom: 1px solid #2a2a2a; }
+  .log .entry:last-child { border-bottom: none; }
+  .log .ts { color: #6a6a6a; margin-right: 8px; }
+  .log .lvl { font-weight: 700; margin-right: 8px; }
+  .log .lvl.info    { color: var(--rh-info); }
+  .log .lvl.success { color: #6EC664; }
+  .log .lvl.warn    { color: var(--rh-warn); }
+  .log .lvl.error   { color: #F87171; }
+
+  .callout {
+    background: #FFF8E1;
+    border-left: 4px solid var(--rh-warn);
+    padding: 12px 16px;
+    font-size: 13px;
+    color: var(--rh-black);
+    margin: 16px 0;
+  }
+  .callout strong { color: var(--rh-red-dark); }
+
+  pre.scenario {
+    background: var(--rh-gray-100);
+    border: 1px solid var(--rh-gray-200);
+    padding: 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    overflow-x: auto;
+    color: var(--rh-black);
+  }
+
+  footer {
+    max-width: 1100px;
+    margin: 32px auto;
+    padding: 0 32px;
+    color: var(--rh-gray-700);
+    font-size: 12px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header class="rh-header">
+  <a class="logo" href="/" aria-label="Voltar para o catálogo de testes">
+    <!--
+      Red Hat fedora mark (simplified inline SVG).
+      Replace with the official asset if you have one available locally.
+    -->
+    <svg width="36" height="28" viewBox="0 0 36 28" xmlns="http://www.w3.org/2000/svg" aria-label="Red Hat">
+      <path fill="#EE0000" d="M26 14c2.5 0 5 .8 5 3 0 .8-.3 1.4-.7 2H5.7c-.4-.6-.7-1.2-.7-2 0-2.2 2.5-3 5-3 0-3 3-7 8-7 2 0 3 1 4 1 1.5 0 2-1 3.5-1 1 0 2 1 2 3 0 2-1 4-1.5 4z"/>
+      <rect x="3" y="20" width="30" height="4" rx="1" fill="#151515"/>
+    </svg>
+    RHCL Lab
+  </a>
+  <!-- TEMPLATE: short label shown in the header (e.g. "REQ 14") -->
+  <div class="title">REQ XX</div>
+</header>
+
+<main>
+  <!-- TEMPLATE: page heading -->
+  <h1>Test name goes here</h1>
+  <p class="subtitle">
+    <!-- TEMPLATE: one-line summary -->
+    Short description of what this test is exercising.
+  </p>
+
+  <h2>Scenario</h2>
+  <div class="panel">
+    <!-- TEMPLATE: replace with your scenario / ASCII diagram / objective -->
+    <pre class="scenario">
++----------------+      +----------------+
+|   Frontend     | ---> |   Backend      |
++----------------+      +----------------+
+    </pre>
+  </div>
+
+  <h2>Controls</h2>
+  <div class="panel" id="controls">
+    <!-- TEMPLATE: put inputs, selects, buttons here -->
+    <div class="row">
+      <div style="flex:1; min-width:280px;">
+        <label for="exampleInput">Example input</label>
+        <input id="exampleInput" type="text" placeholder="Type something" />
+      </div>
+      <div style="align-self:flex-end;">
+        <button id="exampleButton">Run</button>
+        <button class="secondary" id="clearLogButton">Clear log</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Log MUST stay right after Controls. Add any extra sections below it. -->
+  <h2>Log</h2>
+  <div class="log" id="log" aria-live="polite"></div>
+</main>
+
+<footer>
+  RHCL Lab — Red Hat Connectivity Link proof-of-concept
+</footer>
+
+<script>
+  // ---- Log helpers (kept generic, reuse across tests) -----------------------
+  const logEl = document.getElementById("log");
+
+  function logLine(message, level = "info") {
+    const ts = new Date().toISOString().split("T")[1].replace("Z", "");
+    const entry = document.createElement("div");
+    entry.className = "entry";
+    entry.innerHTML =
+      `<span class="ts">${ts}</span>` +
+      `<span class="lvl ${level}">${level.toUpperCase()}</span>` +
+      escapeHtml(message);
+    logEl.appendChild(entry);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+  }
+
+  function clearLog() {
+    logEl.innerHTML = "";
+  }
+
+  document.getElementById("clearLogButton")?.addEventListener("click", clearLog);
+
+  // ---- TEMPLATE: your custom logic here -------------------------------------
+  document.getElementById("exampleButton")?.addEventListener("click", () => {
+    const value = document.getElementById("exampleInput").value;
+    logLine(`Example clicked with: ${value || "(empty)"}`, "info");
+  });
+</script>
+</body>
+</html>

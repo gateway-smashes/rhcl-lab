@@ -1,0 +1,138 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+# 10. Remove UIPlugin
+- name: Remove UIPlugin distributed-tracing
+  kubernetes.core.k8s:
+    api_version: observability.openshift.io/v1alpha1
+    kind: UIPlugin
+    name: "{{ observability_uiplugin_name }}"
+    state: absent
+  ignore_errors: true
+
+# 9. Remove observability from Kuadrant CR
+- name: Remove observability from Kuadrant CR
+  kubernetes.core.k8s_json_patch:
+    api_version: kuadrant.io/v1beta1
+    kind: Kuadrant
+    namespace: "{{ observability_kuadrant_namespace }}"
+    name: "{{ observability_kuadrant_instance }}"
+    patch:
+      - op: remove
+        path: /spec/observability
+  ignore_errors: true
+
+# 7. Remove EnvoyFilter
+- name: Remove EnvoyFilter otel-tracing
+  kubernetes.core.k8s:
+    api_version: networking.istio.io/v1alpha3
+    kind: EnvoyFilter
+    namespace: "{{ observability_envoyfilter_namespace }}"
+    name: otel-tracing
+    state: absent
+  ignore_errors: true
+
+# 7a. Remove Istio Telemetry CR for gateway tracing
+- name: Remove Istio Telemetry CR for gateway tracing
+  kubernetes.core.k8s:
+    api_version: telemetry.istio.io/v1
+    kind: Telemetry
+    namespace: "{{ observability_tracing_telemetry_namespace }}"
+    name: "{{ observability_tracing_telemetry_name }}"
+    state: absent
+  ignore_errors: true
+
+# 7b. Remove EnvoyFilter audit access log (req066)
+- name: Remove EnvoyFilter access-log-json
+  kubernetes.core.k8s:
+    api_version: networking.istio.io/v1alpha3
+    kind: EnvoyFilter
+    namespace: "{{ observability_envoyfilter_namespace }}"
+    name: access-log-json
+    state: absent
+  ignore_errors: true
+
+# 7c. Remove EnvoyFilter OTLP access logs (req035)
+- name: Remove EnvoyFilter otel-access-logs
+  kubernetes.core.k8s:
+    api_version: networking.istio.io/v1alpha3
+    kind: EnvoyFilter
+    namespace: "{{ observability_envoyfilter_namespace }}"
+    name: otel-access-logs
+    state: absent
+  ignore_errors: true
+
+# 6. Remove OpenTelemetryCollector
+- name: Remove OpenTelemetryCollector
+  kubernetes.core.k8s:
+    api_version: opentelemetry.io/v1beta1
+    kind: OpenTelemetryCollector
+    namespace: "{{ observability_collector_namespace }}"
+    name: "{{ observability_collector_name }}"
+    state: absent
+    wait: true
+    wait_timeout: 120
+  ignore_errors: true
+
+# 5. Remove RBAC
+- name: Remove ClusterRoleBinding tempostack-traces-write
+  kubernetes.core.k8s:
+    api_version: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    name: tempostack-traces-write
+    state: absent
+  ignore_errors: true
+
+- name: Remove ClusterRole tempostack-traces-write
+  kubernetes.core.k8s:
+    api_version: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    name: tempostack-traces-write
+    state: absent
+  ignore_errors: true
+
+- name: Remove ClusterRoleBinding otel-collector-k8s
+  kubernetes.core.k8s:
+    api_version: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    name: otel-collector-k8s
+    state: absent
+  ignore_errors: true
+
+- name: Remove ClusterRole otel-collector-k8s
+  kubernetes.core.k8s:
+    api_version: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    name: otel-collector-k8s
+    state: absent
+  ignore_errors: true
+
+# 4. Remove TempoStack
+- name: Remove TempoStack
+  kubernetes.core.k8s:
+    api_version: tempo.grafana.com/v1alpha1
+    kind: TempoStack
+    namespace: "{{ observability_tempostack_namespace }}"
+    name: "{{ observability_tempostack_name }}"
+    state: absent
+    wait: true
+    wait_timeout: 300
+  ignore_errors: true
+
+# 3–1. Remove namespaces (cascading delete of all resources inside)
+- name: Remove observability namespaces
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ item }}"
+    state: absent
+    wait: true
+    wait_timeout: 300
+  loop:
+    - "{{ observability_collector_namespace }}"
+    - "{{ observability_tempostack_namespace }}"
+    - "{{ observability_minio_namespace }}"
+  ignore_errors: true

@@ -1,0 +1,72 @@
+# Runtime config for the custom RHCL Console plugin.
+#
+# The plugin reads this via `usePluginConfig()`
+# (console-plugin/src/utils/pluginConfig.ts) using
+# `useK8sWatchResource`, so a `oc edit configmap` to flip pricing or
+# point at a different Grafana takes effect without a Console reload.
+#
+# Every key is OPTIONAL. Empty values are filtered out below so the
+# plugin only sees keys that have a real override — defaults inside the
+# plugin still apply for anything we omit.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ custom_console_config_configmap_name }}
+  namespace: {{ custom_console_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+{% set entries = {} %}
+{# The three link URLs come from install.yml's *_resolved facts: either the
+   operator's explicit override or one derived from the cluster apps domain.
+   Empty ⇒ the plugin hides the corresponding sidebar item rather than
+   rendering a dead link. #}
+{% if custom_console_developer_portal_url_resolved | default('') | length > 0 %}
+{%   set _ = entries.update({'developerPortalUrl': custom_console_developer_portal_url_resolved}) %}
+{% endif %}
+{% if custom_console_internal_developer_hub_url_resolved | default('') | length > 0 %}
+{%   set _ = entries.update({'internalDeveloperHubUrl': custom_console_internal_developer_hub_url_resolved}) %}
+{% endif %}
+{% if custom_console_dns_prober_url_resolved | default('') | length > 0 %}
+{%   set _ = entries.update({'dnsProberUrl': custom_console_dns_prober_url_resolved}) %}
+{% endif %}
+{% if custom_console_grafana_namespace | length > 0 %}
+{%   set _ = entries.update({'grafanaNamespace': custom_console_grafana_namespace}) %}
+{% endif %}
+{% if custom_console_grafana_route_name | length > 0 %}
+{%   set _ = entries.update({'grafanaRouteName': custom_console_grafana_route_name}) %}
+{% endif %}
+{% if custom_console_grafana_dashboard_prefix | length > 0 %}
+{%   set _ = entries.update({'grafanaDashboardPrefix': custom_console_grafana_dashboard_prefix}) %}
+{% endif %}
+{% if custom_console_tempo_namespace | length > 0 %}
+{%   set _ = entries.update({'tempoNamespace': custom_console_tempo_namespace}) %}
+{% endif %}
+{% if custom_console_tempo_gateway_route_name | length > 0 %}
+{%   set _ = entries.update({'tempoGatewayRouteName': custom_console_tempo_gateway_route_name}) %}
+{% endif %}
+{% if custom_console_tempo_stack_name | length > 0 %}
+{%   set _ = entries.update({'tempoStackName': custom_console_tempo_stack_name}) %}
+{% endif %}
+{# req018 — Cost Monitoring. Currency is always a string; pricing is
+   JSON-serialised so the plugin can parse it without us choosing a
+   schema in YAML (ConfigMap data values are strings either way). #}
+{% if apps_cost_currency is defined and apps_cost_currency | length > 0 %}
+{%   set _ = entries.update({'costCurrency': apps_cost_currency}) %}
+{% endif %}
+{% if apps_cost_pricing is defined and apps_cost_pricing | length > 0 %}
+{%   set _ = entries.update({'costPricing': apps_cost_pricing | to_json}) %}
+{% endif %}
+{# Monthly cap behind the "Budget Usage" KPI + end-of-month projection.
+   Omitted ⇒ the plugin hides the budget card entirely. #}
+{% if apps_cost_budget is defined and apps_cost_budget | string | length > 0 %}
+{%   set _ = entries.update({'costBudget': apps_cost_budget}) %}
+{% endif %}
+data:
+{% if entries | length == 0 %}
+  # Intentionally empty — every field is optional, plugin defaults apply.
+  _placeholder: ""
+{% else %}
+{% for key, value in entries.items() %}
+  {{ key }}: {{ value | string | to_json }}
+{% endfor %}
+{% endif %}

@@ -1,0 +1,18 @@
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: {{ apps_connectivity_frontend_auth_policy_name }}
+  namespace: {{ apps_namespace }}
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: {{ apps_connectivity_frontend_route_name }}
+  defaults:
+    strategy: atomic
+    rules:
+      authorization:
+        deny-all:
+          opa:
+            rego: |
+              allow = true

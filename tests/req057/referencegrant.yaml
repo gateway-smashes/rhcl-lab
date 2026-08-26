@@ -1,0 +1,13 @@
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: req057-to-rhcl-apps
+  namespace: rhcl-apps
+spec:
+  from:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    namespace: req057
+  to:
+  - group: ""
+    kind: Service

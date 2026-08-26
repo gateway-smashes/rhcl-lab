@@ -1,0 +1,81 @@
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: KeycloakRealmImport
+metadata:
+  name: rhcl-grafana-realm
+  namespace: ${KEYCLOAK_NAMESPACE}
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+    rhcl.redhat.com/requirement: req041
+spec:
+  keycloakCRName: rhcl
+  realm:
+    realm: rhcl-grafana
+    enabled: true
+    displayName: "RHCL Grafana SSO"
+    sslRequired: external
+    accessTokenLifespan: 300
+    roles:
+      realm:
+        - name: grafana-admin
+          description: "Grafana administrator — full access"
+        - name: grafana-editor
+          description: "Grafana editor — create and edit dashboards"
+        - name: grafana-viewer
+          description: "Grafana viewer — read-only access"
+    clients:
+      - clientId: grafana
+        name: "Grafana (RHCL PoC)"
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        secret: grafana-oidc-secret
+        standardFlowEnabled: true
+        directAccessGrantsEnabled: true
+        serviceAccountsEnabled: false
+        fullScopeAllowed: true
+        rootUrl: "https://${GRAFANA_HOSTNAME}"
+        baseUrl: "/"
+        redirectUris: ["https://${GRAFANA_HOSTNAME}/*"]
+        webOrigins: ["https://${GRAFANA_HOSTNAME}"]
+        protocolMappers:
+          - name: realm-roles
+            protocol: openid-connect
+            protocolMapper: oidc-usermodel-realm-role-mapper
+            config:
+              claim.name: realm_access.roles
+              multivalued: "true"
+              id.token.claim: "true"
+              access.token.claim: "true"
+              userinfo.token.claim: "true"
+          - name: audience-grafana
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            config:
+              included.client.audience: grafana
+              id.token.claim: "false"
+              access.token.claim: "true"
+    users:
+      - username: grafana-admin
+        enabled: true
+        emailVerified: true
+        email: grafana-admin@example.com
+        firstName: Grafana
+        lastName: Admin
+        credentials:
+          - type: password
+            value: admin123
+            temporary: false
+        realmRoles:
+          - grafana-admin
+      - username: grafana-viewer
+        enabled: true
+        emailVerified: true
+        email: grafana-viewer@example.com
+        firstName: Grafana
+        lastName: Viewer
+        credentials:
+          - type: password
+            value: viewer123
+            temporary: false
+        realmRoles:
+          - grafana-viewer

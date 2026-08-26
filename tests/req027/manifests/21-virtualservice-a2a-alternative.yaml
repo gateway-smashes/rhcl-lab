@@ -1,0 +1,33 @@
+# REQ 027 — Alternative egress routing with a classic Istio VirtualService.
+#
+# Use this instead of 20-httproute-a2a.yaml when the Istio/RHCL version does not
+# support Gateway API backendRefs to an external (ServiceEntry) host. The
+# VirtualService approach to route a gateway to a ServiceEntry host is the most
+# broadly supported path in Istio.
+#
+# Requires the same ServiceEntry (00-) and DestinationRule (10-). The gateway
+# name below must match the Istio Gateway object exposed by RHCL.
+#
+# Apply:
+#   export RHCL_ZONE_ROOT_DOMAIN=apps.cluster1.poc.rhcl.com.br
+#   export A2A_AGENT_HOST=my-agent.example.azurewebsites.net
+#   envsubst < tests/req027/manifests/21-virtualservice-a2a-alternative.yaml | oc apply -f -
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: a2a-external-agent
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-a2a-poc
+    rhcl.poc/item: "27"
+spec:
+  hosts:
+    - "a2a.${RHCL_ZONE_ROOT_DOMAIN}"
+  gateways:
+    - openshift-ingress/rhcl-apps-gateway
+  http:
+    - route:
+        - destination:
+            host: "${A2A_AGENT_HOST}"
+            port:
+              number: 443

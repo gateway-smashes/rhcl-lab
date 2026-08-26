@@ -1,0 +1,29 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Remove the CoreDNS DNSPolicy
+  kubernetes.core.k8s:
+    api_version: kuadrant.io/v1
+    kind: DNSPolicy
+    namespace: "{{ coredns_dns_policy_target_gateway_namespace }}"
+    name: "{{ coredns_dns_policy_name }}"
+    state: absent
+
+- name: Remove the CoreDNS provider Secret
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Secret
+    namespace: "{{ coredns_dns_namespace }}"
+    name: "{{ coredns_dns_secret_name }}"
+    state: absent
+
+- name: Remove the external kuadrant-coredns LoadBalancer Service
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Service
+    namespace: "{{ coredns_dns_source_namespace }}"
+    name: "{{ coredns_dns_external_service_name }}"
+    state: absent

@@ -1,0 +1,10 @@
+---
+- name: Remove the RHCL tests catalog
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  roles:
+    - role: tests_catalog
+      vars:
+        tests_catalog_action: remove

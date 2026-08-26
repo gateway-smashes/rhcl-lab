@@ -1,0 +1,46 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Assert Keycloak is Ready
+  kubernetes.core.k8s_info:
+    api_version: k8s.keycloak.org/v2alpha1
+    kind: Keycloak
+    namespace: "{{ rhbk_namespace }}"
+    name: "{{ rhbk_keycloak_name }}"
+  register: rhbk_keycloak
+  changed_when: false
+
+- name: Fail when Keycloak is not Ready
+  ansible.builtin.assert:
+    that:
+      - rhbk_keycloak.resources | length == 1
+      - >-
+        rhbk_keycloak.resources[0].status.conditions | default([])
+        | selectattr('type', 'equalto', 'Ready')
+        | selectattr('status', 'equalto', 'True') | list | length >= 1
+    fail_msg: "Keycloak '{{ rhbk_keycloak_name }}' is not Ready."
+
+- name: Fetch a token via password grant (proves issuer + realm + client + user)
+  ansible.builtin.uri:
+    url: "https://{{ rhbk_hostname }}/realms/{{ rhbk_realm }}/protocol/openid-connect/token"
+    method: POST
+    body_format: form-urlencoded
+    body:
+      grant_type: password
+      client_id: "{{ rhbk_client_id }}"
+      client_secret: "{{ rhbk_client_secret }}"
+      username: "{{ rhbk_users[0].username }}"
+      password: "{{ rhbk_users[0].password }}"
+    status_code: 200
+    return_content: true
+  register: rhbk_token
+  changed_when: false
+
+- name: Report token acquisition
+  ansible.builtin.debug:
+    msg: >-
+      OIDC token acquired for user '{{ rhbk_users[0].username }}' from
+      https://{{ rhbk_hostname }}/realms/{{ rhbk_realm }} (token_type={{ rhbk_token.json.token_type }}).

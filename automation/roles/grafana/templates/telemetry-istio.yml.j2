@@ -1,0 +1,62 @@
+# Istio Telemetry CR — enable request_url_path, x-consumer-id, and
+# route_name as metric labels on the Gateway proxy. These labels power
+# the per-endpoint, per-consumer, and per-HTTPRoute panels in the RHCL
+# Grafana dashboards.
+#
+# CARDINALITY NOTE: request_url_path adds one label value per distinct URL
+# path. If APIs contain unbounded path segments (UUIDs, numeric IDs),
+# consider normalizing paths via EnvoyFilter or restricting this Telemetry
+# to specific namespaces.
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata:
+  name: {{ grafana_telemetry_name }}
+  namespace: {{ grafana_telemetry_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+spec:
+  # Without targetRefs, a Telemetry CR with `selector: {}` (the default)
+  # applies only to sidecar-injected workloads in the same namespace. The
+  # OpenShift Gateway API gateway is a *standalone* Envoy proxy (no
+  # sidecar webhook), so istiod silently skips it and the `istio.stats`
+  # Wasm filter never receives the tagOverrides — `istio_requests_total`
+  # ends up missing all three custom labels and the dashboards go blank.
+  # Targeting the Gateway resource explicitly via Gateway API targetRefs
+  # forces istiod to apply the metrics customization to the gateway
+  # listeners. Discovered the hard way on r46jf — see Kuadrant#2049.
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ apps_connectivity_gateway_name }}
+  metrics:
+    - providers:
+        - name: prometheus
+      overrides:
+        - match:
+            metric: REQUEST_COUNT
+            mode: CLIENT_AND_SERVER
+          tagOverrides:
+            request_url_path:
+              value: "request.url_path"
+            request_headers_x_consumer_id:
+              # When the request didn't pass through Authorino (AuthPolicy
+              # rules with `anonymous: {}` like the AI-mock endpoints),
+              # Istio emits the literal "<nil>" string for this label.
+              # The Wasm stats filter only accepts simple attribute access
+              # expressions — CEL fallback operators (`|`, ternary,
+              # `has()`) are silently rejected and the label drops. So
+              # the rename to "anonymous" happens via `label_replace` in
+              # the dashboard queries, not here.
+              value: "request.headers['x-consumer-id']"
+            route_name:
+              value: "xds.route_name"
+        - match:
+            metric: REQUEST_DURATION
+            mode: CLIENT_AND_SERVER
+          tagOverrides:
+            request_url_path:
+              value: "request.url_path"
+            request_headers_x_consumer_id:
+              value: "request.headers['x-consumer-id']"
+            route_name:
+              value: "xds.route_name"

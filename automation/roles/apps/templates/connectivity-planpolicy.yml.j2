@@ -1,0 +1,24 @@
+apiVersion: extensions.kuadrant.io/v1alpha1
+kind: PlanPolicy
+metadata:
+  name: {{ apps_connectivity_planpolicy_name }}
+  namespace: {{ apps_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-banking-poc
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: {{ apps_connectivity_route_name }}
+  plans:
+{% for plan in apps_connectivity_plans %}
+    - tier: {{ plan.tier }}
+      predicate: |
+        has(auth.identity) && auth.identity.metadata.annotations["secret.kuadrant.io/plan-id"] == "{{ plan.tier }}"
+{% if not (plan.unlimited | default(false) | bool) %}
+      limits:
+        custom:
+          - limit: {{ plan.limit }}
+            window: {{ plan.window | string | to_json }}
+{% endif %}
+{% endfor %}

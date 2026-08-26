@@ -1,0 +1,14 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Remove the cert-manager namespace and all operator resources inside it
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ cert_manager_namespace }}"
+    state: absent
+    wait: true
+    wait_timeout: 600

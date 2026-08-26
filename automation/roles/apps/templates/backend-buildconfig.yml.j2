@@ -1,0 +1,17 @@
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: {{ apps_backend_image_name }}
+  namespace: {{ apps_namespace }}
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: {{ apps_backend_image_name }}:latest
+  source:
+    binary: {}
+    type: Binary
+  strategy:
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+    type: Docker

@@ -1,0 +1,17 @@
+# MCP Gateway extension: attaches broker to dedicated Gateway listener `mcp` (port 8080).
+apiVersion: mcp.kuadrant.io/v1alpha1
+kind: MCPGatewayExtension
+metadata:
+  name: mcp-gateway
+  namespace: mcp-gateway
+  labels:
+    rhcl-lab/requirement: req059-mcp-operator
+spec:
+  privateHost: rhcl-mcp-gateway-istio.mcp-gateway.svc.cluster.local:8080
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: rhcl-mcp-gateway
+    namespace: mcp-gateway
+    sectionName: mcp
+  httpRouteManagement: Disabled

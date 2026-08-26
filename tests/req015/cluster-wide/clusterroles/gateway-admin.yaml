@@ -1,0 +1,29 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: connectivity-link-gateway-admin
+  labels:
+    kuadrant.io/role: gateway-admin
+    app.kubernetes.io/part-of: connectivity-link-rbac
+rules:
+# Gateway API - Full CRUD for infrastructure resources
+- apiGroups: ["gateway.networking.k8s.io"]
+  resources: ["gateways", "gatewayclasses", "referencegrants"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["gateway.networking.k8s.io"]
+  resources: ["gateways/status", "gatewayclasses/status"]
+  verbs: ["get", "update"]
+# HTTPRoutes - Read-only for visibility
+- apiGroups: ["gateway.networking.k8s.io"]
+  resources: ["httproutes"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["gateway.networking.k8s.io"]
+  resources: ["httproutes/status"]
+  verbs: ["get"]
+# Kuadrant Infrastructure Policies - TLS and DNS
+- apiGroups: ["kuadrant.io"]
+  resources: ["tlspolicies", "dnspolicies"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["kuadrant.io"]
+  resources: ["tlspolicies/status", "dnspolicies/status"]
+  verbs: ["get"]

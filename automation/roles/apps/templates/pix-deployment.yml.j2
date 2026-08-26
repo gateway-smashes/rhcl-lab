@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ apps_pix_deployment_name }}
+  namespace: {{ apps_namespace }}
+  labels:
+    app: {{ apps_pix_deployment_name }}
+    app.kubernetes.io/part-of: rhcl-banking-poc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ apps_pix_deployment_name }}
+  template:
+    metadata:
+      labels:
+        app: {{ apps_pix_deployment_name }}
+    spec:
+      containers:
+        - name: {{ apps_pix_deployment_name }}
+          image: {{ apps_pix_image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: {{ apps_pix_deployment_name }}-config
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits:   { cpu: 200m, memory: 128Mi }

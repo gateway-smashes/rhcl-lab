@@ -1,0 +1,15 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: red-bank-frontend
+  labels:
+    app: red-bank-frontend
+spec:
+  to:
+    kind: Service
+    name: red-bank-frontend
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Allow

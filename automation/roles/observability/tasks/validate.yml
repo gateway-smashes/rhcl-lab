@@ -1,0 +1,179 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Check Tempo Operator CSV
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ observability_tempo_namespace }}"
+    name: "{{ observability_tempo_subscription_name }}"
+  register: observability_val_tempo_sub
+  changed_when: false
+
+- name: Assert Tempo Operator is installed
+  ansible.builtin.assert:
+    that:
+      - observability_val_tempo_sub.resources | length == 1
+      - observability_val_tempo_sub.resources[0].status.currentCSV is defined
+    fail_msg: "Tempo Operator subscription not found or has no current CSV."
+
+- name: Check OTel Operator CSV
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ observability_otel_namespace }}"
+    name: "{{ observability_otel_subscription_name }}"
+  register: observability_val_otel_sub
+  changed_when: false
+
+- name: Assert OTel Operator is installed
+  ansible.builtin.assert:
+    that:
+      - observability_val_otel_sub.resources | length == 1
+      - observability_val_otel_sub.resources[0].status.currentCSV is defined
+    fail_msg: "OpenTelemetry Operator subscription not found or has no current CSV."
+
+- name: Check COO Operator CSV
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ observability_coo_namespace }}"
+    name: "{{ observability_coo_subscription_name }}"
+  register: observability_val_coo_sub
+  changed_when: false
+
+- name: Assert COO Operator is installed
+  ansible.builtin.assert:
+    that:
+      - observability_val_coo_sub.resources | length == 1
+      - observability_val_coo_sub.resources[0].status.currentCSV is defined
+    fail_msg: "Cluster Observability Operator subscription not found or has no current CSV."
+
+- name: Check TempoStack readiness
+  kubernetes.core.k8s_info:
+    api_version: tempo.grafana.com/v1alpha1
+    kind: TempoStack
+    namespace: "{{ observability_tempostack_namespace }}"
+    name: "{{ observability_tempostack_name }}"
+  register: observability_val_tempostack
+  changed_when: false
+
+- name: Assert TempoStack is Ready
+  ansible.builtin.assert:
+    that:
+      - observability_val_tempostack.resources | length == 1
+      - >-
+        observability_val_tempostack.resources[0].status.conditions | default([])
+        | selectattr('type', 'equalto', 'Ready')
+        | selectattr('status', 'equalto', 'True')
+        | list | length >= 1
+    fail_msg: "TempoStack {{ observability_tempostack_name }} is not Ready."
+
+- name: Check OTel Collector deployment
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ observability_collector_namespace }}"
+    name: "{{ observability_collector_name }}-collector"
+  register: observability_val_collector
+  changed_when: false
+
+- name: Assert OTel Collector is running
+  ansible.builtin.assert:
+    that:
+      - observability_val_collector.resources | length == 1
+      - (observability_val_collector.resources[0].status.availableReplicas | default(0)) >= 1
+    fail_msg: "OTel Collector {{ observability_collector_name }} is not available."
+
+- name: Check EnvoyFilter exists
+  kubernetes.core.k8s_info:
+    api_version: networking.istio.io/v1alpha3
+    kind: EnvoyFilter
+    namespace: "{{ observability_envoyfilter_namespace }}"
+    name: otel-tracing
+  register: observability_val_envoyfilter
+  changed_when: false
+
+- name: Assert EnvoyFilter otel-tracing exists
+  ansible.builtin.assert:
+    that:
+      - observability_val_envoyfilter.resources | length == 1
+    fail_msg: "EnvoyFilter otel-tracing not found in {{ observability_envoyfilter_namespace }}."
+
+- name: Check Istio Telemetry CR for gateway tracing exists
+  kubernetes.core.k8s_info:
+    api_version: telemetry.istio.io/v1
+    kind: Telemetry
+    namespace: "{{ observability_tracing_telemetry_namespace }}"
+    name: "{{ observability_tracing_telemetry_name }}"
+  register: observability_val_tracing_telemetry
+  changed_when: false
+
+- name: Assert Istio Telemetry CR for tracing exists with the OTel provider
+  ansible.builtin.assert:
+    that:
+      - observability_val_tracing_telemetry.resources | length == 1
+      - >-
+        observability_val_tracing_telemetry.resources[0].spec.tracing | default([])
+        | map(attribute='providers') | flatten
+        | selectattr('name', 'equalto', observability_tracing_telemetry_provider)
+        | list | length >= 1
+    fail_msg: >-
+      Telemetry {{ observability_tracing_telemetry_name }} not found in
+      {{ observability_tracing_telemetry_namespace }} or does not select provider
+      {{ observability_tracing_telemetry_provider }}.
+
+- name: Check EnvoyFilter access-log-json exists
+  kubernetes.core.k8s_info:
+    api_version: networking.istio.io/v1alpha3
+    kind: EnvoyFilter
+    namespace: "{{ observability_envoyfilter_namespace }}"
+    name: access-log-json
+  register: observability_val_audit_log
+  changed_when: false
+  when: observability_audit_log_enabled
+
+- name: Assert EnvoyFilter access-log-json exists
+  ansible.builtin.assert:
+    that:
+      - observability_val_audit_log.resources | length == 1
+    fail_msg: "EnvoyFilter access-log-json not found in {{ observability_envoyfilter_namespace }}."
+  when: observability_audit_log_enabled
+
+- name: Check Kuadrant observability config
+  kubernetes.core.k8s_info:
+    api_version: kuadrant.io/v1beta1
+    kind: Kuadrant
+    namespace: "{{ observability_kuadrant_namespace }}"
+    name: "{{ observability_kuadrant_instance }}"
+  register: observability_val_kuadrant
+  changed_when: false
+
+- name: Assert Kuadrant has observability enabled
+  ansible.builtin.assert:
+    that:
+      - observability_val_kuadrant.resources | length == 1
+      - observability_val_kuadrant.resources[0].spec.observability is defined
+      - observability_val_kuadrant.resources[0].spec.observability.enable | default(false) | bool
+    fail_msg: "Kuadrant CR does not have observability enabled."
+
+- name: Check UIPlugin exists
+  kubernetes.core.k8s_info:
+    api_version: observability.openshift.io/v1alpha1
+    kind: UIPlugin
+    name: "{{ observability_uiplugin_name }}"
+  register: observability_val_uiplugin
+  changed_when: false
+
+- name: Assert UIPlugin distributed-tracing exists
+  ansible.builtin.assert:
+    that:
+      - observability_val_uiplugin.resources | length == 1
+    fail_msg: "UIPlugin {{ observability_uiplugin_name }} not found."
+
+- name: Observability validation passed
+  ansible.builtin.debug:
+    msg: "All observability components are healthy (Tempo Operator, OTel Operator, COO, TempoStack, Collector, EnvoyFilter, Telemetry tracing CR, Kuadrant observability, UIPlugin)."

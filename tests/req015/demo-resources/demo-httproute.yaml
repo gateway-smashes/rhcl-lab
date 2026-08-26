@@ -1,0 +1,31 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: demo-api-route
+  namespace: item-15-api
+  labels:
+    app: demo-api
+    app.kubernetes.io/part-of: connectivity-link-rbac-demo
+spec:
+  parentRefs:
+  - name: demo-gateway
+    namespace: item-15-gateway
+  hostnames:
+  - "api.demo.example.com"
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: "/api/v1"
+    - method: GET
+    - method: POST
+    backendRefs:
+    - name: demo-api-service
+      port: 8080
+  - matches:
+    - path:
+        type: Exact
+        value: "/health"
+    backendRefs:
+    - name: demo-api-service
+      port: 8080

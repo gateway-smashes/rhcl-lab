@@ -1,0 +1,64 @@
+# Getting started — Passo 4/6: AuthPolicy
+#
+# Aplica autenticação por API key na HTTPRoute banking-lite. Sem essa
+# policy, a API fica ABERTA — qualquer request no path chega no
+# backend. Depois de aplicar, o Authorino intercepta cada request e
+# exige o header `api-key: <valor>`; sem o header (ou com valor
+# desconhecido) → 401.
+#
+# selector.matchLabels: o Authorino descobre as chaves válidas
+# procurando Secrets com esse par de labels em qualquer namespace
+# (`allNamespaces: true` mais abaixo). Isso desacopla "quem cria a
+# chave" (owner do produto, dev portal) de "onde a política é
+# declarada".
+#
+# response.success.filters.plan-id: propaga o tier do consumer pro
+# request como o header `x-consumer-plan`. É como a PlanPolicy do
+# passo 3 sabe qual limite aplicar (dá match no predicate CEL).
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: banking-lite-apikey
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-getting-started
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: banking-lite
+  rules:
+    authentication:
+      # OPTIONS (preflight CORS) precisa passar anônimo — senão o
+      # browser da mobile-bank nem consegue mandar a request real.
+      cors-preflight:
+        when:
+          - predicate: "request.method == 'OPTIONS'"
+        anonymous: {}
+      # A regra principal: aceita chave via header `api-key`.
+      api-key-header:
+        when:
+          - predicate: "request.method != 'OPTIONS'"
+        apiKey:
+          allNamespaces: true
+          selector:
+            matchLabels:
+              authorino.kuadrant.io/managed-by: authorino
+              app: banking-lite-apikey
+        credentials:
+          customHeader:
+            name: api-key
+    # Propaga metadados pra fluxo do request — o consumer-id vira
+    # header pra Prometheus rotular métricas por consumer, e o plan-id
+    # vira o "gatilho" que a PlanPolicy usa pra escolher rate limit.
+    response:
+      success:
+        filters:
+          consumer-id:
+            plain:
+              value:
+                selector: auth.identity.metadata.name
+          plan-id:
+            plain:
+              value:
+                selector: auth.identity.metadata.annotations.secret\.kuadrant\.io/plan-id

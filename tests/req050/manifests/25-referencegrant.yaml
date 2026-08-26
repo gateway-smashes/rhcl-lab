@@ -1,0 +1,19 @@
+# ReferenceGrant allowing HTTPRoutes in req050-gateway namespace to target
+# Services in rhcl-apps (where banking-api-v1 lives).
+#
+# This resource must be created in the TARGET namespace (rhcl-apps).
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: req050-revocation-to-backend
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-req050-revocation
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: req050-gateway
+  to:
+    - group: ""
+      kind: Service

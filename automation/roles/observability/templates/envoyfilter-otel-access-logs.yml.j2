@@ -1,0 +1,83 @@
+{# req035 — EnvoyFilter that streams gateway access logs (errors only) via
+   OTLP/gRPC to the OTel Collector. Mirrors the pattern of the tracing
+   EnvoyFilter that ships alongside, so the data plane learns about both
+   filters from the same xDS push.
+
+   Why an EnvoyFilter and not a Telemetry CR: Sail Operator in RHCL 1.3
+   silently drops patches on `meshConfig.extensionProviders` (the
+   prerequisite to a Telemetry-CR-based pipeline), so we go one layer
+   lower. See tests/req035/README.md for the long-form explanation.
+#}
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: otel-access-logs
+  namespace: {{ observability_envoyfilter_namespace }}
+spec:
+  workloadSelector:
+    labels:
+      gateway.networking.k8s.io/gateway-name: {{ observability_envoyfilter_gateway_name }}
+  configPatches:
+    - applyTo: NETWORK_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+      patch:
+        operation: MERGE
+        value:
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+            access_log:
+              - name: envoy.access_loggers.open_telemetry
+                # Only emit access logs for responses ≥ 400. Default
+                # threshold can be overridden at runtime via the
+                # `rhcl.access_log.min_status` runtime key — useful for
+                # capturing 100% of traffic during a triage session
+                # without re-deploying.
+                filter:
+                  status_code_filter:
+                    comparison:
+                      op: GE
+                      value:
+                        default_value: {{ observability_access_logs_min_status | int }}
+                        runtime_key: rhcl.access_log.min_status
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.access_loggers.open_telemetry.v3.OpenTelemetryAccessLogConfig
+                  common_config:
+                    log_name: rhcl-gateway-access
+                    transport_api_version: V3
+                    grpc_service:
+                      envoy_grpc:
+                        # Reuses the outbound cluster that xDS provisions
+                        # for the tracing EnvoyFilter — same endpoint,
+                        # same port, no new mesh route.
+                        cluster_name: outbound|4317||{{ observability_collector_name }}-collector.{{ observability_collector_namespace }}.svc.cluster.local
+                      timeout: 0.250s
+                  # One-line summary as the OTLP log body.
+                  body:
+                    string_value: "%REQ(:METHOD)% %REQ(:PATH)% %RESPONSE_CODE% flags=%RESPONSE_FLAGS% duration_ms=%DURATION% upstream=%UPSTREAM_HOST%"
+                  attributes:
+                    values:
+                      - { key: http.method,           value: { string_value: "%REQ(:METHOD)%" } }
+                      - { key: http.path,             value: { string_value: "%REQ(:PATH)%" } }
+                      - { key: http.host,             value: { string_value: "%REQ(:AUTHORITY)%" } }
+                      - { key: response_code,         value: { string_value: "%RESPONSE_CODE%" } }
+                      - { key: response.flags,        value: { string_value: "%RESPONSE_FLAGS%" } }
+                      - { key: duration.ms,           value: { string_value: "%DURATION%" } }
+                      - { key: upstream.host,         value: { string_value: "%UPSTREAM_HOST%" } }
+                      - { key: upstream.cluster,      value: { string_value: "%UPSTREAM_CLUSTER%" } }
+                      - { key: bytes.received,        value: { string_value: "%BYTES_RECEIVED%" } }
+                      - { key: bytes.sent,            value: { string_value: "%BYTES_SENT%" } }
+                      # Correlation IDs — match the values the tracing
+                      # filter emits, so log ↔ trace join is by trace_id.
+                      - { key: request.id,            value: { string_value: "%REQ(X-REQUEST-ID)%" } }
+                      - { key: request.flow_trace_id, value: { string_value: "%REQ(X-FLOW-TRACE-ID)%" } }
+                      # Consumer identity (Authorino x-consumer-id) and
+                      # denial reason. Both empty for anonymous paths /
+                      # successful flows.
+                      - { key: consumer.id,           value: { string_value: "%REQ(X-CONSUMER-ID)%" } }
+                      - { key: user.agent,            value: { string_value: "%REQ(USER-AGENT)%" } }
+                      - { key: auth.reason,           value: { string_value: "%RESP(X-EXT-AUTH-REASON)%" } }

@@ -1,0 +1,90 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Read existing cluster-monitoring-config ConfigMap
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: ConfigMap
+    namespace: "{{ monitoring_namespace }}"
+    name: "{{ monitoring_config_name }}"
+  register: monitoring_existing_cm
+  changed_when: false
+
+- name: Parse existing cluster-monitoring-config payload (or default to empty)
+  ansible.builtin.set_fact:
+    monitoring_existing_config: >-
+      {{
+        ((monitoring_existing_cm.resources[0].data['config.yaml'] | default('') | from_yaml) | default({}, true))
+        if (monitoring_existing_cm.resources | length) == 1
+        else {}
+      }}
+
+- name: Build merged cluster-monitoring-config payload
+  ansible.builtin.set_fact:
+    monitoring_merged_config: >-
+      {{
+        monitoring_existing_config
+        | combine({'enableUserWorkload': monitoring_enable_user_workload | bool})
+      }}
+
+- name: Apply cluster-monitoring-config ConfigMap (preserving unrelated keys)
+  kubernetes.core.k8s:
+    state: present
+    apply: true
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: "{{ monitoring_config_name }}"
+        namespace: "{{ monitoring_namespace }}"
+      data: >-
+        {{
+          (monitoring_existing_cm.resources[0].data | default({}))
+          | combine({'config.yaml': monitoring_merged_config | to_nice_yaml(indent=2)})
+        }}
+
+- name: Wait for the user-workload-monitoring namespace to be created by the operator
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Namespace
+    name: "{{ monitoring_user_workload_namespace }}"
+  register: monitoring_uwm_ns
+  changed_when: false
+  until:
+    - monitoring_uwm_ns.resources | length == 1
+  retries: 60
+  delay: 5
+  when: monitoring_enable_user_workload | bool
+
+- name: Wait for the prometheus-user-workload StatefulSet to be Ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: StatefulSet
+    namespace: "{{ monitoring_user_workload_namespace }}"
+    name: prometheus-user-workload
+  register: monitoring_uwm_sts
+  changed_when: false
+  until:
+    - monitoring_uwm_sts.resources | length == 1
+    - (monitoring_uwm_sts.resources[0].status.readyReplicas | default(0)) | int >= 1
+  retries: 60
+  delay: 10
+  when: monitoring_enable_user_workload | bool
+
+- name: Wait for the thanos-ruler-user-workload StatefulSet to be Ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: StatefulSet
+    namespace: "{{ monitoring_user_workload_namespace }}"
+    name: thanos-ruler-user-workload
+  register: monitoring_uwm_thanos
+  changed_when: false
+  until:
+    - monitoring_uwm_thanos.resources | length == 1
+    - (monitoring_uwm_thanos.resources[0].status.readyReplicas | default(0)) | int >= 1
+  retries: 60
+  delay: 10
+  when: monitoring_enable_user_workload | bool

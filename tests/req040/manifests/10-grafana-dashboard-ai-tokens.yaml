@@ -1,0 +1,197 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: rhcl-ai-token-usage
+  namespace: rhcl-grafana
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+    rhcl.redhat.com/requirement: req040
+spec:
+  resyncPeriod: 5m
+  instanceSelector:
+    matchLabels:
+      dashboards: rhcl
+  json: >
+    {
+      "id": null,
+      "uid": "rhcl-ai-token-usage",
+      "title": "RHCL AI Token Usage",
+      "description": "Req 40 - AI token usage and call counts sourced from Kuadrant Limitador (authorized_hits / authorized_calls / limited_calls), driven by the TokenRateLimitPolicy on HTTPRoute banking-api-connectivity. No backend Micrometer counters involved.",
+      "tags": ["rhcl", "ai", "tokens", "req040", "kuadrant", "limitador"],
+      "timezone": "browser",
+      "editable": true,
+      "graphTooltip": 1,
+      "refresh": "30s",
+      "time": { "from": "now-1h", "to": "now" },
+      "schemaVersion": 38,
+      "version": 2,
+      "templating": {
+        "list": [
+          {
+            "current": {},
+            "hide": 0,
+            "includeAll": false,
+            "multi": false,
+            "name": "datasource",
+            "options": [],
+            "query": "prometheus",
+            "refresh": 1,
+            "type": "datasource"
+          },
+          {
+            "current": {},
+            "datasource": { "type": "prometheus", "uid": "${datasource}" },
+            "definition": "label_values(authorized_hits, limitador_namespace)",
+            "hide": 0,
+            "includeAll": true,
+            "allValue": ".*",
+            "multi": true,
+            "name": "limitador_namespace",
+            "label": "Limitador namespace / route",
+            "query": { "query": "label_values(authorized_hits, limitador_namespace)", "refId": "limitador_namespace" },
+            "refresh": 2,
+            "sort": 1,
+            "type": "query"
+          }
+        ]
+      },
+      "panels": [
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+          "id": 1,
+          "title": "Tokens authorized via Kuadrant Limitador",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 } },
+          "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
+          "id": 2,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "title": "Tokens authorized in range",
+          "description": "Sum of authorized tokens counted by TokenRateLimitPolicy in the selected window (RHCL Limitador `authorized_hits`).",
+          "type": "stat",
+          "targets": [
+            { "expr": "sum(increase(authorized_hits{limitador_namespace=~\"$limitador_namespace\"}[$__range]))", "refId": "A" }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 } },
+          "gridPos": { "h": 5, "w": 6, "x": 6, "y": 1 },
+          "id": 3,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "title": "Calls authorized in range",
+          "description": "Sum of authorized API calls counted by RateLimitPolicy/TokenRateLimitPolicy (Limitador `authorized_calls`).",
+          "type": "stat",
+          "targets": [
+            { "expr": "sum(increase(authorized_calls{limitador_namespace=~\"$limitador_namespace\"}[$__range]))", "refId": "A" }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": { "defaults": { "unit": "short", "decimals": 1 } },
+          "gridPos": { "h": 5, "w": 6, "x": 12, "y": 1 },
+          "id": 4,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "title": "Avg tokens / authorized call",
+          "description": "authorized_hits divided by authorized_calls in the selected window.",
+          "type": "stat",
+          "targets": [
+            { "expr": "sum(increase(authorized_hits{limitador_namespace=~\"$limitador_namespace\"}[$__range])) / clamp_min(sum(increase(authorized_calls{limitador_namespace=~\"$limitador_namespace\"}[$__range])), 1)", "refId": "A" }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } } },
+          "gridPos": { "h": 5, "w": 6, "x": 18, "y": 1 },
+          "id": 5,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "title": "Calls rate-limited in range (HTTP 429)",
+          "description": "Sum of `limited_calls` increments while the window is active.",
+          "type": "stat",
+          "targets": [
+            { "expr": "sum(increase(limited_calls{limitador_namespace=~\"$limitador_namespace\"}[$__range]))", "refId": "A" }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 15, "showPoints": "never" }, "unit": "short" }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+          "id": 6,
+          "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "title": "Token rate (tokens / minute)",
+          "description": "Per-minute rate of authorized tokens via TokenRateLimitPolicy.",
+          "type": "timeseries",
+          "targets": [
+            { "expr": "sum by (limitador_namespace)(rate(authorized_hits{limitador_namespace=~\"$limitador_namespace\"}[5m])) * 60", "legendFormat": "{{limitador_namespace}}", "refId": "A" }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": {
+            "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 15, "showPoints": "never" }, "unit": "short" }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+          "id": 7,
+          "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "title": "Authorized vs limited calls (calls / minute)",
+          "description": "Authorized calls (green) and rate-limited calls (red) per minute.",
+          "type": "timeseries",
+          "targets": [
+            { "expr": "sum by (limitador_namespace)(rate(authorized_calls{limitador_namespace=~\"$limitador_namespace\"}[5m])) * 60", "legendFormat": "authorized {{limitador_namespace}}", "refId": "A" },
+            { "expr": "sum by (limitador_namespace)(rate(limited_calls{limitador_namespace=~\"$limitador_namespace\"}[5m])) * 60", "legendFormat": "limited {{limitador_namespace}}", "refId": "B" }
+          ]
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "fieldConfig": { "defaults": {} },
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 14 },
+          "id": 8,
+          "options": { "showHeader": true, "sortBy": [{ "displayName": "Tokens", "desc": true }] },
+          "title": "Top RHCL routes by tokens",
+          "description": "Each row corresponds to a Limitador namespace (= HTTPRoute targeted by a TokenRateLimitPolicy).",
+          "type": "table",
+          "transformations": [
+            { "id": "merge" },
+            { "id": "organize", "options": { "renameByName": { "limitador_namespace": "Limitador namespace (route)", "Value #A": "Tokens", "Value #B": "Calls", "Value #C": "Limited (429)" } } }
+          ],
+          "targets": [
+            { "expr": "topk(20, sum by (limitador_namespace)(increase(authorized_hits{limitador_namespace=~\"$limitador_namespace\"}[$__range])))", "refId": "A", "instant": true, "format": "table" },
+            { "expr": "sum by (limitador_namespace)(increase(authorized_calls{limitador_namespace=~\"$limitador_namespace\"}[$__range]))", "refId": "B", "instant": true, "format": "table" },
+            { "expr": "sum by (limitador_namespace)(increase(limited_calls{limitador_namespace=~\"$limitador_namespace\"}[$__range]))", "refId": "C", "instant": true, "format": "table" }
+          ]
+        }
+      ]
+    }

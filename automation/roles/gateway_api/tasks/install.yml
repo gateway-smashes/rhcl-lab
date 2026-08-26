@@ -1,0 +1,224 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Validate supported OpenShift mode
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_supported_mode.yml
+
+- name: Query cluster subscriptions
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+  register: gateway_api_subscriptions
+  changed_when: false
+
+- name: Detect conflicting OpenShift Service Mesh v2 subscriptions
+  ansible.builtin.set_fact:
+    gateway_api_conflicting_subscriptions: >-
+      {{
+        gateway_api_subscriptions.resources
+        | selectattr('spec.name', 'defined')
+        | selectattr('spec.name', 'equalto', 'servicemeshoperator')
+        | selectattr('spec.channel', 'defined')
+        | selectattr('spec.channel', 'search', '(^|[^0-9])2([.-]|$)|stable-2|maistra-2')
+        | list
+      }}
+
+- name: Fail when a conflicting OpenShift Service Mesh v2 subscription exists
+  ansible.builtin.assert:
+    that:
+      - gateway_api_conflicting_subscriptions | length == 0
+    fail_msg: >-
+      Gateway API native mode conflicts with an active OpenShift Service Mesh v2 subscription.
+      Remove the conflicting subscription before enabling Gateway API.
+
+# GatewayClass.spec.controllerName is IMMUTABLE per the Gateway API schema.
+# We have to handle three cases distinctly:
+#
+#   1. GatewayClass doesn't exist → apply our template (standard path).
+#   2. GatewayClass exists AND status.Accepted == True → leave it alone
+#      EVEN IF the controllerName differs from what the template would
+#      emit. A live, healthy GatewayClass is "working as configured for
+#      this cluster" — typically the customer installed it manually with
+#      a controllerName that matches their gateway controller (e.g. Istio
+#      on-cluster vs. the OpenShift-default controller this role assumes).
+#      Touching it would break running traffic.
+#   3. GatewayClass exists but Accepted is False/missing AND the
+#      controllerName differs → stale leftover from an uninstalled
+#      controller. Strip finalizers, delete and recreate.
+- name: Probe the existing GatewayClass (if any)
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: GatewayClass
+    name: "{{ gateway_api_gatewayclass_name }}"
+  register: gateway_api_existing_gatewayclass
+  changed_when: false
+  failed_when: false
+
+- name: Decide what to do with the existing GatewayClass
+  ansible.builtin.set_fact:
+    gateway_api_gatewayclass_exists: "{{ (gateway_api_existing_gatewayclass.resources | length) == 1 }}"
+    gateway_api_gatewayclass_is_accepted: >-
+      {{
+        (gateway_api_existing_gatewayclass.resources | length) == 1
+        and (
+          (gateway_api_existing_gatewayclass.resources[0].status.conditions | default([]))
+          | selectattr('type', 'equalto', 'Accepted')
+          | selectattr('status', 'equalto', 'True')
+          | list | length
+        ) > 0
+      }}
+    gateway_api_gatewayclass_controller_drift: >-
+      {{
+        (gateway_api_existing_gatewayclass.resources | length) == 1
+        and gateway_api_existing_gatewayclass.resources[0].spec.controllerName != gateway_api_controller_name
+      }}
+
+- name: Leave a healthy pre-existing GatewayClass untouched
+  ansible.builtin.debug:
+    msg: >-
+      GatewayClass '{{ gateway_api_gatewayclass_name }}' already exists with
+      controllerName='{{ gateway_api_existing_gatewayclass.resources[0].spec.controllerName }}'
+      and status Accepted=True. The role won't modify it — even if the
+      controllerName differs from this role's default
+      ({{ gateway_api_controller_name }}), the cluster is plainly happy
+      with the current configuration and overwriting an immutable field
+      would only break it.
+  when:
+    - gateway_api_gatewayclass_exists
+    - gateway_api_gatewayclass_is_accepted
+
+- name: Recreate GatewayClass when it's stale (not Accepted) and controllerName drifted
+  when:
+    - gateway_api_gatewayclass_exists
+    - not gateway_api_gatewayclass_is_accepted
+    - gateway_api_gatewayclass_controller_drift
+  block:
+    - name: Show drift before recreating
+      ansible.builtin.debug:
+        msg: >-
+          GatewayClass '{{ gateway_api_gatewayclass_name }}' is not Accepted
+          and its controllerName='{{ gateway_api_existing_gatewayclass.resources[0].spec.controllerName }}'
+          differs from the role default ({{ gateway_api_controller_name }}).
+          Treating it as a stale leftover and recreating.
+
+    # Strip finalizers BEFORE issuing the delete. The previous controller
+    # likely left a Kuadrant/Istio finalizer and, since that controller is
+    # no longer running, nothing removes it — the object would hang in
+    # Terminating forever otherwise.
+    - name: Strip finalizers from the stale GatewayClass
+      kubernetes.core.k8s:
+        api_version: gateway.networking.k8s.io/v1
+        kind: GatewayClass
+        name: "{{ gateway_api_gatewayclass_name }}"
+        state: patched
+        merge_type: merge
+        definition:
+          metadata:
+            finalizers: []
+      failed_when: false
+
+    - name: Delete the stale GatewayClass
+      kubernetes.core.k8s:
+        api_version: gateway.networking.k8s.io/v1
+        kind: GatewayClass
+        name: "{{ gateway_api_gatewayclass_name }}"
+        state: absent
+        wait: true
+        wait_timeout: 120
+
+- name: Create the GatewayClass required by native Gateway API
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'gatewayclass.yml.j2') | from_yaml }}"
+  # Only create when it doesn't exist OR we just deleted a stale one. A
+  # healthy pre-existing GatewayClass is preserved as-is (see above).
+  when:
+    - not (gateway_api_gatewayclass_exists and gateway_api_gatewayclass_is_accepted)
+
+# `until` only sleeps when the condition is false, so a controller that is
+# already up costs one API call. A run that sits here for the full budget means
+# the Deployment never became available — usually because it is named or
+# namespaced differently in this cluster, not because it is slow.
+#
+# Polls every 5s instead of 10s so a controller that comes up mid-wait is
+# picked up sooner; the ceiling stays configurable for slow clusters.
+- name: Wait for the ingress-managed gateway controller deployment
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ gateway_api_controller_namespace }}"
+    name: "{{ gateway_api_controller_deployment }}"
+  register: gateway_api_controller
+  changed_when: false
+  failed_when: false
+  until:
+    - gateway_api_controller.resources | length == 1
+    - (gateway_api_controller.resources[0].status.availableReplicas | default(0)) | int >= 1
+  retries: "{{ gateway_api_controller_wait_retries | int }}"
+  delay: "{{ gateway_api_controller_wait_delay | int }}"
+
+# This used to burn the whole budget and then continue as if nothing happened:
+# the task cannot fail (failed_when: false), its result is never consumed, and
+# it is the last task in the role. So a wrong namespace/name cost minutes on
+# every run and still reported success. Say what was looked for instead.
+# Only on the failure path: find the istiod Deployments the cluster actually
+# runs so the error names the candidates instead of asking for a manual grep.
+# Which istiod serves `istio.io/gateway-controller` differs by install — the
+# OpenShift Ingress Operator provisions istiod-openshift-gateway in
+# openshift-ingress, while a standalone Service Mesh runs its own istiod in
+# istio-system.
+- name: Look up istiod Deployments to name the candidates
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    label_selectors:
+      - app=istiod
+  register: gateway_api_istiod_candidates
+  changed_when: false
+  failed_when: false
+  when:
+    - (gateway_api_controller.resources | default([]) | length) != 1
+      or ((gateway_api_controller.resources[0].status.availableReplicas | default(0)) | int) < 1
+
+- name: Report the gateway controller wait outcome
+  ansible.builtin.fail:
+    msg: >-
+      Gateway controller Deployment '{{ gateway_api_controller_deployment }}' in
+      namespace '{{ gateway_api_controller_namespace }}' did not report an
+      available replica within
+      {{ (gateway_api_controller_wait_retries | int) * (gateway_api_controller_wait_delay | int) }}s.
+      Gateways will not be programmed until it is up.
+      istiod Deployments found on this cluster:
+      {{
+        (((gateway_api_istiod_candidates.resources | default([]))
+          | map(attribute='metadata.namespace') | list)
+         | zip((gateway_api_istiod_candidates.resources | default([]))
+               | map(attribute='metadata.name') | list)
+         | map('join', '/') | list | join(', '))
+        | default('none (no Deployment carries app=istiod)', true)
+      }}.
+      Point GATEWAY_API_CONTROLLER_NAMESPACE / GATEWAY_API_CONTROLLER_DEPLOYMENT
+      at whichever of those serves '{{ gateway_api_controller_name }}'. Set
+      GATEWAY_API_CONTROLLER_WAIT_STRICT=false to downgrade this to a warning.
+  when:
+    - gateway_api_controller_wait_strict | bool
+    - (gateway_api_controller.resources | default([]) | length) != 1
+      or ((gateway_api_controller.resources[0].status.availableReplicas | default(0)) | int) < 1
+
+- name: Warn that the gateway controller is not available (non-strict)
+  ansible.builtin.debug:
+    msg: >-
+      WARNING — gateway controller
+      '{{ gateway_api_controller_namespace }}/{{ gateway_api_controller_deployment }}'
+      has no available replica. Continuing because
+      GATEWAY_API_CONTROLLER_WAIT_STRICT=false, but Gateways will stay
+      unprogrammed until it comes up.
+  when:
+    - not (gateway_api_controller_wait_strict | bool)
+    - (gateway_api_controller.resources | default([]) | length) != 1
+      or ((gateway_api_controller.resources[0].status.availableReplicas | default(0)) | int) < 1

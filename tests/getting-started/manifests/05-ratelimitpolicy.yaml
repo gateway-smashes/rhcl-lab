@@ -1,0 +1,31 @@
+# Getting started — Passo 5/6: RateLimitPolicy (global)
+#
+# Rate limit GLOBAL da API — soma de TODAS as requests, independente
+# do consumer. Funciona como um "guarda-chuva" acima da PlanPolicy:
+# mesmo que 10 consumers do tier `demo` estejam dentro dos 60/min
+# individuais deles, se o TOTAL da API ultrapassar 500/min ninguém
+# passa. Protege o backend de picos agregados.
+#
+# Diferença pra PlanPolicy do passo 3:
+#   - PlanPolicy: 60/min POR consumer com plan-id=demo
+#   - RateLimitPolicy: 500/min TOTAL na API
+#
+# Se você não quer esse teto agregado, pode pular este passo — a
+# PlanPolicy sozinha já protege o backend por consumer.
+apiVersion: kuadrant.io/v1
+kind: RateLimitPolicy
+metadata:
+  name: banking-lite-global-ratelimit
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-getting-started
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: banking-lite
+  limits:
+    global:
+      rates:
+        - limit: 500
+          window: "1m"

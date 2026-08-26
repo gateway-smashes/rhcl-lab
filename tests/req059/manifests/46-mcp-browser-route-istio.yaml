@@ -1,0 +1,18 @@
+# OpenShift Route → gateway Service (GatewayClass `istio`).
+#
+#   export RHCL_ZONE_ROOT_DOMAIN=apps.example.com
+#   envsubst < tests/req059/manifests/46-mcp-browser-route-istio.yaml | oc apply -f -
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: mcp-gateway-browser
+  namespace: mcp-gateway
+  labels:
+    rhcl-lab/requirement: req059-mcp-operator
+spec:
+  host: mcp-gateway.${RHCL_ZONE_ROOT_DOMAIN}
+  to:
+    kind: Service
+    name: rhcl-mcp-gateway-istio
+  port:
+    targetPort: 8080

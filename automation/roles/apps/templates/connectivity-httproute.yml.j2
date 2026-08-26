@@ -1,0 +1,292 @@
+{# Macro: response headers shared by every rule (HSTS, CORS, alt-svc).
+   Emits list items at 14-space indent so they sit correctly under
+   `responseHeaderModifier.set:` at 12-space indent.
+   Optional extra_allow_headers / extra_expose_headers are CSV strings that get
+   appended to the base CORS lists. Used by the /mcp rule to expose
+   `mcp-session-id` to browser MCP clients without touching the other rules. #}
+{% macro response_headers(extra_allow_headers='', extra_expose_headers='') %}
+              - name: Strict-Transport-Security
+                value: max-age=31536000; includeSubDomains
+{% if apps_connectivity_route_alt_svc_enabled %}
+              - name: alt-svc
+                value: {{ apps_connectivity_route_alt_svc_value | string | to_json }}
+{% endif %}
+{% if apps_connectivity_route_cors_enabled %}
+{% set allow_headers = apps_connectivity_route_cors_allow_headers ~ (',' ~ extra_allow_headers if extra_allow_headers else '') %}
+{% set expose_headers = apps_connectivity_route_cors_expose_headers ~ (',' ~ extra_expose_headers if extra_expose_headers else '') %}
+              - name: Access-Control-Allow-Origin
+                value: {{ apps_connectivity_route_cors_allow_origin | string | to_json }}
+              - name: Access-Control-Allow-Methods
+                value: {{ apps_connectivity_route_cors_allow_methods | string | to_json }}
+              - name: Access-Control-Allow-Headers
+                value: {{ allow_headers | string | to_json }}
+              - name: Access-Control-Expose-Headers
+                value: {{ expose_headers | string | to_json }}
+              - name: Access-Control-Allow-Credentials
+                value: {{ apps_connectivity_route_cors_allow_credentials | string | to_json }}
+              - name: Access-Control-Max-Age
+                value: {{ apps_connectivity_route_cors_max_age | string | to_json }}
+              - name: Vary
+                value: "Origin"
+{% endif %}
+{% endmacro %}
+# HTTPRoute for the banking-api product.
+#
+# Layout: rules are grouped by (backend × operational class), not by
+# individual endpoint. The previous version had one rule per
+# PathPrefix prefix (/api/v1 catch-all, /api/v2 catch-all, etc.); this
+# version is granular where it matters — a single mistaken endpoint
+# can be moved to a different backend or rate-limited independently —
+# without exploding into a rule-per-endpoint listing.
+#
+# Anchor rules: the streaming rules at the bottom (/ws and /mcp) do
+# NOT declare `method` on their matches. This is intentional and
+# operationally required: the Istio Sail Operator running on RHCL
+# generates invalid Envoy config when *every* rule has a method match,
+# and traffic for the data plane stalls. As long as at least one rule
+# is method-less, Envoy stabilises. /ws and /mcp are naturally
+# method-less (WebSocket / MCP are protocol upgrades), so they double
+# as the anchors at no cost. Do not add `method:` to /ws or /mcp.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ apps_connectivity_route_name }}
+  namespace: {{ apps_namespace }}
+spec:
+  parentRefs:
+    - name: {{ apps_connectivity_gateway_name }}
+      namespace: {{ apps_connectivity_gateway_namespace }}
+  hostnames:
+    - {{ apps_connectivity_route_hostname_resolved | to_json }}
+  rules:
+    # 1) Accounts v1 — reads + writes go to the same backend, so they
+    #    share a single rule with three matches (one per endpoint).
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/v1/accounts/summary
+          method: GET
+        - path:
+            type: PathPrefix
+            value: /api/v1/accounts/reset
+          method: POST
+        - path:
+            type: PathPrefix
+            value: /api/v1/transfers
+          method: POST
+      filters:
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+{{ response_headers() }}
+      backendRefs:
+        - name: {{ apps_backend_primary_name }}
+          port: 8080
+
+    # 2) AI inference v1 — OpenAI-compatible endpoints. Grouped so that
+    #    rate-limit and auth policies for inference can target this rule
+    #    via sectionName without affecting banking endpoints.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/v1/chat/completions
+          method: POST
+        - path:
+            type: PathPrefix
+            value: /api/v1/completions
+          method: POST
+        - path:
+            type: PathPrefix
+            value: /api/v1/embeddings
+          method: POST
+        - path:
+            type: PathPrefix
+            value: /api/v1/responses
+          method: POST
+        - path:
+            type: PathPrefix
+            value: /api/v1/models
+          method: GET
+      filters:
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+{{ response_headers() }}
+      backendRefs:
+        - name: {{ apps_backend_primary_name }}
+          port: 8080
+
+    # 3) Accounts v2 — same shape as v1 but routes to the v2 backend.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/v2/accounts/summary
+          method: GET
+        - path:
+            type: PathPrefix
+            value: /api/v2/transfers
+          method: POST
+      filters:
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+{{ response_headers() }}
+      backendRefs:
+        - name: {{ apps_backend_secondary_name }}
+          port: 8080
+
+    # 4) Utility — versionless GET endpoints used for smoke tests and
+    #    diagnostics (echo, whoami, tls-info, test/* for chaos engineering).
+    #    All on the primary backend; not versioned because they're
+    #    operational, not user-facing.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/whoami
+          method: GET
+        - path:
+            type: PathPrefix
+            value: /api/echo
+          method: GET
+        - path:
+            type: PathPrefix
+            value: /api/tls/info
+          method: GET
+        - path:
+            type: PathPrefix
+            value: /api/test
+          method: GET
+      filters:
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+{{ response_headers() }}
+      backendRefs:
+        - name: {{ apps_backend_primary_name }}
+          port: 8080
+{% if apps_connectivity_jwt_enabled and apps_connectivity_jwt_protected_path not in ['/api/whoami', '/api/echo', '/api/tls/info', '/api/test'] %}
+
+    # 5) JWT-protected extra path — only when `apps_connectivity_jwt_enabled`
+    #    is true AND the configured path is NOT already covered by the
+    #    Utility rule above. The AuthPolicy is what actually enforces JWT;
+    #    this rule just guarantees the path is routed to the primary backend.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ apps_connectivity_jwt_protected_path | string | to_json }}
+      filters:
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+{{ response_headers() }}
+      backendRefs:
+        - name: {{ apps_backend_primary_name }}
+          port: 8080
+{% endif %}
+{% if apps_connectivity_lb_test_enabled %}
+
+    # 6) Load-balancing test — 50/50 split between v1 and v2 with URLRewrite
+    #    so both backends see the same `/api/echo` request. Used to demo
+    #    weighted routing and sticky-session policies.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ apps_connectivity_lb_test_path | string | to_json }}
+          method: GET
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /api/echo
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+{{ response_headers() }}
+              - name: x-lb-target-path
+                value: /api/echo
+      backendRefs:
+        - name: {{ apps_backend_primary_name }}
+          port: 8080
+          weight: {{ apps_connectivity_lb_v1_weight | int }}
+        - name: {{ apps_backend_secondary_name }}
+          port: 8080
+          weight: {{ apps_connectivity_lb_v2_weight | int }}
+{% endif %}
+
+    # 7) WebSocket (LiveFeed). No `method:` — WebSocket starts as GET +
+    #    Upgrade, so matching on method would over-restrict. This rule
+    #    also serves as one of the method-less anchors required by the
+    #    Istio Sail data plane (see header comment).
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /ws
+      filters:
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+{{ response_headers() }}
+      backendRefs:
+        - name: {{ apps_backend_primary_name }}
+          port: 8080
+{% if apps_streaming_enabled %}
+
+    # 7b) req026 — file upload route with a hard request timeout.
+    #     Paired with the streaming EnvoyFilter (body-size cap) so the
+    #     gateway can reject both *oversize* uploads (413) AND *slow*
+    #     uploads that drag past `apps_streaming_upload_request_timeout`
+    #     (408/504). Without this rule the upload falls through to the
+    #     catch-all (#8) and inherits Envoy's default timeouts, which
+    #     are effectively unbounded for streaming requests.
+    #
+    #     `timeouts.request` is the Gateway-API standard field (GEP-1742)
+    #     and is honoured by Istio 1.26+ shipped with RHCL 1.3.4+ (same on 1.4.x) — no
+    #     EnvoyFilter needed for the timeout half of the demo.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ apps_streaming_upload_path | string | to_json }}
+          method: POST
+      timeouts:
+        request: {{ apps_streaming_upload_request_timeout | string | to_json }}
+      filters:
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+{{ response_headers() }}
+      backendRefs:
+        - name: {{ apps_backend_primary_name }}
+          port: 8080
+{% endif %}
+
+    # 8) CORS preflight + catch-all anchor for /api/*.
+    #
+    #    Why this rule exists:
+    #      - Rules 1-4 above all declare `method` matches (GET / POST). The
+    #        Gateway API spec says a match only succeeds when BOTH path and
+    #        method match — so an `OPTIONS /api/v1/accounts/summary` from a
+    #        browser CORS preflight does NOT match rule #1 (which expects
+    #        GET / POST) and would 404 at the gateway before reaching the
+    #        Authorino `cors-preflight` rule that would have answered it.
+    #      - This rule has NO `method:` field, so it accepts any verb,
+    #        including OPTIONS. Path-prefix specificity rules (GEP-1742)
+    #        guarantee `/api/v1/accounts/summary` still routes through
+    #        rule #1 for GET — this one only catches what falls through.
+    #
+    #    Side effect: also serves as a soft anchor for the Istio Sail data
+    #    plane (see header), so even if /ws and /mcp are someday removed,
+    #    this rule alone keeps the data plane from regenerating broken
+    #    listener config.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      filters:
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+{{ response_headers() }}
+      backendRefs:
+        - name: {{ apps_backend_primary_name }}
+          port: 8080

@@ -1,0 +1,57 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Remove the Let's Encrypt staging ClusterIssuer
+  kubernetes.core.k8s:
+    api_version: cert-manager.io/v1
+    kind: ClusterIssuer
+    name: "{{ letsencrypt_staging_name }}"
+    state: absent
+
+- name: Remove the Let's Encrypt production ClusterIssuer
+  kubernetes.core.k8s:
+    api_version: cert-manager.io/v1
+    kind: ClusterIssuer
+    name: "{{ letsencrypt_prod_name }}"
+    state: absent
+
+- name: Remove the DNS-01 solver credentials secret
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Secret
+    namespace: "{{ letsencrypt_secret_namespace }}"
+    name: "{{ letsencrypt_secret_name }}"
+    state: absent
+
+- name: Remove the CA ClusterIssuer
+  kubernetes.core.k8s:
+    api_version: cert-manager.io/v1
+    kind: ClusterIssuer
+    name: "{{ selfsigned_ca_issuer_name }}"
+    state: absent
+
+- name: Remove the CA Certificate
+  kubernetes.core.k8s:
+    api_version: cert-manager.io/v1
+    kind: Certificate
+    namespace: "{{ selfsigned_ca_namespace }}"
+    name: "{{ selfsigned_ca_certificate_name }}"
+    state: absent
+
+- name: Remove the CA secret
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Secret
+    namespace: "{{ selfsigned_ca_namespace }}"
+    name: "{{ selfsigned_ca_secret_name }}"
+    state: absent
+
+- name: Remove the bootstrap SelfSigned ClusterIssuer
+  kubernetes.core.k8s:
+    api_version: cert-manager.io/v1
+    kind: ClusterIssuer
+    name: "{{ selfsigned_bootstrap_issuer_name }}"
+    state: absent

@@ -1,0 +1,29 @@
+---
+# Defaults for the letsencrypt role.
+#
+# These values are placeholders; they only get used when the matching feature
+# is enabled. Without them, Ansible's eager template evaluation fails on the
+# first task whose `name:` interpolates one of these vars — even if the task
+# is gated by a `when:` that would have skipped it. The flow is:
+#
+#   selfsigned_issuer_enabled: false  → ACME flow runs, self-signed block skipped
+#   selfsigned_issuer_enabled: true   → self-signed CA block runs, ACME skipped
+#
+# Override these via group_vars or `--extra-vars` to customize names.
+
+# Master toggle: bypass ACME entirely and use a self-signed CA chain.
+# Default false for cloud / public-domain installs.
+selfsigned_issuer_enabled: false
+
+# Namespace where the CA secret and bootstrap Issuer live (only used when
+# selfsigned_issuer_enabled=true).
+selfsigned_ca_namespace: cert-manager
+
+# Names for the chain when running the self-signed flow.
+selfsigned_bootstrap_issuer_name: selfsigned-bootstrap
+selfsigned_ca_certificate_name: selfsigned-ca
+selfsigned_ca_secret_name: selfsigned-ca-tls
+selfsigned_ca_issuer_name: selfsigned-ca-issuer
+selfsigned_ca_common_name: RHCL Lab Self-Signed CA
+selfsigned_ca_duration: 87600h          # 10 years
+selfsigned_ca_renew_before: 720h        # 30 days

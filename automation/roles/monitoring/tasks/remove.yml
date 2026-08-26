@@ -1,0 +1,47 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Read existing cluster-monitoring-config ConfigMap
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: ConfigMap
+    namespace: "{{ monitoring_namespace }}"
+    name: "{{ monitoring_config_name }}"
+  register: monitoring_existing_cm
+  changed_when: false
+
+- name: Skip when cluster-monitoring-config does not exist
+  ansible.builtin.meta: end_play
+  when: (monitoring_existing_cm.resources | length) == 0
+
+- name: Parse existing cluster-monitoring-config payload
+  ansible.builtin.set_fact:
+    monitoring_existing_config: >-
+      {{ ((monitoring_existing_cm.resources[0].data['config.yaml'] | default('') | from_yaml) | default({}, true)) }}
+
+- name: Build cluster-monitoring-config payload with user workload disabled
+  ansible.builtin.set_fact:
+    monitoring_disabled_config: >-
+      {{
+        monitoring_existing_config
+        | combine({'enableUserWorkload': false})
+      }}
+
+- name: Apply cluster-monitoring-config ConfigMap with enableUserWorkload=false
+  kubernetes.core.k8s:
+    state: present
+    apply: true
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: "{{ monitoring_config_name }}"
+        namespace: "{{ monitoring_namespace }}"
+      data: >-
+        {{
+          monitoring_existing_cm.resources[0].data
+          | combine({'config.yaml': monitoring_disabled_config | to_nice_yaml(indent=2)})
+        }}

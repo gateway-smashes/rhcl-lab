@@ -1,0 +1,53 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: rhdh-kuadrant
+rules:
+  - apiGroups: ["kuadrant.io"]
+    resources: ["authpolicies", "ratelimitpolicies", "dnspolicies", "tlspolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["extensions.kuadrant.io"]
+    resources: ["planpolicies"]
+    verbs: ["get", "list", "watch"]
+  # All four CRDs in the group, not just the two the plugin used to need.
+  # 0.4.0-dev3 drives key issuance through APIKeyRequest -> APIKeyApproval, and
+  # without them the backend fails with "failed to list apikeyrequests: HTTP
+  # request failed" — surfaced in the UI as "Failed to create secret Server
+  # error", which points at Secrets and sends you looking in the wrong place.
+  - apiGroups: ["devportal.kuadrant.io"]
+    resources: ["apiproducts", "apikeys", "apikeyrequests", "apikeyapprovals"]
+    verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
+  - apiGroups: ["devportal.kuadrant.io"]
+    resources: ["apikeys/status", "apikeyrequests/status", "apikeyapprovals/status"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gateways", "httproutes"]
+    verbs: ["get", "list", "watch"]
+  # `create` is needed because the plugin ensures the target namespace exists
+  # before writing the key Secret — without it the backend fails with "failed
+  # to create namespace: HTTP request failed", which the UI reports as "Failed
+  # to create secret" and sends you looking at Secrets instead.
+  #
+  # This is the broadest grant in this role: it lets the RHDH ServiceAccount
+  # create namespaces cluster-wide. Environments that pre-create the API
+  # namespaces can drop `create` back out — the plugin only calls it when the
+  # namespace is missing.
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch", "create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: rhdh-kuadrant
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: rhdh-kuadrant
+subjects:
+  - kind: ServiceAccount
+    name: {{ developer_hub_service_account }}
+    namespace: {{ developer_hub_namespace }}

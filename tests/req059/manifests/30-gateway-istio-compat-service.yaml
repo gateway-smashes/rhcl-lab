@@ -1,0 +1,21 @@
+# Internal Service for MCP broker → gateway (openshift-default labs only).
+# Skip when gatewayClassName is `istio` — the controller already creates
+# Service rhcl-mcp-gateway-istio.
+apiVersion: v1
+kind: Service
+metadata:
+  name: rhcl-mcp-gateway-istio
+  namespace: mcp-gateway
+  labels:
+    rhcl-lab/managed-by: req059-manifests
+    rhcl-lab/purpose: mcp-gateway-internal-routing
+spec:
+  type: ClusterIP
+  selector:
+    gateway.networking.k8s.io/gateway-name: rhcl-mcp-gateway
+  ports:
+    - name: mcp
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+      appProtocol: http

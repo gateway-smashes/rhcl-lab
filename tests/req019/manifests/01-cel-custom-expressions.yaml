@@ -1,0 +1,223 @@
+# Item 19 — Motor de políticas com expressões personalizadas (CEL).
+#
+# ABORDAGEM INTEGRADA: esta AuthPolicy SUBSTITUI (in-place update) a policy
+# de API Key existente (`banking-api-connectivity-apikey`), adicionando regras
+# de AUTHORIZATION com expressões CEL sem alterar as regras de authentication.
+#
+# Pipeline Authorino:
+#   Request → Authentication (API Key / anônimo) → Authorization (CEL) → Response
+#
+# O que esta policy demonstra:
+#
+#   AUTHENTICATION (inalterado — compatível com PlanPolicy e demais testes):
+#     • cors-preflight    — OPTIONS livre
+#     • public-echo       — /api/echo e /api/lb-test livres
+#     • public-ws         — /ws livre (WebSocket)
+#     • ai-mock           — /api/v1/chat/completions e /api/v1/models livres
+#     • api-key-header    — demais paths exigem API Key via header
+#     • api-key-query     — demais paths exigem API Key via query string
+#
+#   AUTHORIZATION (NOVO — demonstra CEL):
+#     • cel-transfer-idempotency — POST /api/v1/transfers exige
+#                                  x-idempotency-key (apenas quando
+#                                  header x-cel-strict: true está presente,
+#                                  para não impactar testes existentes)
+#     • cel-bot-blocking         — Bloqueia qualquer request com
+#                                  user-agent contendo 'bot' em paths
+#                                  protegidos por API Key
+#
+#   RESPONSE (inalterado + headers de diagnóstico):
+#     • Mantém userid e plan-id para PlanPolicy
+#     • Adiciona x-rhcl-policy-item header nas respostas de deny
+#
+# Funcionalidades CEL exercitadas:
+#     • Operadores lógicos: && , || , !
+#     • Funções de string: startsWith(), contains()
+#     • Comparação direta de headers: request.headers['x'] == 'value'
+#     • Combinação de method + path + headers
+#
+# IMPACTO NOS DEMAIS TESTES:
+#   • Nenhum — authentication inalterada, PlanPolicy continua funcionando.
+#   • cel-transfer-idempotency SÓ aplica quando x-cel-strict: true presente.
+#   • cel-bot-blocking SÓ bloqueia se user-agent contém 'bot' (nenhum
+#     teste existente usa 'bot' como user-agent).
+#
+# Como aplicar (update in-place da policy existente):
+#   oc apply --server-side --force-conflicts -f tests/req019/manifests/01-cel-custom-expressions.yaml
+#
+# Como reverter ao estado original:
+#   cd automation
+#   ansible-playbook playbooks/apps-install.yml --tags connectivity
+#
+# Validar CEL — ver README.md para o roteiro completo.
+#
+#   HOST=$(oc get httproute banking-api-connectivity -n rhcl-apps \
+#          -o jsonpath='{.spec.hostnames[0]}')
+#
+#   # Teste CEL bot-blocking: user-agent com 'bot' → 403
+#   curl -sk -o /dev/null -w "%{http_code}\n" \
+#     -H "api-key: <KEY>" -H "user-agent: scraperbot/1.0" \
+#     "https://$HOST/api/v1/accounts/summary"
+#   # Esperado: 403
+#
+#   # Teste CEL idempotency (modo strict): sem header → 403
+#   curl -sk -o /dev/null -w "%{http_code}\n" \
+#     -X POST "https://$HOST/api/v1/transfers" \
+#     -H "api-key: <KEY>" -H "x-cel-strict: true" \
+#     -H "content-type: application/json" \
+#     -d '{"fromBank":"Example Bank","toBank":"EXT","amount":100}'
+#   # Esperado: 403
+#
+#   # Teste CEL idempotency (modo strict): com header → 200
+#   curl -sk -o /dev/null -w "%{http_code}\n" \
+#     -X POST "https://$HOST/api/v1/transfers" \
+#     -H "api-key: <KEY>" -H "x-cel-strict: true" \
+#     -H "x-idempotency-key: txn-123" \
+#     -H "content-type: application/json" \
+#     -d '{"fromBank":"Example Bank","toBank":"EXT","amount":100}'
+#   # Esperado: 200
+#
+#   # Teste sem x-cel-strict (comportamento normal preservado): → 200
+#   curl -sk -o /dev/null -w "%{http_code}\n" \
+#     -X POST "https://$HOST/api/v1/transfers" \
+#     -H "api-key: <KEY>" \
+#     -H "content-type: application/json" \
+#     -d '{"fromBank":"Example Bank","toBank":"EXT","amount":100}'
+#   # Esperado: 200 (idempotency check NÃO ativado)
+#
+# LIMITAÇÕES IMPORTANTES — Authorino:
+#
+#   1) CEL has() — NÃO suporta acesso por índice de mapa:
+#      has(request.headers['x-foo'])  → ERRO: invalid argument to has() macro
+#      Usar acesso direto ao header (valor vazio = ausente):
+#        request.headers['x-foo'] == 'valor'  → false se header não existir
+#        request.headers['x-foo'].contains('x') → false se header não existir
+#
+#   2) Rego default allow — Authorino injeta automaticamente:
+#      NÃO declare `default allow := false` nem `package`/`import` no Rego.
+#      Use apenas a regra: `allow { condições }`
+#      Sintaxe: Rego v0 clássico (sem `if`; `allow if {}` requer import).
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: banking-api-connectivity-apikey
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-banking-poc
+    rhcl.poc/item: "19"
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: banking-api-connectivity
+
+  rules:
+    # ─── AUTHENTICATION (inalterado) ─────────────────────────────────────
+    authentication:
+      cors-preflight:
+        when:
+          - predicate: "request.method == 'OPTIONS'"
+        anonymous: {}
+      public-echo:
+        when:
+          - predicate: "request.path.startsWith('/api/echo') || request.path.startsWith('/api/lb-test')"
+        anonymous: {}
+      public-ws:
+        when:
+          - predicate: "request.path.startsWith('/ws')"
+        anonymous: {}
+      ai-mock:
+        when:
+          - predicate: "request.path.startsWith('/api/v1/models') || request.path.startsWith('/api/v1/chat/completions') || request.path.startsWith('/api/v1/completions') || request.path.startsWith('/api/v1/embeddings') || request.path.startsWith('/api/v1/responses')"
+        anonymous: {}
+      api-key-header:
+        when:
+          - predicate: "request.method != 'OPTIONS'"
+          - predicate: "!request.path.startsWith('/api/echo') && !request.path.startsWith('/api/lb-test') && !request.path.startsWith('/ws') && !request.path.startsWith('/api/v1/models') && !request.path.startsWith('/api/v1/chat/completions') && !request.path.startsWith('/api/v1/completions') && !request.path.startsWith('/api/v1/embeddings') && !request.path.startsWith('/api/v1/responses')"
+        apiKey:
+          allNamespaces: true
+          selector:
+            matchLabels:
+              authorino.kuadrant.io/managed-by: authorino
+              app: banking-api-apikey
+        credentials:
+          customHeader:
+            name: api-key
+      api-key-query:
+        when:
+          - predicate: "request.method != 'OPTIONS'"
+          - predicate: "!request.path.startsWith('/api/echo') && !request.path.startsWith('/api/lb-test') && !request.path.startsWith('/ws') && !request.path.startsWith('/api/v1/models') && !request.path.startsWith('/api/v1/chat/completions') && !request.path.startsWith('/api/v1/completions') && !request.path.startsWith('/api/v1/embeddings') && !request.path.startsWith('/api/v1/responses')"
+        apiKey:
+          allNamespaces: true
+          selector:
+            matchLabels:
+              authorino.kuadrant.io/managed-by: authorino
+              app: banking-api-apikey
+        credentials:
+          queryString:
+            name: api-key
+
+    # ─── AUTHORIZATION (NOVO — demonstra CEL) ────────────────────────────
+    authorization:
+      # Regra CEL 1: Transferências exigem header de idempotência.
+      # ATIVADA APENAS quando x-cel-strict: true está presente, para não
+      # impactar fluxos existentes.
+      #
+      # Expressões CEL demonstradas:
+      #   • request.method == 'POST'
+      #   • request.path.startsWith('/api/v1/transfers')
+      #   • request.headers['x-cel-strict'] == 'true' (presença implícita)
+      #
+      # NOTA: has() não suporta acesso por índice de mapa no Authorino.
+      #   Usar acesso direto ao header: valor vazio = header ausente.
+      cel-transfer-idempotency:
+        when:
+          - predicate: "request.method == 'POST' && request.path.startsWith('/api/v1/transfers')"
+          - predicate: "request.headers['x-cel-strict'] == 'true'"
+        opa:
+          rego: |
+            allow {
+              key := input.context.request.http.headers["x-idempotency-key"]
+              key != ""
+            }
+
+      # Regra CEL 2: Bloqueia requests com user-agent contendo 'bot'.
+      # Aplica-se apenas a paths protegidos (que passaram por API Key).
+      #
+      # Expressões CEL demonstradas:
+      #   • request.headers['user-agent'].contains('bot')
+      #   • ! (negação)
+      #   • Combinação lógica &&
+      #
+      # NOTA: has() não suporta acesso por índice de mapa no Authorino.
+      #   Se user-agent não existir, retorna "" e contains('bot') = false
+      #   (regra não ativa = seguro).
+      cel-bot-blocking:
+        when:
+          - predicate: "request.headers['user-agent'].contains('bot')"
+          - predicate: "request.method != 'OPTIONS'"
+          - predicate: "!request.path.startsWith('/api/echo') && !request.path.startsWith('/api/lb-test')"
+        opa:
+          rego: |
+            allow = false
+
+    # ─── RESPONSE (inalterado + deny headers) ────────────────────────────
+    response:
+      success:
+        filters:
+          identity:
+            json:
+              properties:
+                userid:
+                  selector: auth.identity.metadata.annotations.secret\.kuadrant\.io/user-id
+                plan-id:
+                  selector: auth.identity.metadata.annotations.secret\.kuadrant\.io/plan-id
+      unauthorized:
+        code: 403
+        message:
+          value: "Forbidden: CEL expression policy denied this request (item 19)"
+        headers:
+          "x-rhcl-policy":
+            value: "cel-custom-expressions"
+          "x-rhcl-policy-item":
+            value: "19"

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: req050-gateway
+  labels:
+    app.kubernetes.io/part-of: rhcl-req050-revocation
+    rhcl-lab/requirement: req050-ocsp-crl

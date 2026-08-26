@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RHCL Lab — Spec Viewer</title>
+<style>
+  :root {
+    --rh-red: #EE0000;
+    --rh-red-dark: #A30000;
+    --rh-black: #151515;
+    --rh-gray-100: #F5F5F5;
+    --rh-gray-200: #E0E0E0;
+    --rh-gray-700: #4D4D4D;
+    --rh-info: #2B9AF3;
+    --sans: "Red Hat Display", "Red Hat Text", -apple-system, BlinkMacSystemFont,
+            "Segoe UI", Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    color: var(--rh-black);
+    background: var(--rh-gray-100);
+    line-height: 1.55;
+  }
+  header.rh-header {
+    background: var(--rh-black);
+    color: #fff;
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 4px solid var(--rh-red);
+  }
+  header.rh-header .logo {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 700; font-size: 18px; letter-spacing: 0.5px;
+  }
+  header.rh-header .title {
+    margin-left: auto; font-size: 14px; color: #cfcfcf;
+    text-transform: uppercase; letter-spacing: 1px;
+  }
+  header.rh-header a { color: #fff; text-decoration: none; }
+  main { max-width: 900px; margin: 0 auto; padding: 32px; }
+  .toolbar {
+    display: flex; gap: 12px; align-items: center;
+    margin-bottom: 16px; font-size: 13px;
+  }
+  .toolbar a {
+    color: var(--rh-red);
+    text-decoration: none;
+    font-weight: 600;
+  }
+  .toolbar a:hover { text-decoration: underline; }
+  .toolbar .path {
+    font-family: var(--mono); color: var(--rh-gray-700);
+    margin-left: auto; font-size: 12px;
+  }
+  article {
+    background: #fff;
+    border: 1px solid var(--rh-gray-200);
+    border-left: 4px solid var(--rh-red);
+    border-radius: 4px;
+    padding: 32px 40px;
+  }
+  article h1, article h2, article h3, article h4 {
+    color: var(--rh-black);
+    margin-top: 1.4em; margin-bottom: 0.4em;
+    line-height: 1.25;
+  }
+  article h1 { font-size: 26px; border-bottom: 1px solid var(--rh-gray-200); padding-bottom: 8px; }
+  article h2 { font-size: 20px; }
+  article h3 { font-size: 16px; }
+  article p { margin: 0.6em 0; }
+  article a { color: var(--rh-red); }
+  article code {
+    font-family: var(--mono); font-size: 13px;
+    background: var(--rh-gray-100);
+    padding: 1px 5px; border-radius: 3px;
+    border: 1px solid var(--rh-gray-200);
+  }
+  article pre {
+    background: var(--rh-black);
+    color: #f5f5f5;
+    padding: 14px 16px;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-family: var(--mono); font-size: 13px;
+    line-height: 1.5;
+  }
+  article pre code {
+    background: transparent; border: 0; padding: 0; color: inherit;
+  }
+  article blockquote {
+    border-left: 3px solid var(--rh-info);
+    margin: 1em 0; padding: 4px 14px;
+    background: var(--rh-gray-100);
+    color: var(--rh-gray-700);
+  }
+  article table {
+    border-collapse: collapse; margin: 1em 0; width: 100%;
+  }
+  article th, article td {
+    border: 1px solid var(--rh-gray-200);
+    padding: 6px 10px; text-align: left;
+    font-size: 14px;
+  }
+  article th { background: var(--rh-gray-100); }
+  article ul, article ol { padding-left: 24px; }
+  .error {
+    background: #fff;
+    border: 1px solid var(--rh-gray-200);
+    border-left: 4px solid var(--rh-red);
+    border-radius: 4px;
+    padding: 20px;
+    color: var(--rh-gray-700);
+  }
+  footer {
+    margin-top: 48px; padding: 16px 32px;
+    color: var(--rh-gray-700); font-size: 12px; text-align: center;
+  }
+</style>
+</head>
+<body>
+<header class="rh-header">
+  <a class="logo" href="/" aria-label="Voltar para o catálogo de testes">
+    <span style="display:inline-block;width:14px;height:14px;background:var(--rh-red);border-radius:2px;"></span>
+    RHCL Lab
+  </a>
+  <div class="title"><a href="index.html">Tests Catalog</a> · Spec Viewer</div>
+</header>
+
+<main>
+  <div class="toolbar">
+    <a href="index.html">← Back to catalog</a>
+    <a id="raw-link" href="#" target="_blank">View raw</a>
+    <span id="path-label" class="path"></span>
+  </div>
+
+  <article id="content">Loading…</article>
+</main>
+
+<footer>RHCL Lab · markdown rendered with marked.js</footer>
+
+<script src="assets/marked.min.js"></script>
+<script>
+  const params = new URLSearchParams(location.search);
+  const path = params.get('path') || '';
+  const content = document.getElementById('content');
+  const rawLink = document.getElementById('raw-link');
+  const pathLabel = document.getElementById('path-label');
+
+  // Allow only relative paths under reqs/ with the .md extension to avoid
+  // turning the viewer into an open redirect / arbitrary file fetcher.
+  const safe = /^reqs\/[A-Za-z0-9_./-]+\.md$/.test(path) && !path.includes('..');
+
+  if (!safe) {
+    content.innerHTML = '<div class="error">Missing or invalid <code>path</code> query parameter. Expected something like <code>?path=reqs/req001.md</code>.</div>';
+  } else if (typeof marked === 'undefined') {
+    content.innerHTML = '<div class="error">Markdown renderer (<code>assets/marked.min.js</code>) is not available. Use the <em>View raw</em> link above to read the file.</div>';
+    rawLink.href = path;
+    pathLabel.textContent = path;
+  } else {
+    rawLink.href = path;
+    pathLabel.textContent = path;
+    document.title = `RHCL Lab — ${path}`;
+
+    fetch(path, { cache: 'no-store' })
+      .then(r => {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text();
+      })
+      .then(md => {
+        marked.setOptions({ gfm: true, breaks: false });
+        content.innerHTML = marked.parse(md);
+      })
+      .catch(err => {
+        content.innerHTML = `<div class="error">Failed to load <code>${path}</code>: ${err.message}</div>`;
+      });
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: keycloak-db-secret
+  namespace: keycloak
+  labels: { app.kubernetes.io/part-of: rhcl-req71-oidc-jwt }
+type: Opaque
+stringData:
+  username: keycloak
+  password: keycloak-demo-pass
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: keycloak
+  labels: { app: postgres, app.kubernetes.io/part-of: rhcl-req71-oidc-jwt }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: postgres } }
+  template:
+    metadata:
+      labels: { app: postgres }
+    spec:
+      containers:
+        - name: postgres
+          image: quay.io/sclorg/postgresql-15-c9s:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: POSTGRESQL_USER,     valueFrom: { secretKeyRef: { name: keycloak-db-secret, key: username } } }
+            - { name: POSTGRESQL_PASSWORD, valueFrom: { secretKeyRef: { name: keycloak-db-secret, key: password } } }
+            - { name: POSTGRESQL_DATABASE, value: keycloak }
+          ports: [ { containerPort: 5432 } ]
+          readinessProbe:
+            exec: { command: ["sh","-c","pg_isready -h 127.0.0.1 -p 5432"] }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 256Mi }
+            limits:   { cpu: 500m, memory: 512Mi }
+          volumeMounts: [ { name: data, mountPath: /var/lib/pgsql/data } ]
+      volumes: [ { name: data, emptyDir: {} } ]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: keycloak
+  labels: { app: postgres, app.kubernetes.io/part-of: rhcl-req71-oidc-jwt }
+spec:
+  selector: { app: postgres }
+  ports: [ { port: 5432, targetPort: 5432 } ]

@@ -1,0 +1,62 @@
+---
+- name: Skip developer_hub validate when disabled
+  ansible.builtin.meta: end_play
+  when: not (developer_hub_enabled | bool)
+
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: RHDH operator CSV present + Succeeded
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ developer_hub_operator_namespace }}"
+  register: dh_val_csv
+  changed_when: false
+
+- name: Assert operator Succeeded
+  ansible.builtin.assert:
+    that:
+      - dh_val_csv.resources | selectattr('metadata.name', 'search', 'rhdh')
+        | selectattr('status.phase', 'defined')
+        | selectattr('status.phase', 'equalto', 'Succeeded') | list | length > 0
+    fail_msg: "RHDH operator CSV is not Succeeded."
+    success_msg: "RHDH operator Succeeded."
+
+- name: Backstage instance + Route present
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    namespace: "{{ developer_hub_namespace }}"
+    name: "backstage-{{ developer_hub_instance_name }}"
+  register: dh_val_route
+  changed_when: false
+
+- name: Assert Route present
+  ansible.builtin.assert:
+    that:
+      - dh_val_route.resources | length > 0
+      - (dh_val_route.resources[0].status.ingress | default([])) | length > 0
+    fail_msg: "No admitted RHDH Route found — Backstage instance not ready."
+    success_msg: "RHDH Route present: https://{{ (dh_val_route.resources[0].status.ingress[0].host) | default('?') }}"
+
+- name: Kuadrant dynamic plugins declared
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: ConfigMap
+    name: dynamic-plugins-rhdh
+    namespace: "{{ developer_hub_namespace }}"
+  register: dh_val_plugins
+  changed_when: false
+
+- name: Assert Kuadrant plugins wired + integrity substituted
+  ansible.builtin.assert:
+    that:
+      - dh_val_plugins.resources | length == 1
+      - "'kuadrant-backstage-plugin-frontend' in dh_val_plugins.resources[0].data['dynamic-plugins.yaml']"
+      - "'kuadrant-backstage-plugin-backend-dynamic' in dh_val_plugins.resources[0].data['dynamic-plugins.yaml']"
+      - "'__FRONTEND_INTEGRITY__' not in dh_val_plugins.resources[0].data['dynamic-plugins.yaml']"
+    fail_msg: "Kuadrant plugins missing or integrity placeholders not substituted."
+    success_msg: "Kuadrant plugins declared with resolved integrity hashes."

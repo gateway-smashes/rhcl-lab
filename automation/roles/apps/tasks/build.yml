@@ -1,0 +1,184 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Validate oc CLI availability
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_oc_cli.yml
+
+- name: Assert build target is supported
+  ansible.builtin.assert:
+    that:
+      - apps_build_target in ['all', 'backend', 'frontend', 'ipfilter', 'rhoai', 'rhoai-backend', 'rhoai-frontend', 'ledger']
+    fail_msg: >-
+      apps_build_target='{{ apps_build_target }}' is invalid. Set
+      APPS_BUILD_TARGET to 'all' (default), 'backend', 'frontend', 'ipfilter',
+      'rhoai', 'rhoai-backend', 'rhoai-frontend', or 'ledger'.
+
+- name: Resolve application source directories
+  ansible.builtin.set_fact:
+    apps_backend_source_dir_resolved: >-
+      {{
+        (apps_backend_source_dir | trim)
+        if (apps_backend_source_dir | trim | length) > 0
+        else (playbook_dir ~ '/../../apps/backend/banking-api')
+      }}
+    apps_frontend_source_dir_resolved: >-
+      {{
+        (apps_frontend_source_dir | trim)
+        if (apps_frontend_source_dir | trim | length) > 0
+        else (playbook_dir ~ '/../../apps/frontend/mobile-bank')
+      }}
+    apps_ipfilter_source_dir_resolved: >-
+      {{
+        (apps_ipfilter_source_dir | trim)
+        if (apps_ipfilter_source_dir | trim | length) > 0
+        else (playbook_dir ~ '/../../apps/backend/ipfilter-php')
+      }}
+    apps_rhoai_backend_source_dir_resolved: >-
+      {{
+        (apps_rhoai_backend_source_dir | trim)
+        if (apps_rhoai_backend_source_dir | trim | length) > 0
+        else (playbook_dir ~ '/../../apps/rhoai-assistant/backend')
+      }}
+    apps_rhoai_frontend_source_dir_resolved: >-
+      {{
+        (apps_rhoai_frontend_source_dir | trim)
+        if (apps_rhoai_frontend_source_dir | trim | length) > 0
+        else (playbook_dir ~ '/../../apps/rhoai-assistant/frontend')
+      }}
+    apps_ledger_source_dir_resolved: >-
+      {{
+        (apps_ledger_source_dir | trim)
+        if (apps_ledger_source_dir | trim | length) > 0
+        else (playbook_dir ~ '/../../apps/backend/ledger-api')
+      }}
+
+- name: Build a list of targets to rebuild
+  ansible.builtin.set_fact:
+    apps_build_targets: >-
+      {{
+        ([{'name': 'backend', 'bc': apps_backend_image_name, 'dir': apps_backend_source_dir_resolved | trim}]
+          if apps_build_target in ['all', 'backend'] else [])
+        +
+        ([{'name': 'frontend', 'bc': apps_frontend_image_name, 'dir': apps_frontend_source_dir_resolved | trim}]
+          if apps_build_target in ['all', 'frontend'] else [])
+        +
+        ([{'name': 'ipfilter', 'bc': apps_ipfilter_image_name, 'dir': apps_ipfilter_source_dir_resolved | trim}]
+          if apps_ipfilter_enabled and apps_build_target in ['all', 'ipfilter'] else [])
+        +
+        ([{'name': 'rhoai-backend', 'bc': apps_rhoai_backend_image_name, 'dir': apps_rhoai_backend_source_dir_resolved | trim}]
+          if apps_rhoai_enabled and apps_build_target in ['all', 'rhoai', 'rhoai-backend'] else [])
+        +
+        ([{'name': 'rhoai-frontend', 'bc': apps_rhoai_frontend_image_name, 'dir': apps_rhoai_frontend_source_dir_resolved | trim}]
+          if apps_rhoai_enabled and apps_build_target in ['all', 'rhoai', 'rhoai-frontend'] else [])
+        +
+        ([{'name': 'ledger', 'bc': apps_ledger_image_name, 'dir': apps_ledger_source_dir_resolved | trim}]
+          if apps_ledger_enabled and apps_build_target in ['all', 'ledger'] else [])
+      }}
+
+- name: Stat resolved application source directories
+  ansible.builtin.stat:
+    path: "{{ item.dir }}"
+  register: apps_build_source_dir_stats
+  loop: "{{ apps_build_targets }}"
+  loop_control:
+    label: "{{ item.name }} -> {{ item.dir }}"
+
+- name: Stat Dockerfile inside each resolved source directory
+  ansible.builtin.stat:
+    path: "{{ item.dir }}/Dockerfile"
+  register: apps_build_source_dockerfile_stats
+  loop: "{{ apps_build_targets }}"
+  loop_control:
+    label: "{{ item.name }} -> {{ item.dir }}/Dockerfile"
+
+- name: Assert resolved source directories exist
+  ansible.builtin.assert:
+    that:
+      - (item.item.dir | length) > 0
+      - item.stat.exists
+      - item.stat.isdir | default(false)
+    fail_msg: >-
+      Resolved {{ item.item.name }} source directory '{{ item.item.dir }}' is
+      missing or not a directory.
+  loop: "{{ apps_build_source_dir_stats.results }}"
+  loop_control:
+    label: "{{ item.item.name }} -> {{ item.item.dir }}"
+
+- name: Assert each resolved source directory contains a Dockerfile
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg | default(false)
+    fail_msg: >-
+      Resolved {{ item.item.name }} source directory '{{ item.item.dir }}'
+      does not contain a Dockerfile.
+  loop: "{{ apps_build_source_dockerfile_stats.results }}"
+  loop_control:
+    label: "{{ item.item.name }} -> {{ item.item.dir }}/Dockerfile"
+
+- name: Assert that target BuildConfigs exist in the cluster
+  kubernetes.core.k8s_info:
+    api_version: build.openshift.io/v1
+    kind: BuildConfig
+    namespace: "{{ apps_namespace }}"
+    name: "{{ item.bc }}"
+  register: apps_build_bc_lookup
+  changed_when: false
+  loop: "{{ apps_build_targets }}"
+  loop_control:
+    label: "{{ item.name }} -> bc/{{ item.bc }}"
+
+- name: Fail when a BuildConfig is missing
+  ansible.builtin.fail:
+    msg: >-
+      BuildConfig 'bc/{{ item.item.bc }}' was not found in namespace
+      '{{ apps_namespace }}'. Run apps-install.yml first to create it.
+  loop: "{{ apps_build_bc_lookup.results }}"
+  loop_control:
+    label: "{{ item.item.name }} -> bc/{{ item.item.bc }}"
+  when: (item.resources | default([]) | length) != 1
+
+- name: Start image builds (concurrent, no log follow)
+  ansible.builtin.command:
+    argv:
+      - oc
+      - start-build
+      - "bc/{{ item.bc }}"
+      - "--from-dir={{ item.dir }}"
+      - -n
+      - "{{ apps_namespace }}"
+      - --wait=true
+  register: apps_build_jobs
+  changed_when: true
+  async: "{{ apps_build_async_seconds | int }}"
+  poll: 0
+  loop: "{{ apps_build_targets }}"
+  loop_control:
+    label: "{{ item.name }} -> bc/{{ item.bc }}"
+
+- name: Wait for image builds to finish
+  ansible.builtin.async_status:
+    jid: "{{ item.ansible_job_id }}"
+  register: apps_build_jobs_done
+  until: apps_build_jobs_done.finished
+  retries: "{{ ((apps_build_async_seconds | int) // (apps_build_poll_seconds | int)) + 1 }}"
+  delay: "{{ apps_build_poll_seconds | int }}"
+  loop: "{{ apps_build_jobs.results }}"
+  loop_control:
+    label: "{{ item.item.name }} -> bc/{{ item.item.bc }}"
+
+- name: Show resulting build summary
+  ansible.builtin.debug:
+    msg: >-
+      {{ item.item.item.name }} -> {{
+        item.stdout_lines | default([]) | select('match', '^build\\.build\\.openshift\\.io/.* started$') | list | first
+        | default('build started')
+      }}
+  loop: "{{ apps_build_jobs_done.results }}"
+  loop_control:
+    label: "{{ item.item.item.name }}"

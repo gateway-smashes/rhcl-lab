@@ -1,0 +1,30 @@
+# PVC do PostgreSQL local do RHDH, pré-criado para carregar a StorageClass.
+#
+# O operator gera o StatefulSet `backstage-psql-<instance>` com um
+# volumeClaimTemplate chamado `data` e SEM storageClassName — ele conta com a
+# StorageClass default do cluster. Onde nenhuma é default, o PVC nasce Pending
+# com "no persistent volumes available for this claim and no storage class is
+# set" e nunca se resolve.
+#
+# O CR do Backstage não expõe storage class (spec.database só tem
+# enableLocalDb e authSecretName), e customizar via rawRuntimeConfig.localDbConfig
+# exigiria reproduzir o StatefulSet inteiro do operator — frágil entre versões.
+#
+# Um StatefulSet só cria o PVC do volumeClaimTemplate se ele ainda não existir:
+# criando antes, com o nome exato `<vct>-<statefulset>-<ordinal>`, ele adota
+# este. O nome depende do padrão do operator, então mudanças nele quebram a
+# adoção — o role avisa quando o PVC ainda estiver Pending após aplicar.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data-backstage-psql-{{ developer_hub_instance_name }}-0
+  namespace: {{ developer_hub_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-developer-hub
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ developer_hub_storage_class }}
+  resources:
+    requests:
+      storage: {{ developer_hub_db_storage_size }}

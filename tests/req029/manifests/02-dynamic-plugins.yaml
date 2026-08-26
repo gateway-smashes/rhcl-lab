@@ -1,0 +1,59 @@
+# Dynamic-plugins ConfigMap — declares the two Kuadrant Backstage plugins so
+# RHDH loads them without rebuilding the Backstage image.
+#
+# Integrity hashes are placeholders: resolve them at apply time so a
+# re-published patch of the same version can't silently pass the checksum:
+#   FE=$(npm view @kuadrant/kuadrant-backstage-plugin-frontend@v0.1.0 dist.integrity)
+#   BE=$(npm view @kuadrant/kuadrant-backstage-plugin-backend-dynamic@v0.1.0 dist.integrity)
+#   sed -e "s|__FRONTEND_INTEGRITY__|$FE|" -e "s|__BACKEND_INTEGRITY__|$BE|" \
+#       02-dynamic-plugins.yaml | oc apply -n rhcl-developer-hub -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dynamic-plugins-rhdh
+  namespace: rhcl-developer-hub
+data:
+  dynamic-plugins.yaml: |
+    includes:
+      - dynamic-plugins.default.yaml
+    plugins:
+      - package: "@kuadrant/kuadrant-backstage-plugin-backend-dynamic@v0.1.0"
+        disabled: false
+        integrity: __BACKEND_INTEGRITY__
+      - package: "@kuadrant/kuadrant-backstage-plugin-frontend@v0.1.0"
+        disabled: false
+        integrity: __FRONTEND_INTEGRITY__
+        pluginConfig:
+          dynamicPlugins:
+            frontend:
+              internal.plugin-kuadrant:
+                appIcons:
+                  - name: kuadrantIcon
+                    importName: KuadrantIcon
+                dynamicRoutes:
+                  - path: /kuadrant
+                    importName: KuadrantPage
+                    menuItem:
+                      icon: kuadrantIcon
+                      text: Kuadrant
+                  - path: /kuadrant/api-products/:namespace/:name
+                    importName: ApiProductDetailPage
+                  - path: /kuadrant/api-keys/:namespace/:name
+                    importName: ApiKeyDetailPage
+                mountPoints:
+                  - mountPoint: entity.page.api/cards
+                    importName: EntityKuadrantApiKeyManagementTab
+                    config:
+                      layout:
+                        gridColumn: "1 / -1"
+                      if:
+                        allOf:
+                          - isKind: api
+                  - mountPoint: entity.page.api/cards
+                    importName: EntityKuadrantApiProductInfoContent
+                    config:
+                      layout:
+                        gridColumn: "1 / -1"
+                      if:
+                        allOf:
+                          - isKind: api

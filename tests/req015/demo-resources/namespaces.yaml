@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: item-15-api
+  labels:
+    app.kubernetes.io/part-of: connectivity-link-rbac-demo
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: item-15-gateway
+  labels:
+    app.kubernetes.io/part-of: connectivity-link-rbac-demo

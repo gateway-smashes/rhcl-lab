@@ -1,0 +1,16 @@
+---
+- name: Skip dns role when disabled
+  # Set RHCL_DNS_ENABLED=false on clusters that handle DNS outside Kuadrant, so
+  # the cloud-provider DNS secret + Kuadrant DNSPolicy this role provisions are
+  # not needed.
+  ansible.builtin.meta: end_play
+  when: not (rhcl_dns_enabled | bool)
+
+- name: Validate dns role action
+  ansible.builtin.assert:
+    that:
+      - (component_action | default(rhcl_action)) in ["install", "remove", "validate"]
+    fail_msg: "Requested dns action must be install, remove, or validate."
+
+- name: Run dns action
+  ansible.builtin.include_tasks: "{{ component_action | default(rhcl_action) }}.yml"

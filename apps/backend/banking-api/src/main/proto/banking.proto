@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package io.gatewaysmashes.rhcl.grpc;
+
+option java_multiple_files = true;
+option java_package = "io.gatewaysmashes.rhcl.grpc";
+option java_outer_classname = "BankingProto";
+
+service BankingService {
+  rpc GetSummary (SummaryRequest) returns (SummaryResponse);
+  rpc StreamHealth (HealthRequest) returns (stream HealthEvent);
+  // Bidirectional echo used to validate HTTP/2 framing end-to-end.
+  rpc EchoStream (stream EchoMessage) returns (stream EchoMessage);
+}
+
+message SummaryRequest {
+  string api_version = 1; // "v1" or "v2"
+  string trace_id = 2;
+}
+
+message Bank {
+  string bank_name = 1;
+  string account = 2;
+  string balance = 3; // decimal string to preserve precision
+}
+
+message SummaryResponse {
+  string api_version = 1;
+  string instance = 2;
+  string backend_tag = 3;
+  string timestamp = 4;
+  repeated Bank banks = 5;
+  string investments = 6;
+  string account_total = 7;
+  string grand_total = 8;
+}
+
+message HealthRequest {
+  int32 interval_ms = 1; // server picks a sensible default if zero
+  int32 max_events = 2;  // 0 means "stream until client cancels"
+}
+
+message HealthEvent {
+  string instance = 1;
+  string mode = 2;
+  bool ready = 3;
+  string timestamp = 4;
+  int64 sequence = 5;
+}
+
+message EchoMessage {
+  string text = 1;
+  int64 client_send_epoch_ms = 2;
+  int64 server_recv_epoch_ms = 3;
+  string instance = 4;
+  int64 sequence = 5;
+}

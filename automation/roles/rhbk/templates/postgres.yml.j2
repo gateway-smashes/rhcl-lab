@@ -1,0 +1,83 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ rhbk_db_secret_name }}
+  namespace: {{ rhbk_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-req71-oidc-jwt
+type: Opaque
+stringData:
+  username: {{ rhbk_db_username }}
+  password: {{ rhbk_db_password }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: {{ rhbk_namespace }}
+  labels:
+    app: postgres
+    app.kubernetes.io/part-of: rhcl-req71-oidc-jwt
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: {{ rhbk_db_image }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POSTGRESQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ rhbk_db_secret_name }}
+                  key: username
+            - name: POSTGRESQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ rhbk_db_secret_name }}
+                  key: password
+            - name: POSTGRESQL_DATABASE
+              value: {{ rhbk_db_name }}
+          ports:
+            - containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -h 127.0.0.1 -p 5432"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/pgsql/data
+      volumes:
+        # emptyDir = volátil (suficiente p/ PoC). Produção: PVC + backup.
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: {{ rhbk_namespace }}
+  labels:
+    app: postgres
+    app.kubernetes.io/part-of: rhcl-req71-oidc-jwt
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

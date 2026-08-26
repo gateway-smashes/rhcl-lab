@@ -1,0 +1,94 @@
+# MCPServer CRs for the MCP Lifecycle Operator (OpenShift AI catalog deploy flow).
+# Requires CRD mcp.x-k8s.io/v1alpha1 MCPServer on the cluster.
+apiVersion: mcp.x-k8s.io/v1alpha1
+kind: MCPServer
+metadata:
+  name: rhcl-lab-info
+  namespace: rhcl-mcp-lab
+  labels:
+    rhcl-lab/requirement: req017-mcp-catalog
+spec:
+  source:
+    type: ContainerImage
+    containerImage:
+      ref: image-registry.openshift-image-registry.svc:5000/rhcl-mcp-lab/rhcl-lab-info-mcp:latest
+  config:
+    port: 8080
+    path: /mcp
+  runtime:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+    security:
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+        runAsNonRoot: true
+---
+apiVersion: mcp.x-k8s.io/v1alpha1
+kind: MCPServer
+metadata:
+  name: rhcl-text-tools
+  namespace: rhcl-mcp-lab
+  labels:
+    rhcl-lab/requirement: req017-mcp-catalog
+spec:
+  source:
+    type: ContainerImage
+    containerImage:
+      ref: image-registry.openshift-image-registry.svc:5000/rhcl-mcp-lab/rhcl-text-tools-mcp:latest
+  config:
+    port: 8080
+    path: /mcp
+  runtime:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+    security:
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+        runAsNonRoot: true
+---
+apiVersion: mcp.x-k8s.io/v1alpha1
+kind: MCPServer
+metadata:
+  name: rhcl-time-tools
+  namespace: rhcl-mcp-lab
+  labels:
+    rhcl-lab/requirement: req017-mcp-catalog
+spec:
+  source:
+    type: ContainerImage
+    containerImage:
+      ref: image-registry.openshift-image-registry.svc:5000/rhcl-mcp-lab/rhcl-time-tools-mcp:latest
+  config:
+    port: 8080
+    path: /mcp
+  runtime:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+    security:
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+        runAsNonRoot: true

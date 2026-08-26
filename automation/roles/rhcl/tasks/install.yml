@@ -1,0 +1,314 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+# Default: install the LATEST RHCL from the stable channel (1.4.1+).
+#
+# The 1.3-pin machinery below is OPTIONAL now (RHCL_PIN_V13_ENABLED=false
+# by default). History: 1.4.0 shipped a gateway data-plane regression
+# (unstable remote wasm fetch → listeners never warmed → every request
+# 000) and was officially deprecated; this lab pinned 1.3.4 while that
+# was live. 1.4.1 fixes it — validated 2026-07-08 on a fresh cluster
+# (in-cluster wasm service, sha256-pinned; Auth + RateLimit policies
+# enforce end-to-end). Details:
+# docs/known-issues/rhcl-14-gateway-wasm-incompat.md
+#
+# Set RHCL_PIN_V13_ENABLED=true only to reproduce a 1.3.x customer
+# environment — it ships an extra CatalogSource pointing at the v4.18
+# redhat-operators index (which still carries Kuadrant 1.3.x) and forces
+# startingCSV=rhcl-operator.v1.3.4 on the Subscription.
+#
+# Everything from here through the CSV wait is gated by rhcl_install_operator.
+# Set RHCL_INSTALL_OPERATOR=false when the operator is provisioned out-of-band
+# (customer-managed OLM, or iterative re-runs where the install has already
+# happened). When skipping, we just assert presence below and move on.
+- name: Provision the v4.18 pinned CatalogSource
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'catalogsource-pin-v418.yml.j2') | from_yaml }}"
+  when:
+    - rhcl_install_operator | bool
+    - rhcl_pin_v13_enabled | bool
+
+- name: Wait for the pinned CatalogSource to be READY
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: CatalogSource
+    namespace: "{{ rhcl_pin_catalog_namespace }}"
+    name: "{{ rhcl_pin_catalog_name }}"
+  register: rhcl_pin_catalog_status
+  changed_when: false
+  # status.connectionState only appears after OLM brings the registry pod up
+  # and successfully reaches the gRPC port, which takes ~30s on the v4.18
+  # image. Until then `.status` is `{}` and a naked `.connectionState.lastObservedState`
+  # blows up with 'dict object has no attribute connectionState'. Default
+  # through each hop so we just keep retrying instead of failing.
+  until:
+    - rhcl_pin_catalog_status.resources | length == 1
+    - >-
+      (((rhcl_pin_catalog_status.resources[0].status | default({}))
+         .connectionState | default({}))
+         .lastObservedState | default('')) == "READY"
+  retries: 60
+  delay: 10
+  when:
+    - rhcl_install_operator | bool
+    - rhcl_pin_v13_enabled | bool
+
+- name: Ensure the RHCL namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ rhcl_namespace }}"
+    state: present
+
+- name: Query existing OperatorGroups in the RHCL namespace
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    namespace: "{{ rhcl_namespace }}"
+  register: rhcl_existing_ogs
+  changed_when: false
+  when: rhcl_install_operator | bool
+
+- name: Remove pre-existing OperatorGroups with a different name
+  kubernetes.core.k8s:
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    namespace: "{{ rhcl_namespace }}"
+    name: "{{ item.metadata.name }}"
+    state: absent
+  loop: "{{ rhcl_existing_ogs.resources | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  when:
+    - rhcl_install_operator | bool
+    - item.metadata.name != rhcl_operatorgroup_name
+
+- name: Ensure the RHCL OperatorGroup exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'operatorgroup.yml.j2') | from_yaml }}"
+  when: rhcl_install_operator | bool
+
+- name: Ensure the RHCL Subscription exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'subscription.yml.j2') | from_yaml }}"
+  when: rhcl_install_operator | bool
+
+- name: Wait for the RHCL subscription to report a current CSV
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ rhcl_namespace }}"
+    name: "{{ rhcl_operator_subscription_name }}"
+  register: rhcl_subscription
+  changed_when: false
+  failed_when: false
+  until:
+    - rhcl_subscription.resources | length == 1
+    - rhcl_subscription.resources[0].status.currentCSV is defined
+  retries: 60
+  delay: 10
+  when: rhcl_install_operator | bool
+
+- name: Wait for the RHCL CSV to succeed
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ rhcl_namespace }}"
+    name: "{{ rhcl_subscription.resources[0].status.currentCSV }}"
+  register: rhcl_csv
+  changed_when: false
+  failed_when: false
+  until:
+    - rhcl_csv.resources | length == 1
+    - rhcl_csv.resources[0].status.phase == "Succeeded"
+  retries: 60
+  delay: 10
+  when: rhcl_install_operator | bool
+
+# When skipping the OLM install, sanity-check the operator is actually
+# there. Use `oc get crd` instead of kubernetes.core.k8s_info — the
+# Python kubernetes-client on the customer's controller node blows up
+# with `ResourceField.__init__() got multiple values for argument 'self'`
+# regardless of how we call it.
+- name: Probe required Kuadrant CRD (RHCL_INSTALL_OPERATOR=false)
+  ansible.builtin.command:
+    cmd: "oc get crd kuadrants.kuadrant.io --ignore-not-found -o name"
+  register: rhcl_kuadrant_crd_probe
+  changed_when: false
+  when: not (rhcl_install_operator | bool)
+
+- name: Verify the Kuadrant CRD is present
+  ansible.builtin.assert:
+    that:
+      - (rhcl_kuadrant_crd_probe.stdout | default('') | length) > 0
+    fail_msg: >-
+      RHCL_INSTALL_OPERATOR=false but the required CRD
+      'kuadrants.kuadrant.io' is missing on the cluster. Install the
+      Kuadrant operator manually first, or set RHCL_INSTALL_OPERATOR=true.
+  when: not (rhcl_install_operator | bool)
+
+- name: Ensure the Kuadrant instance exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'kuadrant.yml.j2') | from_yaml }}"
+
+# Pre-check: is the Kuadrant CR already reporting Ready=True? If yes,
+# the operator has already detected the Istio provider (and Limitador +
+# Authorino + DNS) and the bounce below is a no-op that costs ~3 minutes
+# per playbook run. Only bounce when we can prove it's needed.
+#
+# `failed_when: false` on both this and the `wait until` because on a
+# brand-new install the Kuadrant CR may not exist yet (the task on line
+# ~161 creates it) — in that case `.resources` is empty and the ternary
+# below falls back to "bounce".
+- name: Check whether Kuadrant is already Ready (skip bounce if so)
+  kubernetes.core.k8s_info:
+    api_version: kuadrant.io/v1beta1
+    kind: Kuadrant
+    namespace: "{{ rhcl_namespace }}"
+    name: "{{ rhcl_instance_name }}"
+  register: rhcl_kuadrant_pre_check
+  changed_when: false
+  failed_when: false
+
+- name: Register whether bounce is needed
+  ansible.builtin.set_fact:
+    rhcl_kuadrant_bounce_needed: >-
+      {{
+        (rhcl_kuadrant_pre_check.resources | default([]) | length == 0)
+        or
+        (rhcl_kuadrant_pre_check.resources[0].status.conditions | default([])
+         | selectattr('type', 'equalto', 'Ready')
+         | selectattr('status', 'equalto', 'True')
+         | list | length == 0)
+      }}
+
+- name: Report Kuadrant bounce decision
+  ansible.builtin.debug:
+    msg: >-
+      {{ 'Kuadrant CR already Ready — skipping operator bounce (saves ~3 min).'
+         if not rhcl_kuadrant_bounce_needed
+         else 'Kuadrant CR not Ready yet — bouncing the operator pod.' }}
+
+- name: Bounce the Kuadrant Operator pod so it detects the Istio provider
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: openshift-operators
+    label_selectors:
+      - "control-plane=controller-manager"
+      - "app=kuadrant"
+  register: rhcl_kuadrant_operator_pods
+  changed_when: false
+  failed_when: false
+  when: rhcl_kuadrant_bounce_needed
+
+- name: Delete the Kuadrant Operator pod to force Istio provider re-detection
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Pod
+    namespace: openshift-operators
+    name: "{{ item.metadata.name }}"
+    state: absent
+  loop: "{{ rhcl_kuadrant_operator_pods.resources | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  register: rhcl_kuadrant_operator_pod_delete
+  when:
+    - rhcl_kuadrant_bounce_needed
+    - rhcl_kuadrant_operator_pods.resources | default([]) | length > 0
+
+- name: Wait for the Kuadrant Operator pod to be recreated after bounce
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: openshift-operators
+    label_selectors:
+      - "control-plane=controller-manager"
+      - "app=kuadrant"
+  register: rhcl_kuadrant_operator_new_pod
+  changed_when: false
+  failed_when: false
+  until:
+    - rhcl_kuadrant_operator_new_pod.resources | length == 1
+    - >-
+      rhcl_kuadrant_operator_new_pod.resources[0].status.conditions | default([])
+      | selectattr('type', 'equalto', 'Ready')
+      | selectattr('status', 'equalto', 'True')
+      | list | length >= 1
+  retries: 18
+  delay: 10
+  when:
+    - rhcl_kuadrant_bounce_needed
+    - rhcl_kuadrant_operator_pods.resources | default([]) | length > 0
+
+- name: Wait for Kuadrant to report Ready
+  kubernetes.core.k8s_info:
+    api_version: kuadrant.io/v1beta1
+    kind: Kuadrant
+    namespace: "{{ rhcl_namespace }}"
+    name: "{{ rhcl_instance_name }}"
+  register: rhcl_kuadrant
+  changed_when: false
+  failed_when: false
+  until:
+    - rhcl_kuadrant.resources | length == 1
+    - >-
+      rhcl_kuadrant.resources[0].status.conditions | default([])
+      | selectattr('type', 'equalto', 'Ready')
+      | selectattr('status', 'equalto', 'True')
+      | list | length >= 1
+  retries: 30
+  delay: 10
+
+- name: Wait for the RHCL console plugin to exist
+  kubernetes.core.k8s_info:
+    api_version: console.openshift.io/v1
+    kind: ConsolePlugin
+    name: "{{ rhcl_console_plugin_name }}"
+  register: rhcl_console_plugin
+  changed_when: false
+  failed_when: false
+  until:
+    - rhcl_console_plugin.resources | length == 1
+  retries: 30
+  delay: 10
+  when: rhcl_console_plugin_enabled
+
+- name: Query the OpenShift Console configuration
+  kubernetes.core.k8s_info:
+    api_version: operator.openshift.io/v1
+    kind: Console
+    name: cluster
+  register: rhcl_console
+  changed_when: false
+  when: rhcl_console_plugin_enabled
+
+- name: Resolve enabled OpenShift Console plugins
+  ansible.builtin.set_fact:
+    rhcl_console_plugins_resolved: >-
+      {{
+        (
+          rhcl_console.resources[0].spec.plugins | default([])
+          + [rhcl_console_plugin_name]
+        ) | unique
+      }}
+  when: rhcl_console_plugin_enabled
+
+- name: Enable the RHCL console plugin
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: operator.openshift.io/v1
+      kind: Console
+      metadata:
+        name: cluster
+      spec:
+        plugins: "{{ rhcl_console_plugins_resolved }}"
+  when: rhcl_console_plugin_enabled

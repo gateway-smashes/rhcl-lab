@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: rhcl-lab-info-mcp
+  namespace: rhcl-mcp-lab
+  labels:
+    app: rhcl-lab-info-mcp
+    rhcl-lab/requirement: req017-mcp-catalog
+spec:
+  selector:
+    app: rhcl-lab-info-mcp
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rhcl-text-tools-mcp
+  namespace: rhcl-mcp-lab
+  labels:
+    app: rhcl-text-tools-mcp
+    rhcl-lab/requirement: req017-mcp-catalog
+spec:
+  selector:
+    app: rhcl-text-tools-mcp
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rhcl-time-tools-mcp
+  namespace: rhcl-mcp-lab
+  labels:
+    app: rhcl-time-tools-mcp
+    rhcl-lab/requirement: req017-mcp-catalog
+spec:
+  selector:
+    app: rhcl-time-tools-mcp
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

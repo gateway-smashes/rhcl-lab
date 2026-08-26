@@ -1,0 +1,10 @@
+---
+- name: Install RHBK (Red Hat build of Keycloak) for OIDC/JWT
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  roles:
+    - role: rhbk
+      vars:
+        rhbk_action: install

@@ -1,0 +1,16 @@
+---
+- name: Verify cluster access through the current kube context
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Namespace
+    name: default
+  register: common_default_namespace
+  changed_when: false
+
+- name: Fail when the current kube context cannot query the cluster
+  ansible.builtin.assert:
+    that:
+      - common_default_namespace.resources | length == 1
+    fail_msg: >-
+      Unable to query the cluster through the current kube context.
+      Authenticate with oc or provide a working kubeconfig before running this playbook.

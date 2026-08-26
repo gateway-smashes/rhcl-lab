@@ -1,0 +1,24 @@
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: {{ apps_frontend_image_name }}
+  namespace: {{ apps_namespace }}
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: {{ apps_frontend_image_name }}:latest
+  source:
+    binary: {}
+    type: Binary
+  strategy:
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+      buildArgs:
+        - name: RHCL_GATEWAY_URL
+          value: {{ apps_frontend_rhcl_gateway_url_resolved | default(apps_frontend_rhcl_gateway_url) | to_json }}
+        - name: MCP_GATEWAY_URL
+          value: {{ apps_frontend_mcp_gateway_url_resolved | default(apps_frontend_mcp_gateway_url) | to_json }}
+        - name: RHCL_API_KEY
+          value: {{ apps_connectivity_apikey_value | to_json }}
+    type: Docker

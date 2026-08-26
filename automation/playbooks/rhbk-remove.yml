@@ -1,0 +1,10 @@
+---
+- name: Remove RHBK (Red Hat build of Keycloak)
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  roles:
+    - role: rhbk
+      vars:
+        rhbk_action: remove

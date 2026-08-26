@@ -1,0 +1,14 @@
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: mobile-bank-sticky-session
+  namespace: rhcl-apps
+spec:
+  host: mobile-bank.rhcl-apps.svc.cluster.local
+  trafficPolicy:
+    loadBalancer:
+      consistentHash:
+        httpCookie:
+          name: CUSTOM_COOKIE_SESSION
+          path: /
+          ttl: 1800s

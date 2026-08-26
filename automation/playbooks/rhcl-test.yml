@@ -1,0 +1,10 @@
+---
+- name: Validate RHCL
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  roles:
+    - role: rhcl
+      vars:
+        component_action: validate

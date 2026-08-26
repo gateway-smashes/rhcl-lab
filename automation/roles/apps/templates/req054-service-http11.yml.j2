@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ apps_req054_service_http11_name }}
+  namespace: {{ apps_namespace }}
+  labels:
+    app.kubernetes.io/part-of: req054-http-versions
+    rhcl.poc/item: "54"
+spec:
+  selector:
+    app: {{ apps_backend_primary_name }}
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP

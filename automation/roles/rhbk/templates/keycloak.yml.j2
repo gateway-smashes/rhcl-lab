@@ -1,0 +1,55 @@
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: Keycloak
+metadata:
+  name: {{ rhbk_keycloak_name }}
+  namespace: {{ rhbk_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-req71-oidc-jwt
+spec:
+  instances: {{ rhbk_instances }}
+  # Admin definitivo (default admin/redhat) via Secret — substitui o temp-admin
+  # com senha aleatória do operator. Só vale na criação inicial da instância.
+  bootstrapAdmin:
+    user:
+      secret: {{ rhbk_admin_secret_name }}
+  db:
+    vendor: postgres
+    host: postgres
+    port: 5432
+    database: {{ rhbk_db_name }}
+    usernameSecret:
+      name: {{ rhbk_db_secret_name }}
+      key: username
+    passwordSecret:
+      name: {{ rhbk_db_secret_name }}
+      key: password
+  hostname:
+    # Full external URL — becomes the OIDC issuer base (https://.../realms/<realm>).
+    hostname: https://{{ rhbk_hostname }}
+{% if rhbk_proxy_edge %}
+  # Corporate profile — TLS termina no Route/NGINX (edge); Keycloak roda HTTP atrás do
+  # proxy e confia nos cabeçalhos X-Forwarded-* p/ montar URLs externas (iss).
+  # A Route própria (keycloak-openshift-route) expõe o host.
+  http:
+    httpEnabled: true
+  proxy:
+    headers: xforwarded
+  ingress:
+    enabled: {{ rhbk_operator_ingress_enabled | bool | string | lower }}
+{% else %}
+  http:
+    # Cert no pod (rhbk_tls_mode passthrough/letsencrypt). Keycloak serve HTTPS com
+    # ele e a Route é passthrough, então o Authorino vê o cert direto:
+    #   passthrough (corporate): tlsSecret = cert internal corporate CA criado À MÃO (CA interna corporativa).
+    #   letsencrypt (AWS): tlsSecret emitido pelo cert-manager (já confiável).
+    tlsSecret: {{ rhbk_tls_secret_name }}
+  ingress:
+    enabled: {{ rhbk_operator_ingress_enabled | bool | string | lower }}
+{% endif %}
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 1700Mi

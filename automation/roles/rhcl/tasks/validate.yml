@@ -1,0 +1,115 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Query the RHCL namespace
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Namespace
+    name: "{{ rhcl_namespace }}"
+  register: rhcl_namespace_info
+  changed_when: false
+
+- name: Assert that the RHCL namespace exists
+  ansible.builtin.assert:
+    that:
+      - rhcl_namespace_info.resources | length == 1
+    fail_msg: "Namespace {{ rhcl_namespace }} does not exist."
+
+- name: Query the RHCL Subscription
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ rhcl_namespace }}"
+    name: "{{ rhcl_operator_subscription_name }}"
+  register: rhcl_subscription
+  changed_when: false
+
+- name: Assert that the RHCL Subscription exists
+  ansible.builtin.assert:
+    that:
+      - rhcl_subscription.resources | length == 1
+      - rhcl_subscription.resources[0].spec.name == rhcl_operator_name
+      - rhcl_subscription.resources[0].status.currentCSV is defined
+    fail_msg: "RHCL Subscription is missing or not reconciled."
+
+- name: Query the RHCL CSV
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ rhcl_namespace }}"
+    name: "{{ rhcl_subscription.resources[0].status.currentCSV }}"
+  register: rhcl_csv
+  changed_when: false
+
+- name: Assert that the RHCL CSV succeeded
+  ansible.builtin.assert:
+    that:
+      - rhcl_csv.resources | length == 1
+      - rhcl_csv.resources[0].status.phase == "Succeeded"
+    fail_msg: "RHCL CSV did not reach Succeeded."
+
+- name: Query the Kuadrant instance
+  kubernetes.core.k8s_info:
+    api_version: kuadrant.io/v1beta1
+    kind: Kuadrant
+    namespace: "{{ rhcl_namespace }}"
+    name: "{{ rhcl_instance_name }}"
+  register: rhcl_kuadrant
+  changed_when: false
+
+- name: Assert that Kuadrant is Ready
+  ansible.builtin.assert:
+    that:
+      - rhcl_kuadrant.resources | length == 1
+      - >-
+        (rhcl_kuadrant.resources[0].status.conditions | default([])
+        | selectattr('type', 'equalto', 'Ready')
+        | selectattr('status', 'equalto', 'True')
+        | list | length) >= 1
+    fail_msg: "Kuadrant is missing or not Ready."
+
+- name: Query RHCL namespace CSVs
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ rhcl_namespace }}"
+  register: rhcl_csvs
+  changed_when: false
+
+- name: Assert that dependent RHCL operators are present
+  ansible.builtin.assert:
+    that:
+      - (rhcl_csvs.resources | selectattr('metadata.name', 'search', 'authorino') | list | length) >= 1
+      - (rhcl_csvs.resources | selectattr('metadata.name', 'search', 'limitador') | list | length) >= 1
+      - (rhcl_csvs.resources | selectattr('metadata.name', 'search', 'dns') | list | length) >= 1
+    fail_msg: "One or more dependent RHCL operators are missing from {{ rhcl_namespace }}."
+
+- name: Query the RHCL console plugin
+  kubernetes.core.k8s_info:
+    api_version: console.openshift.io/v1
+    kind: ConsolePlugin
+    name: "{{ rhcl_console_plugin_name }}"
+  register: rhcl_console_plugin
+  changed_when: false
+  when: rhcl_console_plugin_enabled
+
+- name: Query the OpenShift Console configuration
+  kubernetes.core.k8s_info:
+    api_version: operator.openshift.io/v1
+    kind: Console
+    name: cluster
+  register: rhcl_console
+  changed_when: false
+  when: rhcl_console_plugin_enabled
+
+- name: Assert that the RHCL console plugin is enabled
+  ansible.builtin.assert:
+    that:
+      - rhcl_console_plugin.resources | length == 1
+      - rhcl_console.resources | length == 1
+      - rhcl_console_plugin_name in (rhcl_console.resources[0].spec.plugins | default([]))
+    fail_msg: "OpenShift Console plugin {{ rhcl_console_plugin_name }} is not enabled."
+  when: rhcl_console_plugin_enabled

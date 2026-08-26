@@ -1,0 +1,191 @@
+---
+# Pin Kuadrant to the latest 1.3.x by installing from the v4.18 catalog
+# (which still ships rhcl-operator.v1.3.4 + authorino/limitador/dns-operator
+# .v1.3.1). Run this BEFORE install-all.yml on a fresh cluster.
+#
+# Why: the stable channel in v4.19+ catalogs was bumped to 1.4.0, which
+# carries the EnvoyFilter reconcile-loop regression in PR #1953 (issue
+# Kuadrant/kuadrant-operator#2033). 1.3.4 is the last known-good release.
+#
+# What this does:
+#   1. Creates a CatalogSource `redhat-operators-v418` pointing at the v4.18
+#      index image (still indexed in the redhat-operators registry).
+#   2. Replaces any pre-existing 1.4 subscription with a Manual one pinning
+#      `startingCSV: rhcl-operator.v1.3.4`.
+#   3. Approves the install plans iteratively until all 4 CSVs (rhcl,
+#      authorino, limitador, dns) reach Succeeded.
+#
+# Override the version with `KUADRANT_PIN_RHCL_CSV=rhcl-operator.v1.3.<X>`
+# if a newer 1.3 patch ships.
+
+- name: Pin Kuadrant operators to the 1.3 line
+  hosts: localhost
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  vars:
+    pin_catalog_name: "{{ lookup('ansible.builtin.env', 'KUADRANT_PIN_CATALOG_NAME') | default('redhat-operators-v418', true) }}"
+    pin_catalog_image: "{{ lookup('ansible.builtin.env', 'KUADRANT_PIN_CATALOG_IMAGE') | default('registry.redhat.io/redhat/redhat-operator-index:v4.18', true) }}"
+    pin_rhcl_csv: "{{ lookup('ansible.builtin.env', 'KUADRANT_PIN_RHCL_CSV') | default('rhcl-operator.v1.3.4', true) }}"
+    pin_namespace: "{{ rhcl_namespace | default('kuadrant-system') }}"
+    pin_subscription_name: "{{ rhcl_operator_subscription_name | default('rhcl-operator') }}"
+    pin_operator_name: "{{ rhcl_operator_name | default('rhcl-operator') }}"
+    pin_channel: "{{ rhcl_operator_channel | default('stable') }}"
+
+  tasks:
+    - name: Ensure the Kuadrant namespace exists
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Namespace
+        name: "{{ pin_namespace }}"
+        state: present
+
+    - name: Create the v4.18 catalog source so 1.3 packages remain reachable
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: operators.coreos.com/v1alpha1
+          kind: CatalogSource
+          metadata:
+            name: "{{ pin_catalog_name }}"
+            namespace: openshift-marketplace
+          spec:
+            sourceType: grpc
+            image: "{{ pin_catalog_image }}"
+            displayName: Red Hat Operators (4.18 — Kuadrant 1.3 pin)
+            publisher: Red Hat
+            updateStrategy:
+              registryPoll:
+                interval: 24h
+
+    - name: Wait for the catalog source to report READY
+      kubernetes.core.k8s_info:
+        api_version: operators.coreos.com/v1alpha1
+        kind: CatalogSource
+        namespace: openshift-marketplace
+        name: "{{ pin_catalog_name }}"
+      register: pin_catalog_status
+      changed_when: false
+      # First pull of the v4.18 index image on a fresh cluster can take
+      # 5-10 minutes (TRANSIENT_FAILURE while OLM retries the registry).
+      # 60 × 15 = 15 min covers the slow case.
+      until: pin_catalog_status.resources[0].status.connectionState.lastObservedState | default('') == 'READY'
+      retries: 60
+      delay: 15
+
+    # Remove any pre-existing 1.4-shaped subscription / CSV so the operator
+    # can re-install at the pinned 1.3 version. Safe to re-run.
+    - name: Look up an existing subscription on the standard catalog
+      kubernetes.core.k8s_info:
+        api_version: operators.coreos.com/v1alpha1
+        kind: Subscription
+        namespace: "{{ pin_namespace }}"
+        name: "{{ pin_subscription_name }}"
+      register: pin_existing_sub
+      changed_when: false
+      failed_when: false
+
+    - name: Remove a pre-existing 1.4 subscription pointing at redhat-operators
+      kubernetes.core.k8s:
+        state: absent
+        api_version: operators.coreos.com/v1alpha1
+        kind: Subscription
+        namespace: "{{ pin_namespace }}"
+        name: "{{ pin_subscription_name }}"
+      when:
+        - pin_existing_sub.resources | default([]) | length > 0
+        - pin_existing_sub.resources[0].spec.source != pin_catalog_name
+
+    - name: Look up CSVs that need replacement
+      kubernetes.core.k8s_info:
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        namespace: "{{ pin_namespace }}"
+      register: pin_existing_csvs
+      changed_when: false
+      failed_when: false
+
+    - name: Delete CSVs from the 1.4 line so the pin can take effect
+      kubernetes.core.k8s:
+        state: absent
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        namespace: "{{ pin_namespace }}"
+        name: "{{ item.metadata.name }}"
+      loop: "{{ pin_existing_csvs.resources | default([]) }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
+      when:
+        - item.metadata.name is match('^(rhcl|authorino|limitador|dns)-operator\\.v1\\.4\\.')
+
+    - name: Ensure an OperatorGroup exists for the namespace
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: operators.coreos.com/v1
+          kind: OperatorGroup
+          metadata:
+            name: "{{ rhcl_operatorgroup_name | default('kuadrant') }}"
+            namespace: "{{ pin_namespace }}"
+          spec: {}
+
+    - name: Create a Manual subscription pinning rhcl-operator to {{ pin_rhcl_csv }}
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: operators.coreos.com/v1alpha1
+          kind: Subscription
+          metadata:
+            name: "{{ pin_subscription_name }}"
+            namespace: "{{ pin_namespace }}"
+          spec:
+            channel: "{{ pin_channel }}"
+            installPlanApproval: Manual
+            name: "{{ pin_operator_name }}"
+            source: "{{ pin_catalog_name }}"
+            sourceNamespace: openshift-marketplace
+            startingCSV: "{{ pin_rhcl_csv }}"
+
+    # Approve every pending install plan and wait for the 4 expected CSVs to
+    # reach Succeeded. Repeats up to N rounds because OLM creates the plans
+    # serially (one per CSV in the dependency chain).
+    - name: Approve install plans until all 4 operators land on 1.3
+      ansible.builtin.shell:
+        cmd: |
+          set -u
+          for round in $(seq 1 24); do
+            installed=$(oc -n {{ pin_namespace }} get csv \
+              -o jsonpath='{.items[?(@.status.phase=="Succeeded")].metadata.name}' 2>/dev/null \
+              | tr ' ' '\n' \
+              | grep -cE '^(rhcl|authorino|limitador|dns)-operator\.v1\.3\.' || true)
+            echo "round $round: succeeded=$installed/4"
+            if [ "$installed" -ge 4 ]; then exit 0; fi
+            for ip in $(oc -n {{ pin_namespace }} get installplan \
+                          -o jsonpath='{range .items[?(@.spec.approved==false)]}{.metadata.name}{"\n"}{end}'); do
+              oc -n {{ pin_namespace }} patch installplan "$ip" \
+                --type=merge -p '{"spec":{"approved":true}}' >/dev/null
+            done
+            sleep 15
+          done
+          echo "timed out waiting for 4 Succeeded CSVs" >&2
+          oc -n {{ pin_namespace }} get csv >&2
+          exit 1
+      register: pin_approval
+      changed_when: pin_approval.rc == 0
+      args:
+        executable: /bin/bash
+
+    - name: Report final operator versions
+      ansible.builtin.shell:
+        cmd: |
+          oc -n {{ pin_namespace }} get csv \
+            -o custom-columns=NAME:.metadata.name,VERSION:.spec.version,PHASE:.status.phase \
+            | grep -E '^(rhcl|authorino|limitador|dns)-operator|^NAME'
+      register: pin_report
+      changed_when: false
+      args:
+        executable: /bin/bash
+
+    - name: Show the pinned operator inventory
+      ansible.builtin.debug:
+        msg: "{{ pin_report.stdout_lines }}"

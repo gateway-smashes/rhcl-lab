@@ -1,0 +1,92 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Validate DNS provider inputs
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_dns_inputs.yml
+
+- name: Query the DNS provider secret
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    namespace: "{{ rhcl_dns_namespace }}"
+    name: "{{ rhcl_dns_secret_name }}"
+  register: rhcl_dns_secret
+  changed_when: false
+
+- name: Assert that the DNS provider secret exists
+  ansible.builtin.assert:
+    that:
+      - rhcl_dns_secret.resources | length == 1
+      - rhcl_dns_secret.resources[0].type == "kuadrant.io/" ~ rhcl_dns_provider
+    fail_msg: "DNS provider secret {{ rhcl_dns_namespace }}/{{ rhcl_dns_secret_name }} is missing or has the wrong type."
+
+- name: Assert AWS DNS secret keys
+  ansible.builtin.assert:
+    that:
+      - "'AWS_ACCESS_KEY_ID' in rhcl_dns_secret.resources[0].data"
+      - "'AWS_SECRET_ACCESS_KEY' in rhcl_dns_secret.resources[0].data"
+      - "'AWS_REGION' in rhcl_dns_secret.resources[0].data"
+    fail_msg: "AWS DNS secret is missing one or more required keys."
+  when: rhcl_dns_provider == "aws"
+
+- name: Assert Azure DNS secret keys
+  ansible.builtin.assert:
+    that:
+      - "'azure.json' in rhcl_dns_secret.resources[0].data"
+    fail_msg: "Azure DNS secret is missing azure.json."
+  when: rhcl_dns_provider == "azure"
+
+- name: Assert GCP DNS secret keys
+  ansible.builtin.assert:
+    that:
+      - "'PROJECT_ID' in rhcl_dns_secret.resources[0].data"
+      - "'GOOGLE' in rhcl_dns_secret.resources[0].data"
+    fail_msg: "GCP DNS secret is missing PROJECT_ID or GOOGLE."
+  when: rhcl_dns_provider == "gcp"
+
+- name: Query the DNSPolicy
+  kubernetes.core.k8s_info:
+    api_version: kuadrant.io/v1
+    kind: DNSPolicy
+    namespace: "{{ rhcl_dns_policy_target_gateway_namespace }}"
+    name: "{{ rhcl_dns_policy_name }}"
+  register: rhcl_dns_policy
+  changed_when: false
+  when: rhcl_dns_policy_enabled
+
+- name: Assert that the DNSPolicy exists
+  ansible.builtin.assert:
+    that:
+      - rhcl_dns_policy.resources | length == 1
+    fail_msg: "DNSPolicy {{ rhcl_dns_policy_target_gateway_namespace }}/{{ rhcl_dns_policy_name }} is missing."
+  when: rhcl_dns_policy_enabled
+
+- name: Assert that the DNSPolicy is Accepted
+  ansible.builtin.assert:
+    that:
+      - rhcl_dns_policy.resources[0].status.conditions | default([])
+        | selectattr('type', 'equalto', 'Accepted')
+        | selectattr('status', 'equalto', 'True')
+        | list | length == 1
+    fail_msg: >-
+      DNSPolicy {{ rhcl_dns_policy_target_gateway_namespace }}/{{ rhcl_dns_policy_name }}
+      is not Accepted. Check the target Gateway exists and the provider secret is valid.
+  when: rhcl_dns_policy_enabled
+
+- name: Assert that the DNSPolicy is Enforced
+  ansible.builtin.assert:
+    that:
+      - rhcl_dns_policy.resources[0].status.conditions | default([])
+        | selectattr('type', 'equalto', 'Enforced')
+        | selectattr('status', 'equalto', 'True')
+        | list | length == 1
+    fail_msg: >-
+      DNSPolicy {{ rhcl_dns_policy_target_gateway_namespace }}/{{ rhcl_dns_policy_name }}
+      is Accepted but not Enforced. The target Gateway is likely not yet Programmed,
+      or no HTTPRoute hostname falls within a zone the provider manages.
+  when: rhcl_dns_policy_enabled

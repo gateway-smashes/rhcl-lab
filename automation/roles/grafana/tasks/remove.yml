@@ -1,0 +1,97 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Remove RHCL GrafanaDashboards
+  kubernetes.core.k8s:
+    state: absent
+    api_version: grafana.integreatly.org/v1beta1
+    kind: GrafanaDashboard
+    namespace: "{{ grafana_namespace }}"
+    name: "{{ item }}"
+  loop:
+    - rhcl-api-overview
+    - rhcl-api-consumers
+    - rhcl-authorino
+    - rhcl-limitador
+
+- name: Remove the Telemetry CR
+  kubernetes.core.k8s:
+    state: absent
+    api_version: telemetry.istio.io/v1
+    kind: Telemetry
+    namespace: "{{ grafana_telemetry_namespace }}"
+    name: "{{ grafana_telemetry_name }}"
+
+- name: Remove the gateway istio-proxy PodMonitor
+  kubernetes.core.k8s:
+    state: absent
+    api_version: monitoring.coreos.com/v1
+    kind: PodMonitor
+    namespace: "{{ grafana_telemetry_namespace }}"
+    name: "{{ grafana_gateway_podmonitor_name }}"
+
+- name: Remove the Thanos GrafanaDatasource
+  kubernetes.core.k8s:
+    state: absent
+    api_version: grafana.integreatly.org/v1beta1
+    kind: GrafanaDatasource
+    namespace: "{{ grafana_namespace }}"
+    name: "{{ grafana_thanos_datasource_name }}"
+
+- name: Remove the Grafana instance
+  kubernetes.core.k8s:
+    state: absent
+    api_version: grafana.integreatly.org/v1beta1
+    kind: Grafana
+    namespace: "{{ grafana_namespace }}"
+    name: "{{ grafana_instance_name }}"
+
+- name: Remove the SA token Secret
+  kubernetes.core.k8s:
+    state: absent
+    api_version: v1
+    kind: Secret
+    namespace: "{{ grafana_namespace }}"
+    name: "{{ grafana_thanos_sa_token_secret }}"
+
+- name: Remove the Thanos ClusterRoleBinding
+  kubernetes.core.k8s:
+    state: absent
+    api_version: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    name: "{{ grafana_thanos_clusterrolebinding_name }}"
+
+- name: Remove the Grafana Subscription
+  kubernetes.core.k8s:
+    state: absent
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ grafana_operator_namespace }}"
+    name: "{{ grafana_subscription_name }}"
+  when: grafana_install_operator | bool
+
+- name: Remove the Grafana OperatorGroup
+  kubernetes.core.k8s:
+    state: absent
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    namespace: "{{ grafana_operator_namespace }}"
+    name: "{{ grafana_operatorgroup_name }}"
+
+- name: Remove the Grafana namespace
+  kubernetes.core.k8s:
+    state: absent
+    api_version: v1
+    kind: Namespace
+    name: "{{ grafana_namespace }}"
+
+- name: Remove the Grafana operator namespace
+  kubernetes.core.k8s:
+    state: absent
+    api_version: v1
+    kind: Namespace
+    name: "{{ grafana_operator_namespace }}"
+  when: grafana_install_operator | bool

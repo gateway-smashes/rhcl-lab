@@ -1,0 +1,24 @@
+# Service para o backend gRPC com appProtocol: kubernetes.io/h2c.
+# O campo appProtocol instrui o Istio/Envoy a conectar ao backend usando
+# HTTP/2 cleartext (h2c), que é o transporte nativo do gRPC.
+#
+# Referência: https://kubernetes.io/docs/concepts/services-networking/service/#application-protocol
+# Referência: https://istio.io/latest/docs/ops/configuration/traffic-management/protocol-selection/
+apiVersion: v1
+kind: Service
+metadata:
+  name: req048-grpc-backend
+  namespace: {{ namespace }}
+  labels:
+    app: req048-banking-api
+    app.kubernetes.io/part-of: req048-grpc-backend
+    rhcl.poc/item: "48"
+spec:
+  selector:
+    app: req048-banking-api
+  ports:
+  - name: grpc
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+    appProtocol: kubernetes.io/h2c

@@ -1,0 +1,10 @@
+---
+- name: Validate Grafana deployment + datasource + dashboards
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  roles:
+    - role: grafana
+      vars:
+        rhcl_action: validate

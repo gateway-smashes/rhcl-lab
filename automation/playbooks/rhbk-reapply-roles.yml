@@ -1,0 +1,22 @@
+---
+# Re-sync `rhbk_realm_roles` + `rhbk_users.realmRoles` to an existing
+# Keycloak realm.
+#
+# The Keycloak operator imports `KeycloakRealmImport` exactly once
+# (status flips to Done=True; subsequent CR edits are ignored). So
+# editing roles / user assignments in group_vars and re-running
+# `rhbk-install.yml` does NOT propagate to a cluster that already has
+# the realm. This playbook closes that gap by talking to the running
+# Keycloak directly via `kcadm.sh`. Idempotent — re-run safely.
+#
+# Usage:
+#   ansible-playbook playbooks/rhbk-reapply-roles.yml
+- name: Re-sync Keycloak realm roles + user role assignments
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  roles:
+    - role: rhbk
+      vars:
+        rhbk_action: reapply_roles

@@ -1,0 +1,21 @@
+# ConfigMap que recebe o bundle de CAs confiáveis do cluster.
+#
+# O label `config.openshift.io/inject-trusted-cabundle` faz o Network Operator
+# do OpenShift preencher a chave `ca-bundle.crt` com as CAs do cluster —
+# incluindo a CA interna que o admin configurou em
+# `proxy/cluster .spec.trustedCA`. Por isso o `data` fica VAZIO aqui: quem
+# escreve é o operator, e sobrescrever apagaria o conteúdo injetado.
+#
+# Necessário porque o backend do RHDH é Node, que mantém sua PRÓPRIA lista de
+# CAs e ignora o truststore do sistema. Contra um Keycloak com certificado de
+# CA interna o login morre em /oidc/start com
+# `SELF_SIGNED_CERT_IN_CHAIN: self-signed certificate in certificate chain`.
+# O arquivo montado é apontado por NODE_EXTRA_CA_CERTS no CR do Backstage.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ developer_hub_trusted_ca_configmap }}
+  namespace: {{ developer_hub_namespace }}
+  labels:
+    config.openshift.io/inject-trusted-cabundle: "true"
+    app.kubernetes.io/part-of: rhcl-developer-hub

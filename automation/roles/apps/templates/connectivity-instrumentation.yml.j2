@@ -1,0 +1,30 @@
+apiVersion: opentelemetry.io/v1alpha1
+kind: Instrumentation
+metadata:
+  name: {{ apps_namespace }}-java
+  namespace: {{ apps_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-banking-poc
+spec:
+  exporter:
+    endpoint: {{ apps_otel_instrumentation_endpoint }}
+  propagators:
+    - tracecontext
+    - baggage
+  sampler:
+    type: parentbased_traceidratio
+    argument: "{{ apps_otel_instrumentation_sampling_ratio }}"
+  java:
+    env:
+      # http/protobuf — Quarkus on JDK 17 with the v2 agent talks gRPC by
+      # default; the OTel Collector also accepts HTTP/protobuf on :4318
+      # and that's the port we expose to the apps namespace, so be
+      # explicit instead of relying on the agent default.
+      - name: OTEL_EXPORTER_OTLP_PROTOCOL
+        value: http/protobuf
+      # Surface Micrometer metrics (Quarkus exposes JVM/HTTP metrics
+      # through Micrometer) as OTel metrics — useful when the Tempo
+      # gateway is colocated with a Prometheus that scrapes the same
+      # collector.
+      - name: OTEL_INSTRUMENTATION_MICROMETER_ENABLED
+        value: "true"

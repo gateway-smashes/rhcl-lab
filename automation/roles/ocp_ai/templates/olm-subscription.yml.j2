@@ -1,0 +1,14 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: {{ olm_subscription_name }}
+  namespace: {{ olm_namespace }}
+spec:
+  channel: {{ olm_channel }}
+  installPlanApproval: Automatic
+  name: {{ olm_operator_name }}
+  source: {{ olm_source }}
+  sourceNamespace: {{ olm_source_namespace }}
+{% if olm_starting_csv is defined and (olm_starting_csv | length > 0) %}
+  startingCSV: {{ olm_starting_csv }}
+{% endif %}

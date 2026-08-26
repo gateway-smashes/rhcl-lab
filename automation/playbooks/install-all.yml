@@ -1,0 +1,45 @@
+---
+- import_playbook: gateway_api-install.yml
+- import_playbook: cert_manager-install.yml
+- import_playbook: rhcl-install.yml
+- import_playbook: dns-install.yml
+- import_playbook: letsencrypt-install.yml
+- import_playbook: monitoring-install.yml
+# Observability (Tempo + OpenTelemetry + OTel Collector + EnvoyFilter + Kuadrant
+# observability patch). Runs after monitoring (needs UWM for ServiceMonitor scrape)
+# and before apps (so traces are captured from first request).
+# Toggle with OBSERVABILITY_ENABLED=false (handled inside the observability role).
+- import_playbook: observability-install.yml
+# RHBK (Keycloak) before apps: the apps AuthPolicy points its JWT method at the
+# realm issuer that this playbook stands up. Toggle with RHBK_ENABLED=false
+# (handled inside the rhbk role).
+- import_playbook: rhbk-install.yml
+- import_playbook: apps-install.yml
+# Grafana Operator + RHCL dashboards (API Overview, API Consumers, Authorino,
+# Limitador) + Istio Telemetry CR exposing path/route/consumer labels.
+# Runs after apps so the dashboards have real traffic to plot on first open.
+# Toggle with GRAFANA_ENABLED=false (handled inside the role).
+- import_playbook: grafana-install.yml
+# Custom RHCL Console (OpenShift dynamic plugin) last — needs the console + a
+# Gateway to surface. Toggle with CUSTOM_CONSOLE_ENABLED=false (in the role).
+- import_playbook: custom_console-install.yml
+# Tests catalog (README viewer / reproducer) — static site built from tests/.
+# Toggle with TESTS_CATALOG_ENABLED=false (in the role).
+- import_playbook: tests_catalog-install.yml
+# AI add-ons — both opt-in (default off), wired here so a single install-all
+# run can stand up the AI scenario when the cluster supports it. The roles
+# themselves short-circuit via meta:end_play when the *_ENABLED flag is false,
+# so an unconfigured run is a no-op for these two.
+#   MCP_GATEWAY_ENABLED=true   → MCPGatewayExtension + MCPServerRegistration on
+#                                the connectivity Gateway (preview operator).
+#   OCP_AI_ENABLED=true        → RHOAI + DataScienceCluster + MaaS Gateway +
+#                                Kueue/JobSet/LWS/KEDA. Set OCP_AI_GPU_ENABLED=false
+#                                to skip NVIDIA GPU Operator on CPU-only clusters.
+- import_playbook: mcp_gateway-install.yml
+- import_playbook: ocp_ai-install.yml
+# Developer Hub (RHDH) + Kuadrant Backstage plugin — item 29 (self-service
+# through the IDP). Opt-in: the role ends the play unless DEVELOPER_HUB_ENABLED
+# is true, so an unconfigured install-all is a no-op here. Runs after rhbk
+# (needs the Keycloak realm for OIDC) and after custom_console (wires the
+# "Internal Developer Hub" link on the console ConfigMap).
+- import_playbook: developer_hub-install.yml

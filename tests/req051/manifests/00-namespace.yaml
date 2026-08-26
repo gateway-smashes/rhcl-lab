@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: req051-gateway
+  labels:
+    app.kubernetes.io/part-of: rhcl-req051-mtls
+    rhcl-lab/requirement: req051-056-mtls

@@ -1,0 +1,21 @@
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: {{ apps_backend_image_name }}
+  namespace: {{ apps_namespace }}
+{% if apps_image_source == 'quay' %}
+spec:
+  # When apps_image_source == 'quay', this ImageStream acts as a proxy for the
+  # external image. OpenShift imports the manifest into the internal registry
+  # and the deployments (which reference image-registry.openshift-image-registry.svc)
+  # automatically pick up the new digest via the image.openshift.io/triggers annotation.
+  tags:
+    - name: latest
+      from:
+        kind: DockerImage
+        name: {{ apps_backend_image_quay }}
+      referencePolicy:
+        type: Source
+      importPolicy:
+        scheduled: false
+{% endif %}

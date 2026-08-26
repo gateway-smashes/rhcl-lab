@@ -1,0 +1,107 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Ensure the tests catalog namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ tests_catalog_namespace }}"
+    state: present
+
+# Provision the git basic-auth Secret when the user passed a PAT via env.
+# Skipped silently when no token is set (public repo / no auth needed) or
+# when the user pointed at a Secret they created out-of-band.
+- name: Ensure git basic-auth Secret exists for the BuildConfig sourceSecret
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ tests_catalog_git_source_secret_default }}"
+        namespace: "{{ tests_catalog_namespace }}"
+        labels:
+          app: "{{ tests_catalog_name }}"
+          app.kubernetes.io/part-of: rhcl-tests-catalog
+        annotations:
+          # Marks this Secret as a credential for the BuildConfig, so
+          # `oc set build-secret` style tooling can find it later.
+          build.openshift.io/source-secret-match-uri-1: "{{ tests_catalog_git_uri }}"
+      type: kubernetes.io/basic-auth
+      stringData:
+        username: "{{ tests_catalog_git_username }}"
+        password: "{{ tests_catalog_git_token }}"
+  no_log: true
+  when:
+    - tests_catalog_image_source == 'build'
+    - (tests_catalog_git_token | length) > 0
+    - tests_catalog_git_source_secret == tests_catalog_git_source_secret_default
+
+# --- Build in-cluster (Git -> Docker) — só quando image_source=build ---
+- name: Create the catalog ImageStream + BuildConfig (Git source)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'build.yml.j2') | from_yaml_all | list }}"
+  when: tests_catalog_image_source == 'build'
+
+- name: Start a build (picks up the latest tests/ content)
+  ansible.builtin.command:
+    argv: "{{ ['oc'] + (['--kubeconfig=' ~ kcfg] if kcfg | length > 0 else []) + ['-n', tests_catalog_namespace, 'start-build', tests_catalog_name] }}"
+  vars:
+    kcfg: "{{ lookup('ansible.builtin.env', 'KUBECONFIG') }}"
+  register: tests_catalog_build
+  changed_when: "'started' in (tests_catalog_build.stdout | default(''))"
+  failed_when: false
+  when: tests_catalog_image_source == 'build'
+
+- name: Wait for the catalog image to be available in the ImageStream
+  kubernetes.core.k8s_info:
+    api_version: image.openshift.io/v1
+    kind: ImageStream
+    namespace: "{{ tests_catalog_namespace }}"
+    name: "{{ tests_catalog_name }}"
+  register: tests_catalog_is
+  changed_when: false
+  failed_when: false
+  until:
+    - tests_catalog_is.resources | length == 1
+    - (tests_catalog_is.resources[0].status.tags | default([])) | length > 0
+  retries: 40
+  delay: 15
+  when: tests_catalog_image_source == 'build'
+
+# --- Workload ---
+- name: Deploy the tests catalog (Deployment + Service)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'deployment.yml.j2') | from_yaml_all | list }}"
+
+- name: Expose the tests catalog (Route)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'route.yml.j2') | from_yaml }}"
+
+- name: Wait for the tests catalog deployment to be available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ tests_catalog_namespace }}"
+    name: "{{ tests_catalog_name }}"
+  register: tests_catalog_deploy
+  changed_when: false
+  failed_when: false
+  until:
+    - tests_catalog_deploy.resources | length == 1
+    - (tests_catalog_deploy.resources[0].status.availableReplicas | default(0)) >= 1
+  retries: 30
+  delay: 10
+
+- name: Report the tests catalog route
+  ansible.builtin.debug:
+    msg: >-
+      Tests catalog deployed in '{{ tests_catalog_namespace }}'. Route:
+      {{ tests_catalog_hostname if (tests_catalog_hostname | length > 0)
+         else (tests_catalog_name ~ '-' ~ tests_catalog_namespace ~ '.<apps-domain>') }}

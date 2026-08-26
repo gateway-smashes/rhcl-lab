@@ -1,0 +1,502 @@
+---
+- name: Validate OpenShift AI prerequisites
+  ansible.builtin.include_tasks: assert_prerequisites.yml
+
+- name: Query OpenShift AI Subscription
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ ocp_ai_operator_namespace }}"
+    name: "{{ ocp_ai_subscription_name }}"
+  register: ocp_ai_rhods_subscription
+  changed_when: false
+
+- name: Assert OpenShift AI Subscription exists
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_rhods_subscription.resources | length == 1
+      - ocp_ai_rhods_subscription.resources[0].status.currentCSV is defined
+    fail_msg: "rhods-operator Subscription is missing or not reconciled."
+
+- name: Query OpenShift AI CSV
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ ocp_ai_operator_namespace }}"
+    name: "{{ ocp_ai_rhods_subscription.resources[0].status.currentCSV }}"
+  register: ocp_ai_rhods_csv
+  changed_when: false
+
+- name: Assert OpenShift AI CSV succeeded
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_rhods_csv.resources | length == 1
+      - ocp_ai_rhods_csv.resources[0].status.phase == "Succeeded"
+    fail_msg: "rhods-operator CSV did not reach Succeeded."
+
+- name: Query DataScienceCluster
+  kubernetes.core.k8s_info:
+    api_version: datasciencecluster.opendatahub.io/v2
+    kind: DataScienceCluster
+    name: "{{ ocp_ai_dsc_name }}"
+  register: ocp_ai_dsc
+  changed_when: false
+
+- name: Assert DataScienceCluster is Ready
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_dsc.resources | length == 1
+      - ocp_ai_dsc.resources[0].status.phase is defined
+      - ocp_ai_dsc.resources[0].status.phase == "Ready"
+    fail_msg: "DataScienceCluster {{ ocp_ai_dsc_name }} is not Ready."
+
+- name: Assert kserve component is Managed
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_dsc.resources[0].spec.components.kserve.managementState == "Managed"
+    fail_msg: "DataScienceCluster kserve component is not Managed."
+
+- name: Query OdhDashboardConfig for Gen AI studio
+  kubernetes.core.k8s_info:
+    api_version: opendatahub.io/v1alpha
+    kind: OdhDashboardConfig
+    namespace: "{{ ocp_ai_applications_namespace }}"
+    name: odh-dashboard-config
+  register: ocp_ai_odh_dashboard_config
+  changed_when: false
+  failed_when: false
+  when: ocp_ai_dashboard_gen_ai_studio | bool
+
+- name: Assert Gen AI studio is enabled in OdhDashboardConfig
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_odh_dashboard_config.resources | length == 1
+      - ocp_ai_odh_dashboard_config.resources[0].spec.dashboardConfig.genAiStudio | bool
+    fail_msg: >-
+      OdhDashboardConfig {{ ocp_ai_applications_namespace }}/odh-dashboard-config
+      does not have spec.dashboardConfig.genAiStudio=true. The Playground menu
+      item is hidden by default in OpenShift AI 3.4.
+  when: ocp_ai_dashboard_gen_ai_studio | bool
+
+- name: Assert Models as a Service dashboard tab is enabled
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_odh_dashboard_config.resources | length == 1
+      - ocp_ai_odh_dashboard_config.resources[0].spec.dashboardConfig.modelAsService | bool
+    fail_msg: >-
+      OdhDashboardConfig {{ ocp_ai_applications_namespace }}/odh-dashboard-config
+      does not have spec.dashboardConfig.modelAsService=true.
+  when:
+    - ocp_ai_dashboard_model_as_service | bool
+    - ocp_ai_odh_dashboard_config is defined
+    - ocp_ai_odh_dashboard_config.resources | length == 1
+
+- name: Assert AI asset custom endpoints are enabled in OdhDashboardConfig
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_odh_dashboard_config.resources | length == 1
+      - ocp_ai_odh_dashboard_config.resources[0].spec.dashboardConfig.aiAssetCustomEndpoints | bool
+      - ocp_ai_odh_dashboard_config.resources[0].spec.genAiStudioConfig.aiAssetCustomEndpoints.externalProviders | bool
+    fail_msg: >-
+      OdhDashboardConfig {{ ocp_ai_applications_namespace }}/odh-dashboard-config
+      does not have aiAssetCustomEndpoints/externalProviders enabled. Required for
+      external LiteLLM and OpenAI-compatible gateway endpoints in Gen AI studio.
+  when:
+    - ocp_ai_dashboard_ai_asset_custom_endpoints | bool
+    - ocp_ai_dashboard_ai_asset_external_providers | bool
+    - ocp_ai_odh_dashboard_config is defined
+    - ocp_ai_odh_dashboard_config.resources | length == 1
+
+- name: Assert requested OpenShift AI component states are applied
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_dsc.resources[0].spec.components.dashboard.managementState == ocp_ai_dashboard_state
+      - ocp_ai_dsc.resources[0].spec.components.aipipelines.managementState == ocp_ai_aipipelines_state
+      - ocp_ai_dsc.resources[0].spec.components.aipipelines.argoWorkflowsControllers.managementState == ocp_ai_aipipelines_argo_workflows_controllers_state
+      - ocp_ai_dsc.resources[0].spec.components.kserve.modelsAsService.managementState == ocp_ai_kserve_models_as_service_state
+      - ocp_ai_dsc.resources[0].spec.components.kserve.wva.managementState == ocp_ai_kserve_wva_state
+      - ocp_ai_dsc.resources[0].spec.components.kueue.managementState == ocp_ai_kueue_state
+      - ocp_ai_dsc.resources[0].spec.components.llamastackoperator.managementState == ocp_ai_llamastackoperator_state
+      - ocp_ai_dsc.resources[0].spec.components.modelregistry.managementState == ocp_ai_modelregistry_state
+      - ocp_ai_dsc.resources[0].spec.components.ray.managementState == ocp_ai_ray_state
+      - ocp_ai_dsc.resources[0].spec.components.trainingoperator.managementState == ocp_ai_trainingoperator_state
+      - ocp_ai_dsc.resources[0].spec.components.workbenches.managementState == ocp_ai_workbenches_state
+    fail_msg: "One or more requested DataScienceCluster component states were not applied."
+
+- name: Query kserve controller Deployment
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ ocp_ai_applications_namespace }}"
+    label_selectors:
+      - control-plane=kserve-controller-manager
+  register: ocp_ai_kserve_controller
+  changed_when: false
+  failed_when: false
+
+- name: Assert kserve controller is available
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_kserve_controller.resources | length >= 1
+      - (ocp_ai_kserve_controller.resources[0].status.availableReplicas | default(0) | int) >= 1
+    fail_msg: "kserve-controller-manager Deployment is not available in {{ ocp_ai_applications_namespace }}."
+
+- name: Query Leader Worker Set Operator CR
+  kubernetes.core.k8s_info:
+    api_version: operator.openshift.io/v1
+    kind: LeaderWorkerSetOperator
+    namespace: "{{ ocp_ai_lws_namespace }}"
+    name: cluster
+  register: ocp_ai_lws_cr
+  changed_when: false
+  when: ocp_ai_llmd_enabled | bool
+
+- name: Assert LeaderWorkerSetOperator is Managed
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_lws_cr.resources | length == 1
+      - ocp_ai_lws_cr.resources[0].spec.managementState == "Managed"
+    fail_msg: "LeaderWorkerSetOperator cluster CR is missing or not Managed."
+  when: ocp_ai_llmd_enabled | bool
+
+- name: Query JobSet Operator CR
+  kubernetes.core.k8s_info:
+    api_version: operator.openshift.io/v1
+    kind: JobSetOperator
+    name: cluster
+  register: ocp_ai_jobset_cr
+  changed_when: false
+  failed_when: false
+  when: ocp_ai_jobset_enabled | bool
+
+- name: Assert JobSetOperator is Managed
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_jobset_cr.resources | length == 1
+      - ocp_ai_jobset_cr.resources[0].spec.managementState == "Managed"
+    fail_msg: "JobSetOperator cluster CR is missing or not Managed."
+  when: ocp_ai_jobset_enabled | bool
+
+- name: Query Kueue Operator CR
+  kubernetes.core.k8s_info:
+    api_version: kueue.openshift.io/v1
+    kind: Kueue
+    name: "{{ ocp_ai_kueue_cr_name }}"
+  register: ocp_ai_kueue_cr
+  changed_when: false
+  failed_when: false
+  when: ocp_ai_kueue_operator_enabled | bool
+
+- name: Assert Kueue Operator CR is Managed
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_kueue_cr.resources | length == 1
+      - ocp_ai_kueue_cr.resources[0].spec.managementState == "Managed"
+    fail_msg: "Kueue {{ ocp_ai_kueue_cr_name }} CR is missing or not Managed."
+  when: ocp_ai_kueue_operator_enabled | bool
+
+- name: Query Custom Metrics Autoscaler KedaController
+  kubernetes.core.k8s_info:
+    api_version: keda.sh/v1alpha1
+    kind: KedaController
+    namespace: "{{ ocp_ai_cma_namespace }}"
+    name: "{{ ocp_ai_cma_keda_name }}"
+  register: ocp_ai_cma_keda
+  changed_when: false
+  failed_when: false
+  when: ocp_ai_cma_enabled | bool
+
+- name: Assert Custom Metrics Autoscaler KedaController exists
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_cma_keda.resources | length == 1
+    fail_msg: "Custom Metrics Autoscaler KedaController {{ ocp_ai_cma_namespace }}/{{ ocp_ai_cma_keda_name }} is missing."
+  when: ocp_ai_cma_enabled | bool
+
+- name: Query Models as a Service lab database
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ ocp_ai_applications_namespace }}"
+    name: "{{ ocp_ai_maas_db_deployment_name }}"
+  register: ocp_ai_validate_maas_db
+  changed_when: false
+  failed_when: false
+  when: ocp_ai_maas_database_enabled | bool
+
+- name: Query Models as a Service database config Secret
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    namespace: "{{ ocp_ai_applications_namespace }}"
+    name: "{{ ocp_ai_maas_db_config_secret_name }}"
+  register: ocp_ai_validate_maas_db_secret
+  changed_when: false
+  failed_when: false
+  when: ocp_ai_maas_database_enabled | bool
+
+- name: Assert Models as a Service database prerequisites exist
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_validate_maas_db.resources | length == 1
+      - (ocp_ai_validate_maas_db.resources[0].status.availableReplicas | default(0) | int) >= 1
+      - ocp_ai_validate_maas_db_secret.resources | length == 1
+      - ocp_ai_validate_maas_db_secret.resources[0].data.DB_CONNECTION_URL is defined
+    fail_msg: "Models as a Service database Deployment or maas-db-config Secret is missing/not ready."
+  when: ocp_ai_maas_database_enabled | bool
+
+- name: Query Authorino listener TLS configuration
+  kubernetes.core.k8s_info:
+    api_version: operator.authorino.kuadrant.io/v1beta1
+    kind: Authorino
+    namespace: "{{ ocp_ai_authorino_namespace }}"
+    name: "{{ ocp_ai_authorino_name }}"
+  register: ocp_ai_validate_authorino
+  changed_when: false
+  failed_when: false
+  when: ocp_ai_authorino_tls_enabled | bool
+
+- name: Assert Authorino listener TLS is enabled
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_validate_authorino.resources | length == 1
+      - ocp_ai_validate_authorino.resources[0].spec.listener.tls.enabled | bool
+      - ocp_ai_validate_authorino.resources[0].spec.listener.tls.certSecretRef.name == ocp_ai_authorino_tls_secret_name
+    fail_msg: "Authorino listener TLS is not enabled for Models as a Service."
+  when: ocp_ai_authorino_tls_enabled | bool
+
+- name: Query Models as a Service Gateway
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: Gateway
+    namespace: "{{ ocp_ai_maas_gateway_namespace }}"
+    name: "{{ ocp_ai_maas_gateway_name }}"
+  register: ocp_ai_maas_gateway
+  changed_when: false
+  failed_when: false
+  when: ocp_ai_maas_gateway_enabled | bool
+
+- name: Assert Models as a Service Gateway is programmed
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_maas_gateway.resources | length == 1
+      - >-
+        (
+          ocp_ai_maas_gateway.resources[0].status.conditions | default([])
+          | selectattr('type', 'equalto', 'Programmed')
+          | selectattr('status', 'equalto', 'True')
+          | list
+          | length
+        ) > 0
+    fail_msg: "Gateway {{ ocp_ai_maas_gateway_namespace }}/{{ ocp_ai_maas_gateway_name }} is not Programmed."
+  when: ocp_ai_maas_gateway_enabled | bool
+
+- name: Query Models as a Service default Tenant
+  kubernetes.core.k8s_info:
+    api_version: maas.opendatahub.io/v1alpha1
+    kind: Tenant
+    namespace: "{{ ocp_ai_maas_namespace }}"
+    name: "{{ ocp_ai_maas_tenant_name }}"
+  register: ocp_ai_maas_tenant
+  changed_when: false
+  failed_when: false
+  when: ocp_ai_kserve_models_as_service_state == "Managed"
+
+- name: Assert Models as a Service Tenant is ready
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_maas_tenant.resources | length == 1
+      - ocp_ai_maas_tenant.resources[0].status.phase == "Active"
+      - >-
+        (
+          ocp_ai_maas_tenant.resources[0].status.conditions | default([])
+          | selectattr('type', 'equalto', 'Ready')
+          | selectattr('status', 'equalto', 'True')
+          | list
+          | length
+        ) > 0
+    fail_msg: "Models as a Service Tenant {{ ocp_ai_maas_namespace }}/{{ ocp_ai_maas_tenant_name }} is not Active."
+  when: ocp_ai_kserve_models_as_service_state == "Managed"
+
+- name: Query KubeRay operator Deployment
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ ocp_ai_applications_namespace }}"
+    name: kuberay-operator
+  register: ocp_ai_kuberay_operator
+  changed_when: false
+  failed_when: false
+  when: ocp_ai_ray_state == "Managed"
+
+- name: Assert KubeRay operator is available
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_kuberay_operator.resources | length == 1
+      - (ocp_ai_kuberay_operator.resources[0].status.availableReplicas | default(0) | int) >= 1
+    fail_msg: "kuberay-operator Deployment is not available in {{ ocp_ai_applications_namespace }}."
+  when: ocp_ai_ray_state == "Managed"
+
+- name: Query Kubeflow Training Operator Deployment
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ ocp_ai_applications_namespace }}"
+    name: kubeflow-training-operator
+  register: ocp_ai_kubeflow_training_operator
+  changed_when: false
+  failed_when: false
+  when: ocp_ai_trainingoperator_state == "Managed"
+
+- name: Assert Kubeflow Training Operator is available
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_kubeflow_training_operator.resources | length == 1
+      - (ocp_ai_kubeflow_training_operator.resources[0].status.availableReplicas | default(0) | int) >= 1
+    fail_msg: "kubeflow-training-operator Deployment is not available in {{ ocp_ai_applications_namespace }}."
+  when: ocp_ai_trainingoperator_state == "Managed"
+
+- name: Query Red Hat Kueue operator Deployment
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ ocp_ai_kueue_namespace }}"
+    name: openshift-kueue-operator
+  register: ocp_ai_kueue_operator_deployment
+  changed_when: false
+  failed_when: false
+  when: ocp_ai_kueue_operator_enabled | bool
+
+- name: Query Kueue controller Deployment
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ ocp_ai_kueue_namespace }}"
+    name: kueue-controller-manager
+  register: ocp_ai_kueue_controller_deployment
+  changed_when: false
+  failed_when: false
+  when: ocp_ai_kueue_operator_enabled | bool
+
+- name: Assert Red Hat Kueue deployments are available
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_kueue_operator_deployment.resources | length == 1
+      - (ocp_ai_kueue_operator_deployment.resources[0].status.availableReplicas | default(0) | int) >= 1
+      - ocp_ai_kueue_controller_deployment.resources | length == 1
+      - (ocp_ai_kueue_controller_deployment.resources[0].status.availableReplicas | default(0) | int) >= 1
+    fail_msg: "Kueue operator/controller Deployments are not available in {{ ocp_ai_kueue_namespace }}."
+  when: ocp_ai_kueue_operator_enabled | bool
+
+- name: Query GPU ClusterPolicy
+  kubernetes.core.k8s_info:
+    api_version: nvidia.com/v1
+    kind: ClusterPolicy
+    name: "{{ ocp_ai_gpu_clusterpolicy_name }}"
+  register: ocp_ai_gpu_policy
+  changed_when: false
+  when: ocp_ai_gpu_enabled | bool
+
+- name: Assert GPU ClusterPolicy exists
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_gpu_policy.resources | length == 1
+    fail_msg: "NVIDIA ClusterPolicy {{ ocp_ai_gpu_clusterpolicy_name }} is missing."
+  when: ocp_ai_gpu_enabled | bool
+
+- name: Query NVIDIA GPU HardwareProfile
+  kubernetes.core.k8s_info:
+    api_version: infrastructure.opendatahub.io/v1
+    kind: HardwareProfile
+    namespace: "{{ ocp_ai_applications_namespace }}"
+    name: "{{ ocp_ai_gpu_hardware_profile_name }}"
+  register: ocp_ai_gpu_hardware_profile
+  changed_when: false
+  failed_when: false
+  when: ocp_ai_gpu_hardware_profile_enabled | bool
+
+- name: Assert NVIDIA GPU HardwareProfile exists with accelerator
+  ansible.builtin.assert:
+    that:
+      - ocp_ai_gpu_hardware_profile.resources | length == 1
+      - >-
+        (
+          ocp_ai_gpu_hardware_profile.resources[0].spec.identifiers | default([])
+          | selectattr('identifier', 'equalto', 'nvidia.com/gpu')
+          | selectattr('resourceType', 'equalto', 'Accelerator')
+          | list
+          | length
+        ) == 1
+      - ocp_ai_gpu_hardware_profile.resources[0].metadata.annotations.get('opendatahub.io/disabled', 'true') == 'false'
+    fail_msg: >-
+      HardwareProfile {{ ocp_ai_applications_namespace }}/{{ ocp_ai_gpu_hardware_profile_name }}
+      is missing or does not expose nvidia.com/gpu as an Accelerator.
+  when: ocp_ai_gpu_hardware_profile_enabled | bool
+
+- name: Query nodes with allocatable GPUs
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Node
+  register: ocp_ai_validate_nodes
+  changed_when: false
+  when: ocp_ai_gpu_enabled | bool
+
+- name: Initialize nodes advertising nvidia.com/gpu list
+  ansible.builtin.set_fact:
+    ocp_ai_validate_gpu_node_names: []
+  when: ocp_ai_gpu_enabled | bool
+
+- name: Resolve nodes advertising nvidia.com/gpu
+  ansible.builtin.set_fact:
+    ocp_ai_validate_gpu_node_names: "{{ ocp_ai_validate_gpu_node_names + [item.metadata.name] }}"
+  loop: "{{ ocp_ai_validate_nodes.resources }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  when:
+    - ocp_ai_gpu_enabled | bool
+    - ((item.status.allocatable | default({})).get('nvidia.com/gpu', '0') | int) > 0
+
+- name: Count nodes advertising nvidia.com/gpu
+  ansible.builtin.set_fact:
+    ocp_ai_validate_gpu_nodes: "{{ ocp_ai_validate_gpu_node_names | length }}"
+  when: ocp_ai_gpu_enabled | bool
+
+- name: Assert at least one node advertises nvidia.com/gpu
+  ansible.builtin.assert:
+    that:
+      - (ocp_ai_validate_gpu_nodes | default(0) | int) > 0
+    fail_msg: >-
+      No node advertises nvidia.com/gpu. Verify GPU Operator, drivers, and
+      GPU-enabled worker nodes.
+  when:
+    - ocp_ai_gpu_enabled | bool
+    - ocp_ai_require_gpu_nodes | bool
+
+- name: Report GPU capacity is not required by this validation
+  ansible.builtin.debug:
+    msg: >-
+      No node advertises nvidia.com/gpu. Continuing because
+      OCP_AI_REQUIRE_GPU_NODES=false.
+  when:
+    - ocp_ai_gpu_enabled | bool
+    - not (ocp_ai_require_gpu_nodes | bool)
+    - (ocp_ai_validate_gpu_nodes | default(0) | int) == 0
+
+- name: Query OpenShift AI inference Gateway (created by OpenShift AI)
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: Gateway
+    namespace: "{{ ocp_ai_inference_gateway_namespace }}"
+    name: "{{ ocp_ai_inference_gateway_name }}"
+  register: ocp_ai_inference_gateway
+  changed_when: false
+  failed_when: false
+  when: ocp_ai_llmd_enabled | bool
+
+- name: Report inference Gateway presence
+  ansible.builtin.debug:
+    msg: >-
+      Gateway {{ ocp_ai_inference_gateway_namespace }}/{{ ocp_ai_inference_gateway_name }}
+      {{ 'found' if (ocp_ai_inference_gateway.resources | length > 0) else 'not found yet' }}.
+      It is created when model serving / llm-d is fully reconciled.
+  when: ocp_ai_llmd_enabled | bool

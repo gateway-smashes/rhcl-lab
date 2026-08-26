@@ -1,0 +1,7 @@
+---
+- name: Validate supported OpenShift mode
+  ansible.builtin.assert:
+    that:
+      - rhcl_ocp_mode == "native_gateway_api"
+    fail_msg: >-
+      This automation v1 only supports OpenShift 4.19+ native Gateway API mode.

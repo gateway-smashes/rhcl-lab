@@ -1,0 +1,53 @@
+# DNSPolicy for AWS Route53
+#
+# Prerequisites:
+# 1. Hosted zone created in Route53 (e.g., apps.cluster-xyz.sandbox.opentlc.com)
+# 2. IAM user or role with route53:* permissions on that zone
+# 3. Access key ID and secret key from AWS IAM
+#
+# Installation:
+#   oc apply -f dnspolicy-aws-route53.yaml
+#
+# After applying:
+#   oc describe dnspolicy rhcl-apps-gateway-dns -n openshift-ingress
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rhcl-dns-credentials
+  namespace: openshift-ingress
+type: Opaque
+stringData:
+  # AWS credentials for Route53 access
+  AWS_ACCESS_KEY_ID: "AKIA..."  # Replace with your access key
+  AWS_SECRET_ACCESS_KEY: "..."  # Replace with your secret key
+  AWS_REGION: "us-east-2"       # Adjust to your region
+
+---
+apiVersion: kuadrant.io/v1
+kind: DNSPolicy
+metadata:
+  name: rhcl-apps-gateway-dns
+  namespace: openshift-ingress
+  labels:
+    app: rhcl
+spec:
+  # Target the main RHCL Gateway
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: rhcl-apps-gateway
+
+  # Reference the AWS credentials secret
+  providerRefs:
+    - name: rhcl-dns-credentials
+
+  # Load balancing configuration (optional)
+  # Comment out to disable load balancing
+  loadBalancing:
+    # defaultGeo: true means this cluster is the fallback for unmapped regions
+    defaultGeo: true
+    # weight: 80 means this cluster receives 80% of DNS queries globally
+    # Pair with weight: 20 on another cluster for 80/20 split
+    weight: 80

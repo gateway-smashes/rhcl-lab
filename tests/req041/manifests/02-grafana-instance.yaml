@@ -1,0 +1,40 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: Grafana
+metadata:
+  name: rhcl-grafana
+  namespace: rhcl-grafana
+  labels:
+    dashboards: rhcl
+    app.kubernetes.io/part-of: rhcl-poc
+    rhcl.redhat.com/requirement: req041
+spec:
+  config:
+    log:
+      mode: console
+    server:
+      root_url: "https://${GRAFANA_HOSTNAME}/"
+    security:
+      admin_user: rhcl-admin
+      admin_password: rhcl-poc-2026
+    auth:
+      disable_login_form: "false"
+    auth.anonymous:
+      enabled: "true"
+    auth.generic_oauth:
+      enabled: "true"
+      name: Keycloak
+      allow_sign_up: "true"
+      client_id: grafana
+      client_secret: grafana-oidc-secret
+      scopes: openid profile email
+      auth_url: https://${KEYCLOAK_HOSTNAME}/realms/rhcl-grafana/protocol/openid-connect/auth
+      token_url: https://${KEYCLOAK_HOSTNAME}/realms/rhcl-grafana/protocol/openid-connect/token
+      api_url: https://${KEYCLOAK_HOSTNAME}/realms/rhcl-grafana/protocol/openid-connect/userinfo
+      tls_skip_verify_insecure: "true"
+      role_attribute_path: "contains(realm_access.roles[*], 'grafana-admin') && 'Admin' || contains(realm_access.roles[*], 'grafana-editor') && 'Editor' || 'Viewer'"
+  route:
+    spec:
+      host: ${GRAFANA_HOSTNAME}
+      tls:
+        termination: edge
+        insecureEdgeTerminationPolicy: Redirect

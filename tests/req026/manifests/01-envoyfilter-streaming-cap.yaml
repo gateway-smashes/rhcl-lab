@@ -1,0 +1,104 @@
+# req026 — TRUE STREAMING size cap for /api/files/upload.
+#
+# Substitui a versão anterior (envoy.filters.http.buffer) que buferizava o
+# request inteiro em memória antes de validar o tamanho — comportamento que
+# o cliente flagou como não sendo streaming de verdade. Este manifest usa
+# `envoy.filters.http.lua` com `bodyChunks()` iterator, que:
+#
+#   1. Processa chunks conforme chegam do cliente (não buferiza o body todo).
+#   2. Incrementa um contador em cada iteração.
+#   3. Se o total ultrapassa max_bytes durante a leitura, dispara 413
+#      IMEDIATAMENTE via `handle:respond()` — o cliente recebe a rejeição
+#      antes de terminar o upload; os bytes remanescentes nem são solicitados.
+#   4. Se cabe no limite, os chunks fluem pro upstream (banking-api) enquanto
+#      chegam — o backend processa em stream (SHA-256 online).
+#
+# Escopo: só matcha `POST /api/files/upload`. Todas as outras requests
+# (WebSocket, JSON POSTs, GETs, AI streaming responses) passam pelo filtro
+# sem overhead — a lógica de counting fica dentro do `if method == "POST"
+# and path:find(...)` e retorna imediatamente pra rotas não-alvo.
+#
+# Trade-off vs backend-only (Quarkus max-body-size):
+#   - Este approach rejeita no gateway (perímetro protegido, backend nem
+#     recebe os bytes de uploads gigantes).
+#   - Custo: overhead de ~microssegundos do Lua VM em cada request que
+#     matcha o path. Ordem de grandeza da rota + auth, não do backend.
+#
+# Trade-off vs buffer filter (versão anterior):
+#   - Lua streaming holds apenas 1 chunk (16-64 KiB Envoy socket buffer)
+#     em memória por request; buffer filter segurava até `max_request_bytes`
+#     (32 MiB × N concorrentes).
+#   - Assinatura no 413: `x-rhcl-streaming-cap` (Lua-emitido) em vez de
+#     `x-envoy-buffer-too-large` (filter nativo). Docs + scripts atualizados.
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: files-upload-streaming-cap
+  namespace: openshift-ingress
+  labels:
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/part-of: rhcl-apps
+    rhcl.poc/req: req026
+spec:
+  workloadSelector:
+    labels:
+      gateway.networking.k8s.io/gateway-name: rhcl-apps-gateway
+  configPatches:
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+              subFilter:
+                name: envoy.filters.http.router
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.lua
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+            default_source_code:
+              inline_string: |
+                -- req026: streaming size cap for /api/files/upload.
+                -- Iterates over body chunks as they arrive from downstream
+                -- (bodyChunks() is Envoy Lua's streaming API — only one
+                -- chunk is materialised in the Lua VM at a time). Envoy
+                -- keeps forwarding each processed chunk to upstream, so
+                -- the request body streams end-to-end. When the running
+                -- total exceeds MAX_BYTES we short-circuit with 413 and
+                -- Envoy stops asking downstream for more data.
+                local MAX_BYTES = 33554432   -- 32 MiB (~33.5 MB)
+                local UPLOAD_PATH = "/api/files/upload"
+
+                function envoy_on_request(handle)
+                  local method = handle:headers():get(":method") or ""
+                  local path   = handle:headers():get(":path")   or ""
+
+                  -- Fast-path: any request that isn't a POST on the
+                  -- upload endpoint returns immediately. bodyChunks()
+                  -- is never called on those paths, so there is no
+                  -- streaming overhead on WebSocket upgrades, JSON
+                  -- endpoints, or GETs.
+                  if method ~= "POST" then return end
+                  if not path or path:sub(1, #UPLOAD_PATH) ~= UPLOAD_PATH then return end
+
+                  local total = 0
+                  for chunk in handle:bodyChunks() do
+                    total = total + chunk:length()
+                    if total > MAX_BYTES then
+                      handle:respond(
+                        {
+                          [":status"]              = "413",
+                          ["content-type"]         = "text/plain",
+                          ["x-rhcl-streaming-cap"] = tostring(MAX_BYTES),
+                          ["x-rhcl-observed-bytes"]= tostring(total),
+                        },
+                        "Payload Too Large — streaming size cap exceeded ("
+                          .. total .. " bytes read, cap " .. MAX_BYTES .. ")\n"
+                      )
+                      return
+                    end
+                  end
+                end

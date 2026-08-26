@@ -1,0 +1,81 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: 14-cors-enabled
+  namespace: rhcl-apps
+spec:
+  parentRefs:
+    - name: rhcl-apps-gateway
+      namespace: openshift-ingress
+  hostnames:
+    - banking-api-connectivity.apps.cluster-qrqbr.qrqbr.sandbox1142.opentlc.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/v1
+      filters:
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+              - name: Access-Control-Allow-Origin
+                value: "*"
+              - name: Access-Control-Allow-Methods
+                value: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+              - name: Access-Control-Allow-Headers
+                value: "accept,authorization,content-type,x-requested-with,x-flow-trace-id,x-client-app"
+              - name: Access-Control-Allow-Credentials
+                value: "true"
+              - name: Access-Control-Max-Age
+                value: "86400"
+              - name: Vary
+                value: Origin
+      backendRefs:
+        - name: banking-api-v1
+          port: 8080
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/v2
+      filters:
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+              - name: Access-Control-Allow-Origin
+                value: "*"
+              - name: Access-Control-Allow-Methods
+                value: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+              - name: Access-Control-Allow-Headers
+                value: "accept,authorization,content-type,x-requested-with,x-flow-trace-id,x-client-app"
+              - name: Access-Control-Allow-Credentials
+                value: "true"
+              - name: Access-Control-Max-Age
+                value: "86400"
+              - name: Vary
+                value: Origin
+      backendRefs:
+        - name: banking-api-v2
+          port: 8080
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/echo
+      filters:
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+              - name: Access-Control-Allow-Origin
+                value: "*"
+              - name: Access-Control-Allow-Methods
+                value: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+              - name: Access-Control-Allow-Headers
+                value: "accept,authorization,content-type,x-requested-with,x-flow-trace-id,x-client-app"
+              - name: Access-Control-Allow-Credentials
+                value: "true"
+              - name: Access-Control-Max-Age
+                value: "86400"
+              - name: Vary
+                value: Origin
+      backendRefs:
+        - name: banking-api-v1
+          port: 8080

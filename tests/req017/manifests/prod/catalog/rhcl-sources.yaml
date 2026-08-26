@@ -1,0 +1,9 @@
+mcp_catalogs:
+  - name: RHCL Lab MCP Servers
+    id: rhcl_lab_mcp_servers
+    type: yaml
+    enabled: true
+    properties:
+      yamlCatalogPath: rhcl-mcp-servers.yaml
+    labels:
+      - RHCL Lab

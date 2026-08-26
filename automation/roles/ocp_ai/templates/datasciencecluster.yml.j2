@@ -1,0 +1,49 @@
+apiVersion: datasciencecluster.opendatahub.io/v2
+kind: DataScienceCluster
+metadata:
+  name: {{ ocp_ai_dsc_name }}
+spec:
+  components:
+    aipipelines:
+      argoWorkflowsControllers:
+        managementState: {{ ocp_ai_aipipelines_argo_workflows_controllers_state }}
+      managementState: {{ ocp_ai_aipipelines_state }}
+    dashboard:
+      managementState: {{ ocp_ai_dashboard_state }}
+    feastoperator:
+      managementState: {{ ocp_ai_feastoperator_state }}
+    kserve:
+      managementState: {{ ocp_ai_kserve_state }}
+      modelsAsService:
+        managementState: {{ ocp_ai_kserve_models_as_service_state }}
+      nim:
+        airGapped: {{ ocp_ai_kserve_nim_airgapped | bool | lower }}
+        managementState: {{ ocp_ai_kserve_nim_state }}
+      rawDeploymentServiceConfig: {{ ocp_ai_kserve_raw_deployment_service_config }}
+      wva:
+        managementState: {{ ocp_ai_kserve_wva_state }}
+    kueue:
+      defaultClusterQueueName: {{ ocp_ai_kueue_default_cluster_queue_name }}
+      defaultLocalQueueName: {{ ocp_ai_kueue_default_local_queue_name }}
+      managementState: {{ ocp_ai_kueue_state }}
+    llamastackoperator:
+      managementState: {{ ocp_ai_llamastackoperator_state }}
+    mlflowoperator:
+      managementState: {{ ocp_ai_mlflowoperator_state }}
+    modelregistry:
+      managementState: {{ ocp_ai_modelregistry_state }}
+      registriesNamespace: {{ ocp_ai_modelregistry_namespace }}
+    ray:
+      managementState: {{ ocp_ai_ray_state }}
+    sparkoperator:
+      managementState: {{ ocp_ai_sparkoperator_state }}
+    trainer:
+      managementState: {{ ocp_ai_trainer_state }}
+    trainingoperator:
+      managementState: {{ ocp_ai_trainingoperator_state }}
+    trustyai:
+      managementState: {{ ocp_ai_trustyai_state }}
+      mcpGuardrailsMode: {{ ocp_ai_trustyai_mcp_guardrails_mode | bool | lower }}
+    workbenches:
+      managementState: {{ ocp_ai_workbenches_state }}
+      workbenchNamespace: {{ ocp_ai_workbench_namespace }}

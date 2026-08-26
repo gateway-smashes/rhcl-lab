@@ -1,0 +1,126 @@
+---
+# Shared OLM install task block, used for NFD, GPU, LWS, JobSet, Kueue, KEDA
+# and RHOAI Operator. Everything gated by ocp_ai_install_operator so a single
+# OPERATORS_INSTALL_ENABLED=false (or OCP_AI_INSTALL_OPERATOR=false) skips the
+# whole OLM dance per-operator and lets the operand CRs be applied against an
+# externally-managed operator install.
+- name: "Ensure namespace {{ olm_namespace }} exists ({{ olm_label }})"
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ olm_namespace }}"
+    state: present
+
+- name: "Query existing OperatorGroups in {{ olm_namespace }} ({{ olm_label }})"
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    namespace: "{{ olm_namespace }}"
+  register: ocp_ai_existing_ogs
+  changed_when: false
+  when: ocp_ai_install_operator | bool
+
+- name: "Remove pre-existing OperatorGroups with a different name ({{ olm_label }})"
+  kubernetes.core.k8s:
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    namespace: "{{ olm_namespace }}"
+    name: "{{ item.metadata.name }}"
+    state: absent
+  loop: "{{ ocp_ai_existing_ogs.resources | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  when:
+    - ocp_ai_install_operator | bool
+    - item.metadata.name != olm_operatorgroup_name
+
+- name: "Ensure OperatorGroup exists ({{ olm_label }})"
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'olm-operatorgroup.yml.j2') | from_yaml }}"
+  when: ocp_ai_install_operator | bool
+
+- name: "Ensure Subscription exists ({{ olm_label }})"
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'olm-subscription.yml.j2') | from_yaml }}"
+  when: ocp_ai_install_operator | bool
+
+- name: "Wait for Subscription to resolve and report currentCSV ({{ olm_label }})"
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ olm_namespace }}"
+    name: "{{ olm_subscription_name }}"
+  register: ocp_ai_olm_subscription
+  changed_when: false
+  failed_when: false
+  until:
+    - ocp_ai_olm_subscription.resources | length == 1
+    - ocp_ai_olm_subscription.resources[0].status.currentCSV is defined
+    - ocp_ai_olm_subscription.resources[0].status.currentCSV | length > 0
+    - >-
+      (
+        ocp_ai_olm_subscription.resources[0].status.conditions | default([])
+        | selectattr('type', 'equalto', 'ResolutionFailed')
+        | selectattr('status', 'equalto', 'True')
+        | list
+        | length
+      ) == 0
+  retries: "{{ ocp_ai_olm_subscription_retries }}"
+  delay: "{{ ocp_ai_olm_delay_seconds }}"
+  when: ocp_ai_install_operator | bool
+
+- name: "Fail with Subscription resolution error ({{ olm_label }})"
+  ansible.builtin.fail:
+    msg: >-
+      Subscription {{ olm_namespace }}/{{ olm_subscription_name }} failed to
+      resolve (check catalog source {{ olm_source | default(ocp_ai_olm_source) }},
+      package {{ olm_operator_name }}, channel {{ olm_channel }}).
+      Conditions:
+      {{ ocp_ai_olm_subscription.resources[0].status.conditions | default([]) }}
+  when:
+    - ocp_ai_install_operator | bool
+    - ocp_ai_olm_subscription.resources | length == 1
+    - >-
+      (
+        ocp_ai_olm_subscription.resources[0].status.conditions | default([])
+        | selectattr('type', 'equalto', 'ResolutionFailed')
+        | selectattr('status', 'equalto', 'True')
+        | list
+        | length
+      ) > 0
+
+- name: "Record current CSV for {{ olm_label }}"
+  ansible.builtin.set_fact:
+    ocp_ai_olm_current_csv: "{{ ocp_ai_olm_subscription.resources[0].status.currentCSV }}"
+  when: ocp_ai_install_operator | bool
+
+- name: "Wait for CSV Succeeded ({{ olm_label }})"
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ olm_namespace }}"
+    name: "{{ ocp_ai_olm_current_csv }}"
+  register: ocp_ai_olm_csv
+  changed_when: false
+  failed_when: false
+  until:
+    - ocp_ai_olm_csv.resources | length == 1
+    - ocp_ai_olm_csv.resources[0].status.phase == "Succeeded"
+  retries: "{{ ocp_ai_olm_csv_retries }}"
+  delay: "{{ ocp_ai_olm_delay_seconds }}"
+  when: ocp_ai_install_operator | bool
+
+- name: "Fail when CSV did not reach Succeeded ({{ olm_label }})"
+  ansible.builtin.fail:
+    msg: >-
+      CSV {{ olm_namespace }}/{{ ocp_ai_olm_current_csv }} phase is
+      {{ ocp_ai_olm_csv.resources[0].status.phase | default('missing') }}.
+      Common causes: unsupported OperatorGroup install mode, or operand
+      prerequisites missing. Status:
+      {{ ocp_ai_olm_csv.resources[0].status | default({}) }}
+  when:
+    - ocp_ai_install_operator | bool
+    - ocp_ai_olm_csv.resources | length != 1
+      or ocp_ai_olm_csv.resources[0].status.phase != "Succeeded"

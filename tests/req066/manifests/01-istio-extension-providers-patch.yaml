@@ -1,0 +1,63 @@
+# Merge patch applied with:
+#   oc patch istio openshift-gateway -n openshift-ingress \
+#     --type=merge --patch-file=01-istio-extension-providers-patch.yaml
+#
+# Adds two Istio extensionProviders that the Telemetry CRs in
+# 02-telemetry-access-log.yaml and 03-telemetry-tracing.yaml reference
+# by name. We use a merge patch (not a full CR replace) because the Istio
+# CR is operator-managed and carries other settings (pilot env, podAnnotations,
+# values.global) that we must not touch.
+#
+# Provider 1: rhcl-audit-json
+#   Envoy file access log writing to /dev/stdout in JSON. Includes
+#   traceparent (W3C), JWT principal extracted from ext_authz dynamic
+#   metadata (set by Authorino), the consumer header, and the matched
+#   Gateway API route name. This is the SINGLE source of truth for
+#   "what hit the gateway" — independent of any backend.
+#
+# Provider 2: rhcl-otel-tracing
+#   OTLP gRPC exporter to the existing otel-rhcl-collector in the
+#   observability namespace (port 4317), which already forwards to Tempo.
+#   The collector + Tempo are already deployed and used by Authorino's
+#   own tracing flag — we just plug the gateway into the same pipeline.
+spec:
+  values:
+    meshConfig:
+      extensionProviders:
+      - name: rhcl-audit-json
+        envoyFileAccessLog:
+          path: /dev/stdout
+          logFormat:
+            labels:
+              # ───── correlation
+              timestamp: "%START_TIME%"
+              traceparent: "%REQ(TRACEPARENT)%"
+              requestId: "%REQ(X-REQUEST-ID)%"
+              # ───── identity (set by Authorino through ext_authz dynamic metadata)
+              jwtSub: "%DYNAMIC_METADATA(envoy.filters.http.ext_authz:identity.sub)%"
+              jwtIss: "%DYNAMIC_METADATA(envoy.filters.http.ext_authz:identity.iss)%"
+              consumerId: "%REQ(X-CONSUMER-ID)%"
+              # ───── HTTP
+              method: "%REQ(:METHOD)%"
+              path: "%REQ(:PATH)%"
+              authority: "%REQ(:AUTHORITY)%"
+              userAgent: "%REQ(USER-AGENT)%"
+              status: "%RESPONSE_CODE%"
+              responseFlags: "%RESPONSE_FLAGS%"
+              # ───── timing (microseconds)
+              durationMs: "%DURATION%"
+              upstreamServiceTime: "%RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)%"
+              # ───── routing
+              routeName: "%ROUTE_NAME%"
+              upstreamCluster: "%UPSTREAM_CLUSTER%"
+              upstreamHost: "%UPSTREAM_HOST%"
+              # ───── network
+              remoteIp: "%DOWNSTREAM_REMOTE_ADDRESS%"
+              forwardedFor: "%REQ(X-FORWARDED-FOR)%"
+              # ───── size
+              bytesReceived: "%BYTES_RECEIVED%"
+              bytesSent: "%BYTES_SENT%"
+      - name: rhcl-otel-tracing
+        opentelemetry:
+          service: otel-rhcl-collector.observability.svc.cluster.local
+          port: 4317

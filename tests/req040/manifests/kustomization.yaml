@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - 00-namespace-rhcl-logging.yaml
+  - 10-grafana-dashboard-ai-tokens.yaml
+  - 11-grafana-dashboard-ai-consumer-logs.yaml
+  - 20-servicemonitor-limitador.yaml
+  - 30-envoyfilter-access-log.yaml
+  - 34-telemetry-disable-default-access-log.yaml
+  - 31-loki.yaml
+  - 32-alloy-gateway-logs.yaml
+  - 33-grafana-loki-datasource.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: rhcl-poc
+      rhcl.redhat.com/requirement: req040

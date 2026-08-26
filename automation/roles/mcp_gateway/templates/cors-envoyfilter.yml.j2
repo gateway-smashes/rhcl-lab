@@ -1,0 +1,61 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: {{ mcp_gateway_cors_envoyfilter_name }}
+  namespace: {{ mcp_gateway_gateway_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-mcp-gateway
+    rhcl-lab/requirement: req059-mcp-operator
+spec:
+  workloadSelector:
+    labels:
+      gateway.networking.k8s.io/gateway-name: {{ mcp_gateway_gateway_name }}
+  configPatches:
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+      patch:
+        operation: INSERT_FIRST
+        value:
+          name: envoy.filters.http.lua
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+            default_source_code:
+              inline_string: |
+                local ALLOW_ORIGIN  = {{ mcp_gateway_cors_allow_origin | to_json }}
+                local ALLOW_METHODS = {{ mcp_gateway_cors_allow_methods | to_json }}
+                local ALLOW_HEADERS = {{ mcp_gateway_cors_allow_headers | to_json }}
+                local EXPOSE_HEADERS = {{ mcp_gateway_cors_expose_headers | to_json }}
+                local MAX_AGE = {{ mcp_gateway_cors_max_age | string | to_json }}
+
+                function envoy_on_request(request_handle)
+                  if request_handle:headers():get(":method") == "OPTIONS" then
+                    request_handle:respond(
+                      {
+                        [":status"] = "204",
+                        ["access-control-allow-origin"]  = ALLOW_ORIGIN,
+                        ["access-control-allow-methods"] = ALLOW_METHODS,
+                        ["access-control-allow-headers"] = ALLOW_HEADERS,
+                        ["access-control-expose-headers"] = EXPOSE_HEADERS,
+                        ["access-control-max-age"]       = MAX_AGE
+                      }, "")
+                  end
+                end
+
+                function envoy_on_response(response_handle)
+                  local h = response_handle:headers()
+                  h:remove("access-control-allow-origin")
+                  h:remove("access-control-allow-methods")
+                  h:remove("access-control-allow-headers")
+                  h:remove("access-control-expose-headers")
+                  h:remove("access-control-max-age")
+                  h:add("access-control-allow-origin",  ALLOW_ORIGIN)
+                  h:add("access-control-allow-methods", ALLOW_METHODS)
+                  h:add("access-control-allow-headers", ALLOW_HEADERS)
+                  h:add("access-control-expose-headers", EXPOSE_HEADERS)
+                  h:add("access-control-max-age",       MAX_AGE)
+                end

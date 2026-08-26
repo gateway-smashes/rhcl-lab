@@ -1,0 +1,84 @@
+---
+- name: Validate cluster access
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: assert_cluster_access.yml
+
+- name: Remove the realm import
+  kubernetes.core.k8s:
+    api_version: k8s.keycloak.org/v2alpha1
+    kind: KeycloakRealmImport
+    namespace: "{{ rhbk_namespace }}"
+    name: "{{ rhbk_realm }}-realm"
+    state: absent
+
+- name: Remove the Keycloak instance
+  kubernetes.core.k8s:
+    api_version: k8s.keycloak.org/v2alpha1
+    kind: Keycloak
+    namespace: "{{ rhbk_namespace }}"
+    name: "{{ rhbk_keycloak_name }}"
+    state: absent
+
+- name: Remove the Keycloak DNS override record
+  kubernetes.core.k8s:
+    api_version: kuadrant.io/v1alpha1
+    kind: DNSRecord
+    namespace: "{{ rhbk_dns_record_namespace }}"
+    name: "{{ rhbk_dns_record_name }}"
+    state: absent
+  when: rhbk_dns_override_enabled | bool
+
+- name: Remove the Keycloak OpenShift Route (corporate)
+  kubernetes.core.k8s:
+    api_version: route.openshift.io/v1
+    kind: Route
+    namespace: "{{ rhbk_namespace }}"
+    name: "{{ rhbk_hostname | replace('.', '-') }}"
+    state: absent
+  when: rhbk_openshift_route_enabled | bool
+
+# Corporate profile — desfaz o trust da CA no Authorino (primeiro o mount, depois o CM).
+- name: Unmount the trusted-CA bundle from Authorino
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: operator.authorino.kuadrant.io/v1beta1
+      kind: Authorino
+      metadata:
+        name: "{{ rhbk_authorino_name }}"
+        namespace: "{{ rhbk_authorino_namespace }}"
+      spec:
+        volumes:
+          items: []
+  when: rhbk_authorino_trust_ca | bool
+
+- name: Remove the Authorino trusted-CA ConfigMap
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: ConfigMap
+    namespace: "{{ rhbk_authorino_namespace }}"
+    name: "{{ rhbk_authorino_trust_ca_configmap }}"
+    state: absent
+  when: rhbk_authorino_trust_ca | bool
+
+- name: Remove PostgreSQL + secret
+  kubernetes.core.k8s:
+    state: absent
+    definition: "{{ lookup('template', 'postgres.yml.j2') | from_yaml_all | list }}"
+
+- name: Remove the Keycloak TLS certificate
+  kubernetes.core.k8s:
+    api_version: cert-manager.io/v1
+    kind: Certificate
+    namespace: "{{ rhbk_namespace }}"
+    name: "{{ rhbk_tls_secret_name }}"
+    state: absent
+
+- name: Remove the RHBK namespace (operator, subscription, all CRs)
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ rhbk_namespace }}"
+    state: absent
+  when: rhbk_remove_namespace | bool

@@ -1,0 +1,11 @@
+---
+- name: Validate Developer Hub (RHDH + Kuadrant plugin)
+  hosts: rhcl_clusters
+  gather_facts: false
+  collections:
+    - kubernetes.core
+  environment: "{{ {'KUBECONFIG': lookup('ansible.builtin.env', 'KUBECONFIG')} if lookup('ansible.builtin.env', 'KUBECONFIG') | length > 0 else {} }}"
+  roles:
+    - role: developer_hub
+      vars:
+        rhcl_action: validate

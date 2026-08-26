@@ -1,0 +1,37 @@
+# HTTPRoute for request mirroring — a copy of each request is sent to
+# request-interceptor (fire-and-forget) while the original goes to hello-world.
+#
+# Usage:
+#   export RHCL_ZONE_ROOT_DOMAIN=sandbox2314.opentlc.com
+#   envsubst < tests/req030/manifests/21-httproute-mirror.yaml | oc apply -f -
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: req030-mirror-route
+  namespace: req030-gateway
+  labels:
+    app.kubernetes.io/part-of: rhcl-req030-interceptor
+    rhcl-lab/requirement: req030
+spec:
+  parentRefs:
+    - name: req030-interceptor-gateway
+      namespace: req030-gateway
+      sectionName: http-mirror
+  hostnames:
+    - "req030-mirror.${RHCL_ZONE_ROOT_DOMAIN}"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      filters:
+        - type: RequestMirror
+          requestMirror:
+            backendRef:
+              name: request-interceptor
+              namespace: req030-apps
+              port: 8080
+      backendRefs:
+        - name: hello-world
+          namespace: req030-apps
+          port: 8080

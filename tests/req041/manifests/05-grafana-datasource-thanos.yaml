@@ -1,0 +1,49 @@
+# GrafanaDatasource pointing to the OpenShift Thanos Querier.
+#
+# NOTE — Grafana Operator bug (v5.24.0+): using `valuesFrom` to inject
+# `secureJsonData.httpHeaderValue1` from a Secret silently fails — the
+# operator marks the datasource ApplySuccessful but `secureJsonFields` stays
+# empty and every dashboard query returns 401 "Authentication to data source
+# failed". So this manifest now inlines the bearer at apply time.
+#
+# Two ways to apply this file:
+#
+# Recommended — let the role do the substitution:
+#   ansible-playbook automation/playbooks/grafana-install.yml
+# (role reads the SA token Secret and stamps it into the CR before applying)
+#
+# Manual — substitute inline yourself, then apply:
+#   TOKEN=$(oc -n rhcl-grafana get secret rhcl-grafana-sa-token \
+#     -o jsonpath='{.data.token}' | base64 -d)
+#   sed "s/__BEARER_TOKEN__/${TOKEN}/" 05-grafana-datasource-thanos.yaml | oc apply -f -
+#
+# Whichever path you take, after applying confirm the datasource is healthy:
+#   curl -sk -u rhcl-admin:rhcl-poc-2026 \
+#     "https://$(oc -n rhcl-grafana get route -o jsonpath='{.items[0].spec.host}')/api/datasources/1" \
+#     | python3 -c "import json,sys;print(json.load(sys.stdin).get('jsonData'))"
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: rhcl-prometheus
+  namespace: rhcl-grafana
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+    rhcl.redhat.com/requirement: req041
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: rhcl
+  resyncPeriod: 5m
+  datasource:
+    name: Prometheus (RHCL)
+    type: prometheus
+    access: proxy
+    url: https://thanos-querier.openshift-monitoring.svc.cluster.local:9091
+    isDefault: true
+    editable: true
+    jsonData:
+      httpHeaderName1: Authorization
+      timeInterval: 30s
+      tlsSkipVerify: true
+    secureJsonData:
+      httpHeaderValue1: "Bearer __BEARER_TOKEN__"

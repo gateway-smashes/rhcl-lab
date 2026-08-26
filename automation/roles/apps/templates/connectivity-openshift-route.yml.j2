@@ -1,0 +1,22 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ route_hostname | replace('.', '-') }}
+  namespace: {{ apps_openshift_route_namespace }}
+{% if apps_openshift_route_ingress_class_label_key %}
+  labels:
+    {{ apps_openshift_route_ingress_class_label_key }}: {{ apps_openshift_route_ingress_class_label_value }}
+{% endif %}
+spec:
+  host: {{ route_hostname }}
+  to:
+    kind: Service
+    name: {{ apps_openshift_route_target_service_resolved }}
+    weight: 100
+  port:
+    targetPort: {{ apps_openshift_route_target_port }}
+{% if apps_openshift_route_tls_termination %}
+  tls:
+    termination: {{ apps_openshift_route_tls_termination }}
+{% endif %}
+  wildcardPolicy: None

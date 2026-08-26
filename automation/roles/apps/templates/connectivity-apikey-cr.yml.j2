@@ -1,0 +1,29 @@
+# Developer-portal APIKey CR (devportal.kuadrant.io) — request/approval object that
+# the developer portal + custom console surface (filtered by spec.apiProductRef.name).
+# RHCL 4.21+ requires spec.secretRef pointing at a pre-created Secret (api_key key).
+# The fixed-value Secrets come from connectivity-apikey-secret.yml.j2 (same name/namespace).
+# The controller reads the key on approval; auth at runtime still uses those Secrets.
+apiVersion: devportal.kuadrant.io/v1alpha1
+kind: APIKey
+metadata:
+  name: {{ apps_connectivity_apiproduct_name }}-{{ apikey.user }}
+  namespace: {{ apps_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-banking-poc
+spec:
+  apiProductRef:
+    name: {{ apps_connectivity_apiproduct_name }}
+  secretRef:
+    name: {{ apikey.name }}
+  planTier: {{ apikey.plan }}
+  requestedBy:
+    email: {{ apikey.email | default(apikey.user ~ '@example.com', true) }}
+    userId: {{ apikey.user }}
+  # secretRef is required by devportal.kuadrant.io/v1alpha1 (became
+  # mandatory in a recent CRD revision). Points at the Secret created
+  # by connectivity-apikey-secret.yml.j2 — Authorino keys off that
+  # Secret regardless of the APIKey CR's approval phase, so the demo
+  # auth keeps working even before the dev-portal approves the request.
+  secretRef:
+    name: {{ apikey.name | string | to_json }}
+  useCase: "{{ apikey.use_case | default('Demo — ' ~ apikey.user ~ ' acessando o ' ~ apps_connectivity_apiproduct_display_name ~ ' (plano ' ~ apikey.plan ~ ')', true) }}"
