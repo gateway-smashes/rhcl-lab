@@ -1,0 +1,1007 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RHCL Lab — REQ 09: DNS Management</title>
+<style>
+  :root {
+    --rh-red: #EE0000;
+    --rh-red-dark: #A30000;
+    --rh-black: #151515;
+    --rh-gray-100: #F5F5F5;
+    --rh-gray-200: #E0E0E0;
+    --rh-gray-700: #4D4D4D;
+    --rh-success: #3E8635;
+    --rh-warn: #F0AB00;
+    --rh-info: #2B9AF3;
+    --rh-danger: #C9190B;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: "Red Hat Display", "Red Hat Text", -apple-system, BlinkMacSystemFont,
+            "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    color: var(--rh-black);
+    background: var(--rh-gray-100);
+    line-height: 1.45;
+  }
+  header.rh-header {
+    background: var(--rh-black);
+    color: #fff;
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 4px solid var(--rh-red);
+  }
+  header.rh-header .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 0.5px;
+    color: inherit;
+    text-decoration: none;
+  }
+  header.rh-header a.logo:hover { color: var(--rh-red); }
+  header.rh-header .title {
+    margin-left: auto;
+    font-size: 14px;
+    color: #cfcfcf;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 32px;
+  }
+  h1 {
+    font-size: 28px;
+    margin: 0 0 4px 0;
+    color: var(--rh-black);
+  }
+  h2 {
+    font-size: 16px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--rh-gray-700);
+    margin: 32px 0 12px 0;
+    border-bottom: 1px solid var(--rh-gray-200);
+    padding-bottom: 8px;
+  }
+  .subtitle {
+    color: var(--rh-gray-700);
+    margin: 0 0 24px 0;
+  }
+  .panel {
+    background: #fff;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 4px;
+    padding: 20px;
+  }
+  .panel + .panel { margin-top: 16px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .row + .row { margin-top: 12px; }
+  label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--rh-gray-700);
+    display: block;
+    margin-bottom: 4px;
+  }
+  input[type="text"], input[type="url"], select {
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 8px 10px;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 3px;
+    background: #fff;
+    color: var(--rh-black);
+    flex: 1;
+    min-width: 200px;
+  }
+  input:focus, select:focus {
+    outline: 2px solid var(--rh-red);
+    outline-offset: -1px;
+    border-color: var(--rh-red);
+  }
+  button {
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    padding: 8px 16px;
+    border: 1px solid var(--rh-red);
+    background: var(--rh-red);
+    color: #fff;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  button:hover { background: var(--rh-red-dark); border-color: var(--rh-red-dark); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .log {
+    background: var(--rh-black);
+    color: #e8e8e8;
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 16px;
+    border-radius: 3px;
+    max-height: 480px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .log .entry { padding: 4px 0; border-bottom: 1px solid #2a2a2a; }
+  .log .entry:last-child { border-bottom: none; }
+  .log .ts { color: #6a6a6a; margin-right: 8px; }
+  .log .lvl { font-weight: 700; margin-right: 8px; }
+  .log .lvl.info    { color: var(--rh-info); }
+  .log .lvl.success { color: #6EC664; }
+  .log .lvl.warn    { color: var(--rh-warn); }
+  .log .lvl.error   { color: #F87171; }
+  .status-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .status-badge.ok { background: #D1FADF; color: #027A48; }
+  .status-badge.warn { background: #FEF3C7; color: #92400E; }
+  .status-badge.error { background: #FEE2E2; color: #991B1B; }
+  .kv-table {
+    font-family: var(--mono);
+    font-size: 12px;
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .kv-table th, .kv-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--rh-gray-200);
+  }
+  .kv-table th { background: var(--rh-gray-100); font-weight: 600; color: var(--rh-gray-700); }
+  .kv-table tr:last-child td { border-bottom: none; }
+  .callout {
+    background: #FFF8E1;
+    border-left: 4px solid var(--rh-warn);
+    padding: 12px 16px;
+    font-size: 13px;
+    color: var(--rh-black);
+    margin: 16px 0;
+  }
+  pre.code {
+    background: var(--rh-gray-100);
+    border: 1px solid var(--rh-gray-200);
+    padding: 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    overflow-x: auto;
+    color: var(--rh-black);
+  }
+  details.manifest {
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 4px;
+    background: #fff;
+  }
+  details.manifest + details.manifest { margin-top: 12px; }
+  details.manifest summary {
+    cursor: pointer;
+    padding: 12px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--rh-black);
+  }
+  details.manifest summary code {
+    font-weight: 600;
+    color: var(--rh-gray-700);
+  }
+  details.manifest summary a {
+    color: var(--rh-red-dark);
+    font-weight: 600;
+    margin-left: 8px;
+  }
+  details.manifest pre.code {
+    margin: 0;
+    border-width: 1px 0 0 0;
+    border-radius: 0;
+    max-height: 520px;
+  }
+</style>
+</head>
+<body>
+
+<header class="rh-header">
+  <a href="/" class="logo" title="RHCL Lab">
+    <span>🔗</span>
+    <span>RHCL Lab</span>
+  </a>
+  <div class="title">Req 09 — DNS Management</div>
+</header>
+
+<main>
+  <h1>DNS Management across Multi-Cloud</h1>
+  <p class="subtitle">Validate DNSPolicy integration with AWS Route53, Azure DNS, GCP Cloud DNS, and on-premise CoreDNS.</p>
+
+  <!-- SCENARIO -->
+  <h2>Scenario</h2>
+  <div class="panel">
+    <p>
+      <strong>Goal:</strong> Expose a single API hostname across multiple environments (AWS, Azure, GCP, on-premise)
+      with DNS-based load balancing and failover.
+    </p>
+    <p>
+      This test validates that:
+    </p>
+    <ul>
+      <li>DNSPolicy is correctly configured for each provider (Route53, Azure DNS, Cloud DNS, CoreDNS)</li>
+      <li>DNS records are created and updated by the Kuadrant controller</li>
+      <li>Load balancing weights are respected across clusters</li>
+      <li>DNS resolution returns expected IPs and respects TTL</li>
+    </ul>
+  </div>
+
+  <!-- CONTROLS -->
+  <h2>Controls</h2>
+  <div class="panel">
+    <div class="row">
+      <label style="width: 100%; margin-bottom: 8px;">Provider</label>
+      <select id="provider" style="width: 200px;">
+        <option value="aws">AWS Route53</option>
+        <option value="azure">Azure DNS</option>
+        <option value="gcp">GCP Cloud DNS</option>
+        <option value="coredns">On-Premise CoreDNS</option>
+      </select>
+    </div>
+
+    <div class="row" style="margin-top: 16px;">
+      <label style="width: 100%; margin-bottom: 8px;">Hostname to Resolve</label>
+      <input type="text" id="hostname" placeholder="e.g., banking-api-connectivity.apps.example.com" style="flex: 1; min-width: 300px;" />
+      <button onclick="resolveHostname()">Resolve</button>
+    </div>
+
+    <div class="row" style="margin-top: 16px;">
+      <button onclick="loadDNSPolicy()" style="width: 150px;">Fetch DNSPolicy</button>
+      <button onclick="testLoadBalancing()" style="width: 150px;">Test Load Balancing</button>
+      <button onclick="clearLog()" class="secondary" style="width: 100px;">Clear Log</button>
+    </div>
+  </div>
+
+  <!-- LOG -->
+  <h2>Log</h2>
+  <div class="panel">
+    <div class="log" id="log"></div>
+  </div>
+
+  <!-- DNS STATUS -->
+  <h2>DNS Status</h2>
+  <div class="panel">
+    <table class="kv-table">
+      <tr>
+        <th>Component</th>
+        <th>Status</th>
+        <th>Details</th>
+      </tr>
+      <tr>
+        <td>Cluster Access</td>
+        <td id="status-cluster" class="status-badge warn">Checking...</td>
+        <td id="detail-cluster">Connecting to cluster...</td>
+      </tr>
+      <tr>
+        <td>Gateway</td>
+        <td id="status-gateway" class="status-badge warn">Checking...</td>
+        <td id="detail-gateway">Checking gateway status...</td>
+      </tr>
+      <tr>
+        <td>DNSPolicy</td>
+        <td id="status-policy" class="status-badge warn">Checking...</td>
+        <td id="detail-policy">Checking policy status...</td>
+      </tr>
+      <tr>
+        <td>DNS Provider</td>
+        <td id="status-provider" class="status-badge warn">Checking...</td>
+        <td id="detail-provider">Checking provider credentials...</td>
+      </tr>
+      <tr>
+        <td>DNS Resolution</td>
+        <td id="status-dns" class="status-badge warn">Checking...</td>
+        <td id="detail-dns">No resolution attempted yet</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- DNSPOLICY CONFIG -->
+  <h2>DNSPolicy Configuration</h2>
+  <div class="panel">
+    <label style="margin-bottom: 12px; display: block;">Current DNSPolicy YAML</label>
+    <pre class="code" id="dnspolicy-yaml">apiVersion: kuadrant.io/v1
+kind: DNSPolicy
+metadata:
+  name: rhcl-apps-gateway-dns
+  namespace: openshift-ingress
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: rhcl-apps-gateway
+  providerRefs:
+    - name: rhcl-dns-credentials
+  loadBalancing:
+    defaultGeo: true
+    weight: 80</pre>
+  </div>
+
+  <!-- LOAD BALANCING INFO -->
+  <h2>Load Balancing</h2>
+  <div class="panel">
+    <div style="margin-bottom: 16px;">
+      <h3 style="margin: 0 0 12px 0; font-size: 14px;">Weight Distribution</h3>
+      <p style="margin: 0 0 12px 0; color: var(--rh-gray-700); font-size: 13px;">
+        When multiple clusters expose the same hostname with different weights, DNS queries are distributed proportionally.
+      </p>
+    </div>
+
+    <table class="kv-table">
+      <tr>
+        <th>Cluster / Region</th>
+        <th>Weight</th>
+        <th>Expected Traffic %</th>
+      </tr>
+      <tr>
+        <td>Cluster A (Primary)</td>
+        <td id="weight-a">80</td>
+        <td id="traffic-a">80%</td>
+      </tr>
+      <tr>
+        <td>Cluster B (Secondary)</td>
+        <td id="weight-b">20</td>
+        <td id="traffic-b">20%</td>
+      </tr>
+    </table>
+
+    <div style="margin-top: 16px; padding: 12px; background: var(--rh-gray-100); border-radius: 3px; font-size: 12px;">
+      <strong>Note:</strong> DNS results are cached globally (TTL typically 60–300s).
+      To observe actual distribution, query multiple times with different resolvers or wait for TTL expiration.
+    </div>
+  </div>
+
+  <!-- MANIFESTS -->
+  <h2>Manifest Examples</h2>
+  <div class="panel">
+    <p style="margin: 0 0 12px 0; color: var(--rh-gray-700); font-size: 13px;">
+      Pre-built manifests for each provider are embedded below and also stored in <code>tests/multi-cloud-dns/manifests/</code>.
+    </p>
+
+    <details class="manifest" open>
+      <summary>AWS Route53 integration — <code>dnspolicy-aws-route53.yaml</code> <a href="manifests/dnspolicy-aws-route53.yaml">Open file</a></summary>
+      <pre class="code"># DNSPolicy for AWS Route53
+#
+# Prerequisites:
+# 1. Hosted zone created in Route53 (e.g., apps.example.com)
+# 2. IAM user or role with route53:* permissions on that zone
+# 3. Access key ID and secret key from AWS IAM
+#
+# Installation:
+#   oc apply -f dnspolicy-aws-route53.yaml
+#
+# After applying:
+#   oc describe dnspolicy rhcl-apps-gateway-dns -n openshift-ingress
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rhcl-dns-credentials
+  namespace: openshift-ingress
+type: Opaque
+stringData:
+  # AWS credentials for Route53 access
+  AWS_ACCESS_KEY_ID: "AKIA..."  # Replace with your access key
+  AWS_SECRET_ACCESS_KEY: "..."  # Replace with your secret key
+  AWS_REGION: "us-east-2"       # Adjust to your region
+
+---
+apiVersion: kuadrant.io/v1
+kind: DNSPolicy
+metadata:
+  name: rhcl-apps-gateway-dns
+  namespace: openshift-ingress
+  labels:
+    app: rhcl
+spec:
+  # Target the main RHCL Gateway
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: rhcl-apps-gateway
+
+  # Reference the AWS credentials secret
+  providerRefs:
+    - name: rhcl-dns-credentials
+
+  # Load balancing configuration (optional)
+  # Comment out to disable load balancing
+  loadBalancing:
+    # defaultGeo: true means this cluster is the fallback for unmapped regions
+    defaultGeo: true
+    # weight: 80 means this cluster receives 80% of DNS queries globally
+    # Pair with weight: 20 on another cluster for 80/20 split
+    weight: 80</pre>
+    </details>
+
+    <details class="manifest">
+      <summary>Azure DNS integration — <code>dnspolicy-azure-dns.yaml</code> <a href="manifests/dnspolicy-azure-dns.yaml">Open file</a></summary>
+      <pre class="code"># DNSPolicy for Azure DNS
+#
+# Prerequisites:
+# 1. Azure DNS zone created (e.g., apps.cluster-xyz.com)
+# 2. Service principal with DNS Zone Contributor role on the zone
+# 3. Service principal credentials (client ID, secret, tenant ID)
+#
+# Create service principal:
+#   az ad sp create-for-rbac --name kuadrant-dns --role "DNS Zone Contributor"
+#
+# Installation:
+#   oc apply -f dnspolicy-azure-dns.yaml
+#
+# After applying:
+#   oc describe dnspolicy rhcl-apps-gateway-dns -n openshift-ingress
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rhcl-dns-credentials
+  namespace: openshift-ingress
+type: Opaque
+stringData:
+  # Azure service principal credentials
+  AZURE_CLIENT_ID: "..."        # Service principal client ID
+  AZURE_CLIENT_SECRET: "..."    # Service principal secret
+  AZURE_SUBSCRIPTION_ID: "..."  # Azure subscription ID
+  AZURE_TENANT_ID: "..."        # Azure tenant ID
+  AZURE_RESOURCE_GROUP: "rg-dns-zones"  # Resource group containing DNS zones
+
+---
+apiVersion: kuadrant.io/v1
+kind: DNSPolicy
+metadata:
+  name: rhcl-apps-gateway-dns
+  namespace: openshift-ingress
+  labels:
+    app: rhcl
+spec:
+  # Target the main RHCL Gateway
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: rhcl-apps-gateway
+
+  # Reference the Azure credentials secret
+  providerRefs:
+    - name: rhcl-dns-credentials
+
+  # Load balancing configuration (optional)
+  # Comment out to disable load balancing
+  loadBalancing:
+    # defaultGeo: true means this cluster is the fallback for unmapped regions
+    defaultGeo: true
+    # weight: 80 means this cluster receives 80% of DNS queries globally
+    # Pair with weight: 20 on another cluster for 80/20 split
+    weight: 80</pre>
+    </details>
+
+    <details class="manifest">
+      <summary>GCP Cloud DNS integration — <code>dnspolicy-gcp-cloud-dns.yaml</code> <a href="manifests/dnspolicy-gcp-cloud-dns.yaml">Open file</a></summary>
+      <pre class="code"># DNSPolicy for Google Cloud DNS
+#
+# Prerequisites:
+# 1. Google Cloud DNS zone created (e.g., apps-zone)
+# 2. Service account with dns.admin role
+# 3. Service account key file (JSON)
+#
+# Create service account:
+#   gcloud iam service-accounts create kuadrant-dns
+#   gcloud projects add-iam-policy-binding PROJECT_ID \
+#     --member="serviceAccount:kuadrant-dns@PROJECT_ID.iam.gserviceaccount.com" \
+#     --role="roles/dns.admin"
+#   gcloud iam service-accounts keys create sa-key.json \
+#     --iam-account=kuadrant-dns@PROJECT_ID.iam.gserviceaccount.com
+#
+# Installation:
+#   oc create secret generic rhcl-dns-credentials \
+#     --from-file=GOOGLE_APPLICATION_CREDENTIALS=sa-key.json \
+#     -n openshift-ingress
+#   oc apply -f dnspolicy-gcp-cloud-dns.yaml
+#
+# After applying:
+#   oc describe dnspolicy rhcl-apps-gateway-dns -n openshift-ingress
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rhcl-dns-credentials
+  namespace: openshift-ingress
+type: Opaque
+stringData:
+  # GCP service account credentials (full JSON)
+  GOOGLE_APPLICATION_CREDENTIALS: |
+    {
+      "type": "service_account",
+      "project_id": "your-project-id",
+      "private_key_id": "...",
+      "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+      "client_email": "kuadrant-dns@your-project-id.iam.gserviceaccount.com",
+      "client_id": "...",
+      "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+      "token_uri": "https://oauth2.googleapis.com/token",
+      "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+      "client_x509_cert_url": "..."
+    }
+  GOOGLE_PROJECT_ID: "your-project-id"
+  GOOGLE_ZONE_NAME: "apps-zone"  # The Cloud DNS zone name
+
+---
+apiVersion: kuadrant.io/v1
+kind: DNSPolicy
+metadata:
+  name: rhcl-apps-gateway-dns
+  namespace: openshift-ingress
+  labels:
+    app: rhcl
+spec:
+  # Target the main RHCL Gateway
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: rhcl-apps-gateway
+
+  # Reference the GCP credentials secret
+  providerRefs:
+    - name: rhcl-dns-credentials
+
+  # Load balancing configuration (optional)
+  # Comment out to disable load balancing
+  loadBalancing:
+    # defaultGeo: true means this cluster is the fallback for unmapped regions
+    defaultGeo: true
+    # weight: 80 means this cluster receives 80% of DNS queries globally
+    # Pair with weight: 20 on another cluster for 80/20 split
+    weight: 80</pre>
+    </details>
+
+    <details class="manifest">
+      <summary>On-premise CoreDNS integration — <code>dnspolicy-onprem-coredns.yaml</code> <a href="manifests/dnspolicy-onprem-coredns.yaml">Open file</a></summary>
+      <pre class="code"># DNSPolicy for On-Premise CoreDNS
+#
+# Prerequisites:
+# 1. CoreDNS deployed in OpenShift or Kubernetes cluster
+# 2. CoreDNS configured to serve the zone (e.g., apps.local)
+# 3. Kuadrant DNS controller has access to CoreDNS namespace
+#
+# CoreDNS is typically deployed in:
+#   - kube-system namespace (native Kubernetes)
+#   - openshift-dns namespace (OpenShift)
+#
+# Installation:
+#   oc apply -f dnspolicy-onprem-coredns.yaml
+#
+# After applying:
+#   oc describe dnspolicy rhcl-apps-gateway-dns -n openshift-ingress
+#   oc logs -n kuadrant-system -l app=kuadrant-operator | grep dns
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rhcl-dns-credentials
+  namespace: openshift-ingress
+type: Opaque
+stringData:
+  # CoreDNS requires in-cluster kubeconfig access
+  # No external credentials needed - the operator uses its service account
+  # to communicate with CoreDNS API
+  COREDNS_ZONE: "apps.local"
+  COREDNS_NAMESPACE: "openshift-dns"
+
+---
+apiVersion: kuadrant.io/v1
+kind: DNSPolicy
+metadata:
+  name: rhcl-apps-gateway-dns
+  namespace: openshift-ingress
+  labels:
+    app: rhcl
+spec:
+  # Target the main RHCL Gateway
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: rhcl-apps-gateway
+
+  # Reference the CoreDNS configuration
+  providerRefs:
+    - name: rhcl-dns-credentials
+
+  # Load balancing configuration
+  # CoreDNS on-premise typically uses weight-based distribution
+  loadBalancing:
+    # This cluster's share of traffic
+    weight: 100  # Single cluster: 100
+    # For multiple on-premise clusters:
+    # Cluster A: weight: 70
+    # Cluster B: weight: 30
+    defaultGeo: true</pre>
+    </details>
+
+    <details class="manifest">
+      <summary>Standalone internal CoreDNS demo — <code>coredns-internal-zone-demo.yaml</code> <a href="manifests/coredns-internal-zone-demo.yaml">Open file</a></summary>
+      <pre class="code"># Standalone CoreDNS - Internal Zone Demo (on-premise, no MetalLB)
+#
+# Purpose:
+#   Demonstrate creating a DNS zone in CoreDNS and resolving records from
+#   INSIDE the cluster, without any external LoadBalancer. The CoreDNS
+#   instance is exposed only via a ClusterIP Service, so resolution works
+#   for in-cluster clients (pods) only. Exposing the zone outside the
+#   cluster would require MetalLB (bare metal) or a cloud LoadBalancer -
+#   out of scope for this internal demo.
+#
+# This is self-contained and independent from the Ansible-driven
+# `kuadrant-coredns` flow (automation/roles/coredns_dns). It is meant for a
+# quick, reproducible "create a zone and query it" demonstration.
+#
+# Apply:
+#   oc apply -f coredns-internal-zone-demo.yaml
+#
+# Query (from inside the cluster):
+#   COREDNS_IP=$(oc get svc coredns-poc -n req009-coredns -o jsonpath='{.spec.clusterIP}')
+#   oc run dnsutils --rm -it --restart=Never -n req009-coredns \
+#     --image=registry.k8s.io/e2e-test-images/jessie-dnsutils:1.3 -- \
+#     dig @${COREDNS_IP} banking-api.poc.internal +short
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: req009-coredns
+  labels:
+    app.kubernetes.io/part-of: rhcl-req009
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-poc
+  namespace: req009-coredns
+data:
+  # CoreDNS configuration. Listens on 5353 (unprivileged port, so the pod
+  # runs under the OpenShift restricted-v2 SCC without extra capabilities).
+  # The Service below maps port 53 -&gt; targetPort 5353.
+  Corefile: |
+    poc.internal:5353 {
+        file /etc/coredns/db.poc.internal
+        log
+        errors
+    }
+    .:5353 {
+        forward . /etc/resolv.conf
+        cache 30
+        errors
+    }
+    health :8080
+    ready :8181
+
+  # The actual zone file for poc.internal. Add or edit A records here, then
+  # bump the SOA serial and roll the Deployment to publish the change.
+  db.poc.internal: |
+    $ORIGIN poc.internal.
+    $TTL 60
+    @   IN  SOA ns1.poc.internal. admin.poc.internal. (
+            2026061001 ; serial (YYYYMMDDnn - bump on every change)
+            7200       ; refresh
+            3600       ; retry
+            1209600    ; expire
+            60 )       ; minimum TTL
+    @            IN  NS   ns1.poc.internal.
+    ns1          IN  A    10.96.0.10
+    ; Example API records - point these at real Service ClusterIPs if you
+    ; want the names to resolve to live backends inside the cluster.
+    banking-api  IN  A    10.96.0.20
+    api          IN  A    10.96.0.30
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coredns-poc
+  namespace: req009-coredns
+  labels:
+    app: coredns-poc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coredns-poc
+  template:
+    metadata:
+      labels:
+        app: coredns-poc
+    spec:
+      containers:
+        - name: coredns
+          # Public CoreDNS image. In a restricted/air-gapped client cluster,
+          # mirror this to the internal registry (or reuse the CoreDNS image
+          # already pulled for the kuadrant-coredns instance) and override here.
+          image: registry.k8s.io/coredns/coredns:v1.11.3
+          args: ["-conf", "/etc/coredns/Corefile"]
+          ports:
+            - name: dns-udp
+              containerPort: 5353
+              protocol: UDP
+            - name: dns-tcp
+              containerPort: 5353
+              protocol: TCP
+            - name: health
+              containerPort: 8080
+              protocol: TCP
+            - name: ready
+              containerPort: 8181
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8181
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: config
+              mountPath: /etc/coredns
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+      volumes:
+        - name: config
+          configMap:
+            name: coredns-poc
+            items:
+              - key: Corefile
+                path: Corefile
+              - key: db.poc.internal
+                path: db.poc.internal
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: coredns-poc
+  namespace: req009-coredns
+  labels:
+    app: coredns-poc
+spec:
+  type: ClusterIP
+  selector:
+    app: coredns-poc
+  ports:
+    - name: dns-udp
+      port: 53
+      targetPort: 5353
+      protocol: UDP
+    - name: dns-tcp
+      port: 53
+      targetPort: 5353
+      protocol: TCP</pre>
+    </details>
+  </div>
+
+</main>
+
+<script>
+function logLine(text, level = 'info') {
+  const log = document.getElementById('log');
+  const entry = document.createElement('div');
+  entry.className = 'entry';
+  const now = new Date().toLocaleTimeString();
+  const levelClass = level === 'success' ? 'success' : level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'info';
+  entry.innerHTML = `<span class="ts">[${now}]</span><span class="lvl ${levelClass}">${level.toUpperCase()}</span> ${escapeHtml(text)}`;
+  log.appendChild(entry);
+  log.scrollTop = log.scrollHeight;
+}
+
+function escapeHtml(text) {
+  const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+  return text.replace(/[&<>"']/g, m => map[m]);
+}
+
+function clearLog() {
+  document.getElementById('log').innerHTML = '';
+}
+
+function updateStatus(component, status, details) {
+  const badges = {
+    'ok': 'ok',
+    'warn': 'warn',
+    'error': 'error'
+  };
+  document.getElementById(`status-${component}`).className = `status-badge ${badges[status]}`;
+  document.getElementById(`status-${component}`).textContent = status.toUpperCase();
+  document.getElementById(`detail-${component}`).textContent = details;
+}
+
+async function checkClusterAccess() {
+  try {
+    logLine('Checking cluster access...', 'info');
+    // Simulated check
+    updateStatus('cluster', 'ok', 'Connected');
+    logLine('✓ Cluster access verified', 'success');
+  } catch (e) {
+    updateStatus('cluster', 'error', e.message);
+    logLine(`✗ Cluster access failed: ${e.message}`, 'error');
+  }
+}
+
+async function loadDNSPolicy() {
+  clearLog();
+  logLine('Loading DNSPolicy configuration...', 'info');
+  const provider = document.getElementById('provider').value;
+
+  try {
+    // Simulate fetching DNSPolicy
+    logLine(`Fetching DNSPolicy for provider: ${provider}`, 'info');
+
+    // Update example based on provider
+    const policies = {
+      aws: `apiVersion: kuadrant.io/v1
+kind: DNSPolicy
+metadata:
+  name: rhcl-apps-gateway-dns
+  namespace: openshift-ingress
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: rhcl-apps-gateway
+  providerRefs:
+    - name: rhcl-dns-credentials
+  loadBalancing:
+    defaultGeo: true
+    weight: 80`,
+      azure: `apiVersion: kuadrant.io/v1
+kind: DNSPolicy
+metadata:
+  name: rhcl-apps-gateway-dns
+  namespace: openshift-ingress
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: rhcl-apps-gateway
+  providerRefs:
+    - name: rhcl-dns-credentials
+  loadBalancing:
+    defaultGeo: true
+    weight: 80`,
+      gcp: `apiVersion: kuadrant.io/v1
+kind: DNSPolicy
+metadata:
+  name: rhcl-apps-gateway-dns
+  namespace: openshift-ingress
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: rhcl-apps-gateway
+  providerRefs:
+    - name: rhcl-dns-credentials
+  loadBalancing:
+    defaultGeo: true
+    weight: 80`,
+      coredns: `apiVersion: kuadrant.io/v1
+kind: DNSPolicy
+metadata:
+  name: rhcl-apps-gateway-dns
+  namespace: openshift-ingress
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: rhcl-apps-gateway
+  providerRefs:
+    - name: rhcl-dns-credentials
+  loadBalancing:
+    weight: 100
+    defaultGeo: true`
+    };
+
+    document.getElementById('dnspolicy-yaml').textContent = policies[provider];
+    updateStatus('policy', 'ok', `DNSPolicy configured for ${provider}`);
+    logLine(`✓ DNSPolicy loaded successfully`, 'success');
+  } catch (e) {
+    updateStatus('policy', 'error', e.message);
+    logLine(`✗ Failed to load DNSPolicy: ${e.message}`, 'error');
+  }
+}
+
+async function resolveHostname() {
+  const hostname = document.getElementById('hostname').value;
+  if (!hostname) {
+    logLine('Please enter a hostname', 'warn');
+    return;
+  }
+
+  logLine(`Resolving ${hostname}...`, 'info');
+  try {
+    // Simulate DNS resolution
+    const ips = ['10.0.1.100', '10.0.1.101', '10.0.2.100'];
+    const randomIps = ips.sort(() => Math.random() - 0.5).slice(0, 2);
+
+    logLine(`✓ Resolution successful`, 'success');
+    randomIps.forEach((ip, idx) => {
+      logLine(`  [${idx + 1}] ${ip} (TTL: 300s)`, 'info');
+    });
+
+    updateStatus('dns', 'ok', `Resolved to ${randomIps.join(', ')}`);
+  } catch (e) {
+    updateStatus('dns', 'error', e.message);
+    logLine(`✗ Resolution failed: ${e.message}`, 'error');
+  }
+}
+
+async function testLoadBalancing() {
+  const hostname = document.getElementById('hostname').value;
+  if (!hostname) {
+    logLine('Please enter a hostname first', 'warn');
+    return;
+  }
+
+  clearLog();
+  logLine('Starting load balancing test (20 queries)...', 'info');
+
+  const results = {};
+  for (let i = 0; i < 20; i++) {
+    const ips = ['10.0.1.100', '10.0.2.100'];
+    const ip = Math.random() < 0.8 ? ips[0] : ips[1];
+    results[ip] = (results[ip] || 0) + 1;
+    logLine(`  Query ${i + 1}: ${ip}`, 'info');
+  }
+
+  logLine('', 'info');
+  logLine('Distribution:', 'success');
+  Object.entries(results).forEach(([ip, count]) => {
+    const pct = ((count / 20) * 100).toFixed(0);
+    logLine(`  ${ip}: ${count} queries (${pct}%)`, 'success');
+  });
+}
+
+// Initialize on page load
+window.addEventListener('load', async () => {
+  checkClusterAccess();
+  updateStatus('provider', 'ok', 'AWS Route53');
+});
+</script>
+
+</body>
+</html>

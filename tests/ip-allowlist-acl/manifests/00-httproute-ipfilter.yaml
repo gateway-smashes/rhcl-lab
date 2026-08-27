@@ -1,0 +1,75 @@
+# IP-based ACL — dedicated HTTPRoute for the ipfilter-php probe.
+#
+# Esta rota publica o app PHP `ipfilter-php` (service na porta 8080) sob o
+# hostname `ipfilter.${RHCL_ZONE_ROOT_DOMAIN}`, isolando a demo de IP-ACL do
+# banking-api. The app exposes:
+#   • GET /            → HTML page that spoofs x-forwarded-for and shows the seen IP
+#   • GET /api/ip      → snapshot JSON (REMOTE_ADDR, x-forwarded-for chain, etc.)
+#   • GET /healthz     → health check
+#
+# Why a dedicated route?
+#   • No API key/JWT in the path — all traffic is anonymous, so the only
+#     variable in the demo is the source IP.
+#   • Applying an IP-ACL AuthPolicy here does not disable any production auth
+#     policy (unlike targeting banking-api-connectivity).
+#   • The dedicated hostname becomes the `vhost.name` consumed by Engine 3
+#     (EnvoyFilter / RBAC) — ver 05/06.
+#
+# Idempotency with the automation:
+#   The `apps-install` playbook (APPS_IPFILTER_ENABLED=true) already creates an
+#   mesmo nome (`ipfilter`) via roles/apps/templates/ipfilter-httproute.yml.j2.
+#   This manifest re-asserts the same object — useful to run the demo standalone
+#   sem depender do playbook. Mantenha o hostname alinhado: o default do
+#   playbook (apps_ipfilter_route_hostname) resolve para
+#   `ipfilter.${RHCL_ZONE_ROOT_DOMAIN}` when RHCL_ZONE_ROOT_DOMAIN is set.
+#
+# Como aplicar:
+#   export RHCL_ZONE_ROOT_DOMAIN=apps.example.com  # ajustar
+#   envsubst < tests/ip-allowlist-acl/manifests/00-httproute-ipfilter.yaml | oc apply -f -
+#
+# Validar:
+#   HOST=$(oc get httproute ipfilter -n rhcl-apps -o jsonpath='{.spec.hostnames[0]}')
+#   curl -sk -o /dev/null -w "%{http_code}\n" "https://$HOST/api/ip"   # 200
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: ipfilter
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-ipfilter-poc
+    rhcl.poc/item: "72"
+spec:
+  parentRefs:
+    - name: rhcl-apps-gateway
+      namespace: openshift-ingress
+  hostnames:
+    - "ipfilter.${RHCL_ZONE_ROOT_DOMAIN}"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      filters:
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+              - name: Strict-Transport-Security
+                value: max-age=31536000; includeSubDomains
+              # CORS — inclui x-forwarded-for para a console cross-origin
+              # (tests/ip-allowlist-acl/index.html servida em outra origem) conseguir
+              # forjar o header no preflight.
+              - name: Access-Control-Allow-Origin
+                value: "*"
+              - name: Access-Control-Allow-Methods
+                value: "GET,POST,OPTIONS"
+              - name: Access-Control-Allow-Headers
+                value: "accept,content-type,x-requested-with,x-forwarded-for"
+              - name: Access-Control-Expose-Headers
+                value: "x-rhcl-policy,x-rhcl-policy-mode,x-rhcl-policy-engine"
+              - name: Access-Control-Max-Age
+                value: "86400"
+              - name: Vary
+                value: "Origin"
+      backendRefs:
+        - name: ipfilter-php
+          port: 8080

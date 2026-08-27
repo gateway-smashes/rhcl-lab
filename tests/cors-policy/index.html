@@ -1,0 +1,852 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RHCL Lab — CORS policy at the gateway</title>
+<style>
+  :root {
+    --rh-red: #EE0000;
+    --rh-red-dark: #A30000;
+    --rh-black: #151515;
+    --rh-gray-100: #F5F5F5;
+    --rh-gray-200: #E0E0E0;
+    --rh-gray-700: #4D4D4D;
+    --rh-success: #3E8635;
+    --rh-warn: #F0AB00;
+    --rh-info: #2B9AF3;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: "Red Hat Display", "Red Hat Text", -apple-system, BlinkMacSystemFont,
+            "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    color: var(--rh-black);
+    background: var(--rh-gray-100);
+    line-height: 1.45;
+  }
+  header.rh-header {
+    background: var(--rh-black);
+    color: #fff;
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 4px solid var(--rh-red);
+  }
+  header.rh-header .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 0.5px;
+    color: inherit;
+    text-decoration: none;
+  }
+  header.rh-header a.logo:hover { color: var(--rh-red); }
+  header.rh-header a.logo:focus-visible {
+    outline: 2px solid var(--rh-red);
+    outline-offset: 4px;
+    border-radius: 2px;
+  }
+  header.rh-header .title {
+    margin-left: auto;
+    font-size: 14px;
+    color: #cfcfcf;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px;
+  }
+  h1 { font-size: 28px; margin: 0 0 4px 0; }
+  h2 {
+    font-size: 16px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--rh-gray-700);
+    margin: 32px 0 12px 0;
+    border-bottom: 1px solid var(--rh-gray-200);
+    padding-bottom: 8px;
+  }
+  .subtitle { color: var(--rh-gray-700); margin: 0 0 24px 0; }
+  .panel {
+    background: #fff;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 4px;
+    padding: 20px;
+  }
+  .panel + .panel { margin-top: 16px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .row + .row { margin-top: 12px; }
+  label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--rh-gray-700);
+    display: block;
+    margin-bottom: 4px;
+  }
+  input[type="text"], input[type="url"], input[type="number"], select, textarea {
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 8px 10px;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 3px;
+    background: #fff;
+    color: var(--rh-black);
+    flex: 1;
+    min-width: 200px;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: 2px solid var(--rh-red);
+    outline-offset: -1px;
+    border-color: var(--rh-red);
+  }
+  button {
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    padding: 8px 16px;
+    border: 1px solid var(--rh-red);
+    background: var(--rh-red);
+    color: #fff;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  button:hover { background: var(--rh-red-dark); border-color: var(--rh-red-dark); }
+  button.secondary {
+    background: #fff;
+    color: var(--rh-black);
+    border-color: var(--rh-gray-200);
+  }
+  button.secondary:hover { background: var(--rh-gray-100); }
+  button.preset {
+    background: #fff;
+    color: var(--rh-black);
+    border-color: var(--rh-gray-200);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+  button.preset:hover { background: var(--rh-gray-100); border-color: var(--rh-red); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .log {
+    background: var(--rh-black);
+    color: #e8e8e8;
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 16px;
+    border-radius: 3px;
+    max-height: 520px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .log .entry { padding: 4px 0; border-bottom: 1px solid #2a2a2a; }
+  .log .entry:last-child { border-bottom: none; }
+  .log .ts { color: #6a6a6a; margin-right: 8px; }
+  .log .lvl { font-weight: 700; margin-right: 8px; }
+  .log .lvl.info    { color: var(--rh-info); }
+  .log .lvl.success { color: #6EC664; }
+  .log .lvl.warn    { color: var(--rh-warn); }
+  .log .lvl.error   { color: #F87171; }
+
+  .callout {
+    background: #FFF8E1;
+    border-left: 4px solid var(--rh-warn);
+    padding: 12px 16px;
+    font-size: 13px;
+    margin: 16px 0;
+  }
+  .callout strong { color: var(--rh-red-dark); }
+  .callout code {
+    font-family: var(--mono);
+    background: rgba(0,0,0,.06);
+    padding: 1px 4px;
+    border-radius: 2px;
+  }
+
+  pre.scenario, pre.curl, pre.yaml {
+    background: var(--rh-gray-100);
+    border: 1px solid var(--rh-gray-200);
+    padding: 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    overflow-x: auto;
+    margin: 0;
+  }
+  pre.curl { background: #1f1f1f; color: #e8e8e8; border-color: #1f1f1f; }
+  pre.yaml { background: #f7f7f9; }
+
+  .curl-block, .yaml-block { position: relative; margin-top: 8px; }
+  .curl-block .copy, .yaml-block .copy {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 11px;
+    padding: 4px 8px;
+    background: #fff;
+    color: var(--rh-black);
+    border: 1px solid var(--rh-gray-200);
+  }
+  .curl-block .copy:hover, .yaml-block .copy:hover {
+    background: var(--rh-gray-100);
+    border-color: var(--rh-red);
+  }
+
+  .badge {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--rh-gray-100);
+    border: 1px solid var(--rh-gray-200);
+    padding: 2px 8px;
+    border-radius: 12px;
+    color: var(--rh-gray-700);
+    margin-left: 8px;
+  }
+  .badge.ok { background: #E6F4E5; color: #1E5E1A; border-color: #B5DBB1; }
+  .badge.bad { background: #FBE5E5; color: #7A1212; border-color: #F2B8B8; }
+  .badge.warn { background: #FFF8E1; color: #7A5A00; border-color: #F2D89A; }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+  }
+  .card-title {
+    font-weight: 700;
+    font-size: 13px;
+    margin-bottom: 8px;
+    color: var(--rh-black);
+  }
+  .kv {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--rh-gray-700);
+  }
+  .kv b { color: var(--rh-black); font-weight: 600; }
+
+  .matrix {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .matrix th, .matrix td {
+    border: 1px solid var(--rh-gray-200);
+    padding: 8px 12px;
+    text-align: left;
+  }
+  .matrix th {
+    background: var(--rh-gray-100);
+    font-weight: 700;
+    color: var(--rh-gray-700);
+    text-transform: uppercase;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+  }
+  .matrix td.mono { font-family: var(--mono); font-size: 12px; }
+  .matrix tr.expect-pass td:last-child { color: var(--rh-success); font-weight: 600; }
+  .matrix tr.expect-block td:last-child { color: var(--rh-red-dark); font-weight: 600; }
+
+  footer {
+    max-width: 1100px;
+    margin: 32px auto;
+    padding: 0 32px;
+    color: var(--rh-gray-700);
+    font-size: 12px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header class="rh-header">
+  <a class="logo" href="/" aria-label="Back to the tests catalog">
+    <svg width="36" height="28" viewBox="0 0 36 28" xmlns="http://www.w3.org/2000/svg" aria-label="Red Hat">
+      <path fill="#EE0000" d="M26 14c2.5 0 5 .8 5 3 0 .8-.3 1.4-.7 2H5.7c-.4-.6-.7-1.2-.7-2 0-2.2 2.5-3 5-3 0-3 3-7 8-7 2 0 3 1 4 1 1.5 0 2-1 3.5-1 1 0 2 1 2 3 0 2-1 4-1.5 4z"/>
+      <rect x="3" y="20" width="30" height="4" rx="1" fill="#151515"/>
+    </svg>
+    RHCL Lab
+  </a>
+  <div class="title">CORS policy</div>
+</header>
+
+<main>
+  <h1>
+    CORS no Gateway
+    <span class="badge" id="originPill">origin: …</span>
+  </h1>
+  <p class="subtitle">
+    Shows that the backend <code>/api/v1/cors</code> emits no
+    <code>Access-Control-Allow-*</code> headers: the browser blocks
+    cross-origin calls straight to the backend. The <code>HTTPRoute</code> on
+    <code>cors.${"$"}{RHCL_ZONE_ROOT_DOMAIN}</code> injects these headers via
+    <code>ResponseHeaderModifier</code> and the browser releases the response.
+  </p>
+
+  <h2>Scenario</h2>
+  <div class="panel">
+    <pre class="scenario">
+[ browser @ this page's origin ]  
+        |
+        |  fetch(the URL chosen below)
+        v
+[ direct backend         ]   --> blocked: no Access-Control-Allow-Origin
+[ via cors.<domain>      ]   --> allowed: gateway adds CORS headers
+    </pre>
+    <div class="callout">
+      <strong>First, open DevTools.</strong> When CORS blocks
+      a call, JavaScript only sees <code>TypeError: Failed to fetch</code>.
+      The detailed message
+      (<em>"No 'Access-Control-Allow-Origin' header is present"</em>) only
+      appears in the browser <strong>Console (F12)</strong> and <strong>Network</strong>
+      tabs. Keep DevTools open during the test.
+    </div>
+  </div>
+
+  <h2>Controles</h2>
+  <div class="panel" id="controls">
+    <div class="row">
+      <div style="flex:2; min-width:280px;">
+        <label for="backendUrl">Base URL (gateway com CORS ou backend direto)</label>
+        <input id="backendUrl" type="url"
+               value="https://banking-api-v1-rhcl-apps.apps.example.com" />
+      </div>
+      <div style="flex:1; min-width:200px;">
+        <label for="path">Path da rota</label>
+        <input id="path" type="text" value="/api/v1/cors" />
+      </div>
+      <div style="align-self:flex-end;">
+        <button id="fetchBtn">Fetch GET</button>
+        <button class="secondary" id="preflightBtn" title="Sends OPTIONS with preflight headers to inspect the server response">OPTIONS preflight</button>
+        <button class="secondary" id="clearLogButton">Clear log</button>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:16px;">
+      <label style="margin:0; align-self:center;">Presets de path:</label>
+      <button class="preset" data-path="/api/v1/cors">/api/v1/cors</button>
+      <button class="preset" data-path="/api/v1/accounts/summary">/api/v1/accounts/summary</button>
+    </div>
+
+    <div class="row" style="margin-top:16px;">
+      <label style="margin:0; align-self:center;">Presets de URL:</label>
+      <button class="preset" data-url="https://cors.apps.example.com">
+        Via gateway — cors.apps.cluster1.poc (com CORS)
+      </button>
+      <button class="preset" data-url="https://banking-api-v1-rhcl-apps.apps.example.com">
+        Backend direto (cluster1.poc) — sem CORS
+      </button>
+      <button class="preset" data-url="https://banking-api-v1-rhcl-apps.apps.example.com">
+        Direct backend (lab) — no CORS
+      </button>
+      <button class="preset" data-url="" id="presetGateway" disabled title="Set the gateway URL below">
+        Saved URL (set below)
+      </button>
+    </div>
+
+    <div class="row" style="margin-top:16px;">
+      <div style="flex:1; min-width:280px;">
+        <label for="gatewayUrl">Saved gateway URL (persisted in localStorage)</label>
+        <input id="gatewayUrl" type="url" placeholder="https://cors.example.com" />
+      </div>
+      <div style="align-self:flex-end;">
+        <button class="secondary" id="saveGatewayBtn">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <h2>Log</h2>
+  <div class="log" id="log" aria-live="polite"></div>
+
+  <h2>Last request</h2>
+  <div class="panel grid-2">
+    <div>
+      <div class="card-title">Resultado</div>
+      <div class="kv" id="lastFetch">(no request yet)</div>
+    </div>
+    <div>
+      <div class="card-title">Veredito</div>
+      <div class="kv" id="verdict">—</div>
+    </div>
+  </div>
+
+  <h2>Matriz de testes</h2>
+  <div class="panel">
+    <p style="margin-top:0;">
+      Same <code>/api/v1/cors</code> backend endpoint, but two paths
+      to the browser:
+    </p>
+    <table class="matrix">
+      <thead>
+        <tr>
+          <th>Fetch origin</th>
+          <th>URL called</th>
+          <th>CORS headers in response</th>
+          <th>Expected result</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="expect-block">
+          <td class="mono">page on another origin</td>
+          <td class="mono">https://banking-api-v1-rhcl-apps.&lt;cluster&gt;/api/v1/cors</td>
+          <td>none</td>
+          <td>fetch blocked by the browser</td>
+        </tr>
+        <tr class="expect-pass">
+          <td class="mono">page on another origin</td>
+          <td class="mono">https://cors.${"$"}{RHCL_ZONE_ROOT_DOMAIN}/api/v1/cors</td>
+          <td>Access-Control-Allow-* (gateway)</td>
+          <td>200 OK, body read normally</td>
+        </tr>
+        <tr class="expect-pass">
+          <td class="mono">curl / same origin</td>
+          <td class="mono">either one</td>
+          <td>none (curl) / doesn't matter (same-origin)</td>
+          <td>200 OK — CORS is a browser rule</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="callout" style="margin-top:16px;">
+      <strong>CORS is browser-only.</strong> The backend keeps responding
+      to everyone; what changes is the browser <em>letting JS read</em> the
+      response. Demonstrated by running the test from
+      <code>http://localhost:8080</code> (a different origin than the cluster) — the
+      <code>fetch</code> only "sees" the data when it goes through the
+      <code>cors.${"$"}{RHCL_ZONE_ROOT_DOMAIN}</code>.
+    </div>
+  </div>
+
+  <h2>HTTPRoute com CORS por rota</h2>
+  <div class="panel">
+    <p style="margin-top:0;">
+      Apply the YAML below (or
+      <code>tests/cors-policy/manifests/httproute-cors.yaml</code>) on the cluster and
+      ajuste o <code>parentRefs.name</code> / <code>backendRefs.name</code>
+      conforme o seu lab.
+    </p>
+    <div class="yaml-block">
+      <pre class="yaml" id="yamlRoute"></pre>
+      <button class="copy" data-target="yamlRoute">Copiar</button>
+    </div>
+  </div>
+
+  <h2>Shell verification</h2>
+  <div class="panel">
+    <p style="margin-top:0;">
+      Commands to reproduce the test in a terminal. <code>curl</code> does
+      not respect CORS — it always returns the body — so the column to watch
+      is the presence (or absence) of the
+      <code>Access-Control-Allow-*</code>.
+    </p>
+
+    <div class="card-title" style="margin-top:12px;">curl — backend direto (sem CORS)</div>
+    <div class="curl-block">
+      <pre class="curl" id="curlDirect"></pre>
+      <button class="copy" data-target="curlDirect">Copiar</button>
+    </div>
+
+    <div class="card-title" style="margin-top:16px;">curl — via gateway (com CORS)</div>
+    <div class="curl-block">
+      <pre class="curl" id="curlGateway"></pre>
+      <button class="copy" data-target="curlGateway">Copiar</button>
+    </div>
+
+    <div class="card-title" style="margin-top:16px;">curl — preflight OPTIONS via gateway</div>
+    <div class="curl-block">
+      <pre class="curl" id="curlOptions"></pre>
+      <button class="copy" data-target="curlOptions">Copiar</button>
+    </div>
+
+    <div class="card-title" style="margin-top:16px;">log do pod — confirma origem recebida</div>
+    <div class="curl-block">
+      <pre class="curl" id="ocLogs"></pre>
+      <button class="copy" data-target="ocLogs">Copiar</button>
+    </div>
+  </div>
+</main>
+
+<footer>
+  RHCL Lab — CORS policy at the gateway
+</footer>
+
+<script>
+  const logEl = document.getElementById("log");
+  const backendInput = document.getElementById("backendUrl");
+  const gatewayInput = document.getElementById("gatewayUrl");
+  const presetGatewayBtn = document.getElementById("presetGateway");
+  const pathInput = document.getElementById("path");
+  const lastFetchEl = document.getElementById("lastFetch");
+  const verdictEl = document.getElementById("verdict");
+
+  document.getElementById("originPill").textContent = "origin: " + window.location.origin;
+
+  function logLine(message, level = "info") {
+    const ts = new Date().toISOString().split("T")[1].replace("Z", "");
+    const entry = document.createElement("div");
+    entry.className = "entry";
+    entry.innerHTML =
+      `<span class="ts">${ts}</span>` +
+      `<span class="lvl ${level}">${level.toUpperCase()}</span>` +
+      escapeHtml(message);
+    logEl.appendChild(entry);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function escapeHtml(s) {
+    return String(s)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+  }
+  document.getElementById("clearLogButton").addEventListener("click", () => {
+    logEl.innerHTML = "";
+  });
+
+  // ---- Runtime env from /env.json (populated by the tests container at boot)
+  window.rhclEnv = {};
+  async function loadRuntimeEnv() {
+    const candidates = ["/env.json", "../../env.json", "../env.json"];
+    for (const url of candidates) {
+      try {
+        const r = await fetch(url, { cache: "no-store" });
+        if (!r.ok) continue;
+        const env = await r.json();
+        if (env && typeof env === "object") {
+          window.rhclEnv = env;
+          return env;
+        }
+      } catch { /* try next */ }
+    }
+    return {};
+  }
+
+  function applyEnvDefaults() {
+    const domain = (window.rhclEnv && window.rhclEnv.rhclZoneRootDomain) || "";
+    if (!domain) return;
+    const gatewayUrl = `https://cors.${domain}`;
+
+    if (!backendInput.dataset.userEdited) {
+      // Default keeps the direct backend so the failure case is visible
+      // without any setup. Only override if user has explicitly chosen
+      // the gateway preset and it hasn't matched the env value.
+    }
+
+    const corsPreset = document.querySelector(`button.preset[data-url="${gatewayUrl}"]`);
+    if (corsPreset) {
+      corsPreset.textContent = `Via gateway — cors.${domain} (com CORS)`;
+    } else {
+      // Adjust the first gateway preset (index 0 of URL presets) to match the env.
+      const firstUrlPreset = document.querySelectorAll("button.preset[data-url]")[0];
+      if (firstUrlPreset && firstUrlPreset.dataset.url.startsWith("https://cors.")) {
+        firstUrlPreset.dataset.url = gatewayUrl;
+        firstUrlPreset.textContent = `Via gateway — cors.${domain} (com CORS)`;
+      }
+    }
+
+    logLine(`env.json carregado · RHCL_ZONE_ROOT_DOMAIN=${domain}`, "info");
+  }
+
+  backendInput.addEventListener("input", () => {
+    backendInput.dataset.userEdited = "1";
+  });
+
+  // ---- Presets --------------------------------------------------------------
+  document.querySelectorAll("button.preset[data-url]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const url = btn.dataset.url;
+      if (!url) return;
+      backendInput.value = url;
+      backendInput.dataset.userEdited = "1";
+      refreshShellCommands();
+      logLine(`Preset URL selecionada: ${url}`, "info");
+    });
+  });
+  document.querySelectorAll("button.preset[data-path]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      pathInput.value = btn.dataset.path;
+      refreshShellCommands();
+      logLine(`Preset path aplicado: ${btn.dataset.path}`, "info");
+    });
+  });
+
+  // ---- Saved gateway URL ---------------------------------------------------
+  const savedGateway = localStorage.getItem("rhcl.req014.gatewayUrl");
+  if (savedGateway) {
+    gatewayInput.value = savedGateway;
+    presetGatewayBtn.dataset.url = savedGateway;
+    presetGatewayBtn.disabled = false;
+    presetGatewayBtn.title = savedGateway;
+  }
+  document.getElementById("saveGatewayBtn").addEventListener("click", () => {
+    const v = gatewayInput.value.trim();
+    if (!v) {
+      localStorage.removeItem("rhcl.req014.gatewayUrl");
+      presetGatewayBtn.dataset.url = "";
+      presetGatewayBtn.disabled = true;
+      presetGatewayBtn.title = "Set the gateway URL below";
+      logLine("Saved URL removed.", "warn");
+      return;
+    }
+    localStorage.setItem("rhcl.req014.gatewayUrl", v);
+    presetGatewayBtn.dataset.url = v;
+    presetGatewayBtn.disabled = false;
+    presetGatewayBtn.title = v;
+    logLine(`URL saved: ${v}`, "success");
+  });
+
+  // ---- Copy buttons --------------------------------------------------------
+  document.querySelectorAll("button.copy").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.target;
+      const txt = document.getElementById(id)?.textContent || "";
+      try {
+        await navigator.clipboard.writeText(txt);
+        const old = btn.textContent;
+        btn.textContent = "Copiado!";
+        setTimeout(() => (btn.textContent = old), 1200);
+      } catch {
+        logLine("Copy failed — select the text manually.", "warn");
+      }
+    });
+  });
+
+  // ---- Helpers --------------------------------------------------------------
+  function buildUrl(base, path) {
+    const cleaned = (base || "").replace(/\/+$/, "");
+    const p = (path || "").startsWith("/") ? path : `/${path || ""}`;
+    return `${cleaned}${p}`;
+  }
+  function getBaseUrl() { return backendInput.value.trim(); }
+  function getPath() { return pathInput.value.trim() || "/api/v1/cors"; }
+  function isGatewayHost(url) {
+    try { return new URL(url).hostname.startsWith("cors."); } catch { return false; }
+  }
+
+  // ---- Shell command rendering ---------------------------------------------
+  function refreshShellCommands() {
+    const domain = (window.rhclEnv && window.rhclEnv.rhclZoneRootDomain) || "apps.example.com";
+    const gatewayBase = `https://cors.${domain}`;
+    const directBase = "https://banking-api-v1-rhcl-apps." + domain;
+    const path = getPath();
+
+    document.getElementById("curlDirect").textContent =
+`# Backend direto: 200 OK, mas SEM Access-Control-Allow-*
+curl -i "${directBase}${path}" \\
+  -H "Origin: http://localhost:8080" \\
+  | grep -iE 'HTTP/|access-control|content-type'`;
+
+    document.getElementById("curlGateway").textContent =
+`# Via gateway: 200 OK e Access-Control-Allow-* injetados
+curl -i "${gatewayBase}${path}" \\
+  -H "Origin: http://localhost:8080" \\
+  | grep -iE 'HTTP/|access-control|content-type'`;
+
+    document.getElementById("curlOptions").textContent =
+`# Preflight OPTIONS via gateway
+curl -i -X OPTIONS "${gatewayBase}${path}" \\
+  -H "Origin: http://localhost:8080" \\
+  -H "Access-Control-Request-Method: GET" \\
+  -H "Access-Control-Request-Headers: content-type,accept" \\
+  | grep -iE 'HTTP/|access-control'`;
+
+    document.getElementById("ocLogs").textContent =
+`# O backend registra o Origin recebido (mesmo sem emitir CORS)
+oc -n rhcl-apps logs deploy/banking-api-v1 --tail=50 \\
+  | grep 'cors demo'`;
+  }
+
+  function refreshYaml() {
+    const domain = (window.rhclEnv && window.rhclEnv.rhclZoneRootDomain) || "";
+    const hostname = domain ? `cors.${domain}` : "cors.${RHCL_ZONE_ROOT_DOMAIN}";
+    const yaml = `apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: banking-api-cors
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-req14-cors
+spec:
+  parentRefs:
+    - name: rhcl-apps-gateway
+      namespace: openshift-ingress
+  hostnames:
+    - ${hostname}
+  rules:
+    # /api/v1/cors -> backend SEM CORS; o gateway injeta os headers
+    - matches:
+        - path:
+            type: Exact
+            value: /api/v1/cors
+      filters:
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+              - name: Access-Control-Allow-Origin
+                value: "*"
+              - name: Access-Control-Allow-Methods
+                value: "GET, POST, OPTIONS"
+              - name: Access-Control-Allow-Headers
+                value: "Authorization, Content-Type, Accept, X-Requested-With"
+              - name: Access-Control-Expose-Headers
+                value: "x-instance, x-flow-trace-id"
+              - name: Access-Control-Max-Age
+                value: "600"
+              - name: Vary
+                value: "Origin"
+      backendRefs:
+        - name: banking-api-v1
+          port: 8080
+
+# Aplicar:
+#   export RHCL_ZONE_ROOT_DOMAIN=apps.example.com
+#   envsubst < tests/cors-policy/manifests/httproute-cors.yaml | oc apply -f -`;
+    document.getElementById("yamlRoute").textContent = yaml;
+  }
+
+  [backendInput, pathInput].forEach((el) => {
+    el.addEventListener("input", refreshShellCommands);
+  });
+  refreshShellCommands();
+  refreshYaml();
+
+  loadRuntimeEnv().then(() => {
+    applyEnvDefaults();
+    refreshShellCommands();
+    refreshYaml();
+  });
+
+  // ---- Fetch ----------------------------------------------------------------
+  document.getElementById("fetchBtn").addEventListener("click", async () => {
+    const base = getBaseUrl();
+    if (!base) { logLine("Base URL vazia.", "warn"); return; }
+    const path = getPath();
+    const url = buildUrl(base, path);
+    const viaGateway = isGatewayHost(url);
+
+    logLine(`GET ${url}`, "info");
+    logLine(`origem do fetch: ${window.location.origin}`, "info");
+
+    const t0 = performance.now();
+    let res, err;
+    try {
+      res = await fetch(url, {
+        method: "GET",
+        headers: { "Accept": "application/json" },
+        mode: "cors",
+        cache: "no-store",
+      });
+    } catch (e) {
+      err = e;
+    }
+    const ms = Math.round(performance.now() - t0);
+
+    if (err) {
+      logLine(`fetch failed after ${ms} ms: ${err.name}: ${err.message}`, "error");
+      logLine("↑ Em CORS, o navegador imprime o motivo real (No 'Access-Control-Allow-Origin') no Console e na aba Network. Confira o DevTools.", "warn");
+      lastFetchEl.innerHTML = `
+        <div><b>URL:</b> ${escapeHtml(url)}</div>
+        <div><b>Origin:</b> ${escapeHtml(window.location.origin)}</div>
+        <div><b>Erro:</b> ${escapeHtml(err.name + ": " + err.message)}</div>
+        <div><b>Duration:</b> ${ms} ms</div>
+      `;
+      verdictEl.innerHTML = viaGateway
+        ? `<div><span class="badge bad">erro de rede via gateway</span></div>
+           <div style="margin-top:8px;">The call via <code>cors.&lt;domain&gt;</code> failed. Check that the HTTPRoute is applied and DNS resolves to the gateway.</div>`
+        : `<div><span class="badge bad">blocked by CORS (likely)</span></div>
+           <div style="margin-top:8px;">Without CORS headers on the backend, the browser blocks it. Try the "via gateway" preset to see the same endpoint work.</div>`;
+      return;
+    }
+
+    const httpStatus = res.status;
+    const corsHeaders = [];
+    res.headers.forEach((v, k) => {
+      if (k.toLowerCase().startsWith("access-control-")) corsHeaders.push(`${k}: ${v}`);
+    });
+    const visibleHeaders = [];
+    res.headers.forEach((v, k) => visibleHeaders.push(`${k}: ${v}`));
+    const text = await res.text();
+    const preview = text.length > 500 ? text.slice(0, 500) + "…(truncado)" : text;
+
+    logLine(`Resposta: ${httpStatus} ${res.statusText} (${ms} ms)`, res.ok ? "success" : "warn");
+    logLine(`CORS headers:\n  ${corsHeaders.join("\n  ") || "(none)"}`, corsHeaders.length ? "success" : "warn");
+    logLine(`Headers visible to JS:\n  ${visibleHeaders.join("\n  ") || "(none)"}`, "info");
+    logLine(`Corpo: ${preview || "(vazio)"}`, "info");
+
+    let badgeClass = "warn";
+    let verdictText = "—";
+    let detail = "";
+
+    if (corsHeaders.length > 0 && res.ok) {
+      badgeClass = "ok";
+      verdictText = `${httpStatus} OK · CORS injetado`;
+      detail = viaGateway
+        ? `The gateway added ${corsHeaders.length} Access-Control-* header(s) to the response. The browser released the body to JS.`
+        : `The server returned CORS headers (${corsHeaders.length}). Cross-origin allowed.`;
+    } else if (res.ok && corsHeaders.length === 0) {
+      badgeClass = "warn";
+      verdictText = `${httpStatus} OK · sem CORS`;
+      detail = `Response arrived (${ms} ms) but with no Access-Control-Allow-*. This fetch is probably same-origin or was made by curl. From a browser on another origin, this path would be blocked.`;
+    } else {
+      badgeClass = "bad";
+      verdictText = `${httpStatus} ${res.statusText}`;
+      detail = `Non-2xx response in ${ms} ms.`;
+    }
+
+    lastFetchEl.innerHTML = `
+      <div><b>URL:</b> ${escapeHtml(url)}</div>
+      <div><b>Origin:</b> ${escapeHtml(window.location.origin)}</div>
+      <div><b>HTTP:</b> ${httpStatus} ${escapeHtml(res.statusText)}</div>
+      <div><b>Duration:</b> ${ms} ms</div>
+      <div><b>CORS headers:</b> ${corsHeaders.length || "0"}</div>
+    `;
+    verdictEl.innerHTML = `
+      <div><span class="badge ${badgeClass}">${escapeHtml(verdictText)}</span></div>
+      <div style="margin-top:8px;">${escapeHtml(detail)}</div>
+    `;
+  });
+
+  // ---- Manual OPTIONS preflight --------------------------------------------
+  // Not a "real" preflight (the browser decides), but it fires the
+  // OPTIONS with the same headers and shows what the server returned.
+  document.getElementById("preflightBtn").addEventListener("click", async () => {
+    const base = getBaseUrl();
+    if (!base) { logLine("Base URL vazia.", "warn"); return; }
+    const path = getPath();
+    const url = buildUrl(base, path);
+
+    logLine(`OPTIONS ${url}  (probe manual de preflight)`, "info");
+    try {
+      const res = await fetch(url, {
+        method: "OPTIONS",
+        headers: {
+          "Origin": window.location.origin,
+          "Access-Control-Request-Method": "GET",
+          "Access-Control-Request-Headers": "accept,content-type",
+        },
+        mode: "cors",
+      });
+      logLine(`OPTIONS: ${res.status} ${res.statusText}`, res.ok ? "success" : "warn");
+      const corsHeaders = [];
+      res.headers.forEach((v, k) => {
+        if (k.toLowerCase().startsWith("access-control-")) corsHeaders.push(`${k}: ${v}`);
+      });
+      logLine(
+        `CORS headers in the OPTIONS response:\n  ${corsHeaders.join("\n  ") || "(none — that is why the GET would be blocked)"}`,
+        corsHeaders.length ? "success" : "error"
+      );
+    } catch (err) {
+      logLine(`OPTIONS falhou: ${err.name}: ${err.message}`, "error");
+    }
+  });
+
+  logLine("Page loaded. Open DevTools (F12) before running the fetch.", "info");
+</script>
+</body>
+</html>

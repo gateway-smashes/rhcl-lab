@@ -256,7 +256,7 @@ curl -s -o /tmp/blob.bin -w 'received=%{size_download}\n' \
   "$GATEWAY/api/files/download?size=10485760&chunkSize=262144"
 ```
 
-**Frontend (standalone):** open `tests/req026/index.html` in the browser,
+**Frontend (standalone):** open `tests/streaming-and-body-limits/index.html` in the browser,
 set the gateway hostname + API key, pick a size (1 / 25 / 50 MiB) and
 click **Upload**. The progress bar reacts to `XMLHttpRequest.upload.onprogress`;
 50 MiB stops mid-way and the result panel shows the `x-envoy-buffer-too-large`
@@ -268,9 +268,9 @@ header — the RHCL punchline.
   (the bytes never reach the backend).
 - Slow uploads (>60 s) → **408** or **504** from the HTTPRoute timeout.
 
-**Runbook:** `tests/req026.md`. Validation script:
-`tests/req026/scripts/validate.sh` (asserts all 5 cases). Manifests for
-kubectl-only flow: `tests/req026/manifests/`.
+**Runbook:** `tests/streaming-and-body-limits/README.md`. Validation script:
+`tests/streaming-and-body-limits/scripts/validate.sh` (asserts all 5 cases). Manifests for
+kubectl-only flow: `tests/streaming-and-body-limits/manifests/`.
 
 ---
 
@@ -376,12 +376,12 @@ oc -n rhcl-logging exec deploy/loki -- wget -qO- \
 (`banking_transfers_total`, `http_server_requests_seconds_count`) and renders
 a banner pointing to the Limitador-native dashboard for AI tokens.
 
-**Interactive page:** [`tests/req040/index.html`](req040/index.html) generates
+**Interactive page:** [`tests/per-route-token-counting/index.html`](per-route-token-counting/index.html) generates
 AI traffic, queries `authorized_hits` / `authorized_calls` /
 `limited_calls` from Limitador through the Thanos Querier, and documents the
 Loki/consumer Grafana path.
 
-**Grafana:** apply [`tests/req040/manifests/`](req040/manifests/) on top of the
+**Grafana:** apply [`tests/per-route-token-counting/manifests/`](per-route-token-counting/manifests/) on top of the
 Req 41 Grafana stack. Dashboards:
 
 - **RHCL AI Token Usage** — Limitador `authorized_hits` / `authorized_calls` /
@@ -445,7 +445,7 @@ them observable.
 
 Standalone RHCL manifests for enforcing this with the mock OpenAI-compatible
 endpoint live in [`req060/`](req060/). **Prerequisite:** apply
-`tests/req060/manifests/10-authpolicy-connectivity-openai-access.yaml` so
+`tests/token-rate-limiting/manifests/10-authpolicy-connectivity-openai-access.yaml` so
 `POST /api/v1/chat/completions` is anonymous on the connectivity route, then
 `30-tokenratelimitpolicy.yaml`.
 
@@ -527,7 +527,7 @@ oc run -n $NS tls-openssl --rm -i --restart=Never \
   '
 ```
 
-**Frontend (PoC console):** [`tests/req047/index.html`](req047/index.html) →
+**Frontend (PoC console):** [`tests/backend-tls-versions/index.html`](backend-tls-versions/index.html) →
 _Fetch /api/tls/info_.
 
 **gRPC bidi (banking-api, unchanged):**
@@ -847,7 +847,7 @@ the same payload as the equivalent REST endpoint.
 
 ### Req 59 — MCP Gateway
 
-Use [req059/README.md](req059/README.md) for the dedicated Istio Gateway
+Use [mcp-gateway/README.md](mcp-gateway/README.md) for the dedicated Istio Gateway
 (`rhcl-mcp-gateway`), MCP Gateway operator install, `MCPGatewayExtension`,
 `MCPServerRegistration`, browser HTTPRoute, and curl checks against
 `http://mcp-gateway.<zone>:8080/mcp` (broker-prefixed tools).
@@ -947,7 +947,7 @@ curl -s -H "x-flow-trace-id: $TRACE" \
        $BACKEND/api/v1/accounts/summary > /dev/null
 
 # In the Pod log (oc -n $NS logs deploy/banking-api-v1) you should see an access log line like:
-# 127.0.0.1 - - [30/Apr/2026:10:00:00 +0000] "GET /api/v1/accounts/summary HTTP/1.1" 200 312 4 "weighted.apps.cluster1.poc.rhcl.com.br" "poc-1730000000" "alice" "v1" "curl/8.0"
+# 127.0.0.1 - - [30/Apr/2026:10:00:00 +0000] "GET /api/v1/accounts/summary HTTP/1.1" 200 312 4 "weighted.apps.example.com" "poc-1730000000" "alice" "v1" "curl/8.0"
 ```
 
 The fields, in order, come from the configured pattern:

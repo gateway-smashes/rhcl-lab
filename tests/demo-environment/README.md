@@ -1,0 +1,366 @@
+---
+title: Full demo environment
+summary: A complete, self-contained demo stack: gateway, API product, plans, auth, rate limits, DNS and TLS in one bundle.
+category: Platform & lifecycle
+status: done
+---
+
+# Full demo environment
+
+A complete, self-contained demo stack: gateway, API product, plans, auth, rate limits, DNS and TLS in one bundle.
+
+## Requirement context
+
+## Requirements Demonstrated
+
+This demo covers the following requirements:
+
+- **Access control with read and read/write profiles** on the API console, its configurations, and authorized consumers
+- **LDAP-based authentication and authorization** - OpenShift already uses LDAP for authentication, and groups are automatically imported from LDAP. The `developers` group with user `developer1` will be used to demonstrate access control
+
+---
+
+## Prerequisites
+
+1. **Login as cluster admin**:
+   ```bash
+   oc login --token=<admin-token> --server=<cluster-api>
+   ```
+
+2. **Apply the ClusterRoles** (one-time setup):
+   ```bash
+   oc apply -f req015/cluster-wide/clusterroles/
+   ```
+
+3. **Verify that the redhat group exists with user c1354423**:
+   ```bash
+   oc get group redhat -o yaml
+   ```
+
+---
+
+## Create Namespaces and Demo Resources
+
+
+### Create All Demo Resources
+
+```bash
+# Create namespaces
+oc apply -f req015/demo-resources/namespaces.yaml
+
+# Grant base access (view) to namespaces
+oc create rolebinding redhat-view \
+  --clusterrole=view \
+  --group=redhat \
+  -n item-15-api
+
+oc create rolebinding redhat-view \
+  --clusterrole=view \
+  --group=redhat \
+  -n item-15-gateway
+
+# Gateway and infrastructure policies (namespace item-15-gateway)
+oc apply -f req015/demo-resources/demo-gateway.yaml
+oc apply -f req015/demo-resources/demo-tlspolicy.yaml
+
+# API resources (namespace item-15-api)
+oc apply -f req015/demo-resources/demo-httproute.yaml
+oc apply -f req015/demo-resources/demo-authpolicy.yaml
+oc apply -f req015/demo-resources/demo-ratelimitpolicy.yaml
+oc apply -f req015/demo-resources/demo-planpolicy.yaml
+oc apply -f req015/demo-resources/demo-apiproduct.yaml
+oc apply -f req015/demo-resources/demo-apikey.yaml
+```
+
+### Delete All Demo Resources
+
+```bash
+# Delete API resources
+oc delete -f req015/demo-resources/demo-apikey.yaml --ignore-not-found
+oc delete -f req015/demo-resources/demo-apiproduct.yaml --ignore-not-found
+oc delete -f req015/demo-resources/demo-planpolicy.yaml --ignore-not-found
+oc delete -f req015/demo-resources/demo-ratelimitpolicy.yaml --ignore-not-found
+oc delete -f req015/demo-resources/demo-authpolicy.yaml --ignore-not-found
+oc delete -f req015/demo-resources/demo-httproute.yaml --ignore-not-found
+
+# Delete gateway and policies
+oc delete -f req015/demo-resources/demo-tlspolicy.yaml --ignore-not-found
+oc delete -f req015/demo-resources/demo-gateway.yaml --ignore-not-found
+
+# Delete view RoleBindings
+oc delete rolebinding redhat-view -n item-15-api --ignore-not-found
+oc delete rolebinding redhat-view -n item-15-gateway --ignore-not-found
+
+# Delete namespaces (optional)
+oc delete -f req015/demo-resources/namespaces.yaml --ignore-not-found
+```
+
+---
+
+## Grant Permissions: Create RoleBindings
+
+Create the three RoleBindings for the **redhat** group in both namespaces:
+
+```bash
+# RoleBindings for item-15-api
+oc create rolebinding redhat-api-developer \
+  --clusterrole=connectivity-link-api-developer \
+  --group=redhat \
+  -n item-15-api
+
+oc create rolebinding redhat-gateway-admin \
+  --clusterrole=connectivity-link-gateway-admin \
+  --group=redhat \
+  -n item-15-api
+
+oc create rolebinding redhat-api-product-admin \
+  --clusterrole=connectivity-link-api-product-admin \
+  --group=redhat \
+  -n item-15-api
+
+# RoleBindings for item-15-gateway
+oc create rolebinding redhat-api-developer \
+  --clusterrole=connectivity-link-api-developer \
+  --group=redhat \
+  -n item-15-gateway
+
+oc create rolebinding redhat-gateway-admin \
+  --clusterrole=connectivity-link-gateway-admin \
+  --group=redhat \
+  -n item-15-gateway
+
+oc create rolebinding redhat-api-product-admin \
+  --clusterrole=connectivity-link-api-product-admin \
+  --group=redhat \
+  -n item-15-gateway
+```
+
+---
+
+## Remove Permissions: Delete RoleBindings
+
+```bash
+# Delete RoleBindings from item-15-api
+oc delete rolebinding redhat-api-developer -n item-15-api
+oc delete rolebinding redhat-gateway-admin -n item-15-api
+oc delete rolebinding redhat-api-product-admin -n item-15-api
+
+# Delete RoleBindings from item-15-gateway
+oc delete rolebinding redhat-api-developer -n item-15-gateway
+oc delete rolebinding redhat-gateway-admin -n item-15-gateway
+oc delete rolebinding redhat-api-product-admin -n item-15-gateway
+```
+
+---
+
+## Test in the OpenShift Console
+
+User **c1354423** must be logged into the OpenShift Console.
+
+### Environment Variables
+
+```bash
+export CONSOLE_URL="https://console-openshift-console.apps.<cluster-domain>"
+```
+
+### Step 1: Before Any RoleBinding
+
+The user will not be able to view namespaces or demo resources.
+
+**CLI Test** (logged in as c1354423 - all should fail):
+
+```bash
+oc get httproutes -n item-15-api
+oc get gateways -n item-15-gateway
+oc get authpolicies -n item-15-api
+```
+
+**Console Test** (should show "Restricted Access"):
+
+- HTTPRoutes: `$CONSOLE_URL/k8s/ns/item-15-api/gateway.networking.k8s.io~v1~HTTPRoute`
+- Gateways: `$CONSOLE_URL/k8s/ns/item-15-gateway/gateway.networking.k8s.io~v1~Gateway`
+- AuthPolicies: `$CONSOLE_URL/k8s/ns/item-15-api/kuadrant.io~v1~AuthPolicy`
+
+### Step 2: After Base RoleBinding (view)
+
+After creating the `view` RoleBindings (included in the "Create All Demo Resources" section), the user will be able to view common resources but not Connectivity Link CRDs.
+
+**CLI Test** (logged in as c1354423):
+
+```bash
+# Should work (view role grants access to common resources)
+oc get pods -n item-15-api
+oc get services -n item-15-api
+oc get configmaps -n item-15-api
+
+# Should fail (no Connectivity Link permissions yet)
+oc get httproutes -n item-15-api
+oc get gateways -n item-15-gateway
+oc get authpolicies -n item-15-api
+```
+
+**Console Test**:
+
+- Namespace item-15-api: `$CONSOLE_URL/k8s/cluster/projects/item-15-api`
+- Namespace item-15-gateway: `$CONSOLE_URL/k8s/cluster/projects/item-15-gateway`
+- Pods: `$CONSOLE_URL/k8s/ns/item-15-api/pods`
+- Services: `$CONSOLE_URL/k8s/ns/item-15-api/services`
+
+### Step 3: After Specific RoleBindings
+
+After creating the Connectivity Link specific RoleBindings ("Grant Permissions" section), the user will have access to CRDs according to the profile.
+
+| Profile | Accessible Resources | Access Type |
+|---------|---------------------|-------------|
+| **view (base)** | Namespace, Pods, ConfigMaps, Services, etc. | Read-Only |
+| api-developer | HTTPRoutes | Read/Write |
+| api-developer | Gateways | Read-Only |
+| gateway-admin | Gateways, TLSPolicies, DNSPolicies | Read/Write |
+| api-product-admin | AuthPolicies, RateLimitPolicies, APIProducts, APIKeys | Read/Write |
+
+#### Test: API Developer Profile
+
+```bash
+# Should work (read)
+oc get httproutes -n item-15-api
+oc get gateways -n item-15-gateway
+
+# Should work (write HTTPRoute)
+oc label httproute demo-api-route test=rbac -n item-15-api
+
+# Should fail (write Gateway - read-only)
+oc label gateway demo-gateway test=rbac -n item-15-gateway
+```
+
+**Console**:
+
+- HTTPRoutes: `$CONSOLE_URL/k8s/ns/item-15-api/gateway.networking.k8s.io~v1~HTTPRoute`
+- Gateways: `$CONSOLE_URL/k8s/ns/item-15-gateway/gateway.networking.k8s.io~v1~Gateway`
+
+#### Test: Gateway Admin Profile
+
+```bash
+# Should work (read and write)
+oc get gateways -n item-15-gateway
+oc label gateway demo-gateway test=rbac -n item-15-gateway
+
+oc get tlspolicies -n item-15-gateway
+oc label tlspolicy demo-tls-policy test=rbac -n item-15-gateway
+```
+
+**Console**:
+
+- Gateways: `$CONSOLE_URL/k8s/ns/item-15-gateway/gateway.networking.k8s.io~v1~Gateway`
+- TLSPolicies: `$CONSOLE_URL/k8s/ns/item-15-gateway/kuadrant.io~v1~TLSPolicy`
+
+#### Test: API Product Admin Profile
+
+```bash
+# Should work (read and write)
+oc get authpolicies -n item-15-api
+oc label authpolicy demo-auth-policy test=rbac -n item-15-api
+
+oc get ratelimitpolicies -n item-15-api
+oc label ratelimitpolicy demo-ratelimit-policy test=rbac -n item-15-api
+
+oc get apiproducts -n item-15-api
+oc get apikeys -n item-15-api
+```
+
+**Console**:
+
+- AuthPolicies: `$CONSOLE_URL/k8s/ns/item-15-api/kuadrant.io~v1~AuthPolicy`
+- RateLimitPolicies: `$CONSOLE_URL/k8s/ns/item-15-api/kuadrant.io~v1~RateLimitPolicy`
+- APIProducts: `$CONSOLE_URL/k8s/ns/item-15-api/devportal.kuadrant.io~v1alpha1~APIProduct`
+- APIKeys: `$CONSOLE_URL/k8s/ns/item-15-api/devportal.kuadrant.io~v1alpha1~APIKey`
+
+---
+
+## Individual Profile Scripts
+
+Use these commands to demonstrate one profile at a time.
+
+### Profile: API Developer
+
+Grants: Full CRUD on HTTPRoutes, read-only on Gateways.
+
+```bash
+# Create
+oc create rolebinding redhat-api-developer \
+  --clusterrole=connectivity-link-api-developer \
+  --group=redhat \
+  -n item-15-api
+
+oc create rolebinding redhat-api-developer \
+  --clusterrole=connectivity-link-api-developer \
+  --group=redhat \
+  -n item-15-gateway
+
+# Delete
+oc delete rolebinding redhat-api-developer -n item-15-api
+oc delete rolebinding redhat-api-developer -n item-15-gateway
+```
+
+### Profile: Gateway Admin
+
+Grants: Full CRUD on Gateways, GatewayClasses, ReferenceGrants, TLSPolicies, DNSPolicies.
+
+```bash
+# Create
+oc create rolebinding redhat-gateway-admin \
+  --clusterrole=connectivity-link-gateway-admin \
+  --group=redhat \
+  -n item-15-api
+
+oc create rolebinding redhat-gateway-admin \
+  --clusterrole=connectivity-link-gateway-admin \
+  --group=redhat \
+  -n item-15-gateway
+
+# Delete
+oc delete rolebinding redhat-gateway-admin -n item-15-api
+oc delete rolebinding redhat-gateway-admin -n item-15-gateway
+```
+
+### Profile: API Product Admin
+
+Grants: Full CRUD on AuthPolicies, RateLimitPolicies, PlanPolicies, APIProducts, APIKeys.
+
+```bash
+# Create
+oc create rolebinding redhat-api-product-admin \
+  --clusterrole=connectivity-link-api-product-admin \
+  --group=redhat \
+  -n item-15-api
+
+oc create rolebinding redhat-api-product-admin \
+  --clusterrole=connectivity-link-api-product-admin \
+  --group=redhat \
+  -n item-15-gateway
+
+# Delete
+oc delete rolebinding redhat-api-product-admin -n item-15-api
+oc delete rolebinding redhat-api-product-admin -n item-15-gateway
+```
+
+---
+
+## Verify RoleBindings
+
+Check which RoleBindings exist in the namespace:
+
+```bash
+oc get rolebindings -n item-15-api
+```
+
+Check permissions for a specific user:
+
+```bash
+oc auth can-i create httproutes -n item-15-api --as=c1354423
+oc auth can-i create gateways -n item-15-api --as=c1354423
+oc auth can-i create authpolicies.kuadrant.io -n item-15-api --as=c1354423
+```
+
+## LDAP identity
+
+LDAP-backed identity is validated alongside this demo environment (the shared Keycloak realm can federate an LDAP directory); no separate stack is required.

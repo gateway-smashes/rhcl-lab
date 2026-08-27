@@ -1,0 +1,45 @@
+# OpenShift Routes — edge TLS termination forwarding to the HTTP gateway listeners.
+#
+# Usage:
+#   export RHCL_ZONE_ROOT_DOMAIN=example.com
+#   envsubst < tests/request-interception-mirror/manifests/30-openshift-routes.yaml | oc apply -f -
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: req030-extauthz
+  namespace: req030-gateway
+  labels:
+    app.kubernetes.io/part-of: rhcl-req030-interceptor
+    rhcl-lab/requirement: req030
+spec:
+  host: "req030-extauthz.${RHCL_ZONE_ROOT_DOMAIN}"
+  port:
+    targetPort: http-extauthz
+  to:
+    kind: Service
+    name: req030-interceptor-gateway-istio
+    weight: 100
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: req030-mirror
+  namespace: req030-gateway
+  labels:
+    app.kubernetes.io/part-of: rhcl-req030-interceptor
+    rhcl-lab/requirement: req030
+spec:
+  host: "req030-mirror.${RHCL_ZONE_ROOT_DOMAIN}"
+  port:
+    targetPort: http-mirror
+  to:
+    kind: Service
+    name: req030-interceptor-gateway-istio
+    weight: 100
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

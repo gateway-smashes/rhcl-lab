@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RHCL Lab — REQ 17: MCP catalog servers</title>
+<style>
+  :root {
+    --rh-red: #EE0000;
+    --rh-black: #151515;
+    --rh-gray-100: #F5F5F5;
+    --rh-gray-200: #E0E0E0;
+    --rh-gray-700: #4D4D4D;
+    --rh-success: #3E8635;
+    --rh-warn: #F0AB00;
+    --rh-info: #2B9AF3;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: "Red Hat Display", "Red Hat Text", -apple-system, BlinkMacSystemFont,
+            "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--sans); background: var(--rh-gray-100); color: var(--rh-black); line-height: 1.45; }
+  header.rh-header {
+    background: var(--rh-black); color: #fff; padding: 16px 32px;
+    display: flex; align-items: center; gap: 16px; border-bottom: 4px solid var(--rh-red);
+  }
+  header .title { margin-left: auto; font-size: 14px; color: #cfcfcf; text-transform: uppercase; letter-spacing: 1px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 32px; }
+  h1 { margin: 0 0 4px; font-size: 28px; }
+  h2 { font-size: 16px; text-transform: uppercase; letter-spacing: 1px; color: var(--rh-gray-700); border-bottom: 1px solid var(--rh-gray-200); padding-bottom: 8px; margin: 32px 0 12px; }
+  .subtitle { color: var(--rh-gray-700); margin: 0 0 24px; }
+  .panel { background: #fff; border: 1px solid var(--rh-gray-200); border-radius: 4px; padding: 20px; margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .card { border: 1px solid var(--rh-gray-200); border-radius: 4px; padding: 16px; background: #fff; }
+  .card h3 { margin: 0 0 8px; font-size: 18px; }
+  .card ul { margin: 8px 0 0; padding-left: 20px; }
+  button, select {
+    font: inherit; border: 1px solid var(--rh-gray-200); background: #fff;
+    padding: 8px 14px; border-radius: 4px; cursor: pointer;
+  }
+  button.primary { background: var(--rh-red); color: #fff; border-color: var(--rh-red); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  #log {
+    font-family: var(--mono); font-size: 13px; background: var(--rh-black); color: #e8e8e8;
+    padding: 16px; border-radius: 4px; min-height: 180px; max-height: 420px; overflow: auto; white-space: pre-wrap;
+  }
+  .line-info { color: #9cdcfe; }
+  .line-success { color: #4ec9b0; }
+  .line-error { color: #f48771; }
+  .line-warn { color: #dcdcaa; }
+  code { font-family: var(--mono); font-size: 13px; }
+</style>
+</head>
+<body>
+<header class="rh-header">
+  <a class="logo" href="/" style="color:#fff;text-decoration:none;font-weight:700;">RHCL Lab</a>
+  <span class="title">REQ 17 — MCP catalog</span>
+</header>
+<main>
+  <h1>MCP catalog lab servers</h1>
+  <p class="subtitle">Three lightweight MCP servers registered in OpenShift AI for catalog discovery and playground tool calling.</p>
+
+  <section class="panel">
+    <h2>Scenario</h2>
+    <p>After <code>scripts/apply.sh</code>, OpenShift AI shows a <strong>RHCL Lab MCP Servers</strong> catalog source with three deployable servers. Each exposes Streamable HTTP on <code>/mcp</code>.</p>
+    <div class="grid">
+      <div class="card">
+        <h3>rhcl-lab-info</h3>
+        <ul><li>get_lab_name</li><li>list_target_zones</li><li>ping</li></ul>
+      </div>
+      <div class="card">
+        <h3>rhcl-text-tools</h3>
+        <ul><li>uppercase</li><li>word_count</li><li>reverse_text</li></ul>
+      </div>
+      <div class="card">
+        <h3>rhcl-time-tools</h3>
+        <ul><li>now_utc</li><li>format_timestamp</li><li>add_minutes</li></ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Controls</h2>
+    <div class="controls">
+      <label>Server
+        <select id="server">
+          <option value="lab-info">rhcl-lab-info</option>
+          <option value="text-tools">rhcl-text-tools</option>
+          <option value="time-tools">rhcl-time-tools</option>
+        </select>
+      </label>
+      <label>Tool
+        <select id="tool"></select>
+      </label>
+      <button class="primary" id="runBtn">Call MCP tool</button>
+      <button id="initBtn">Initialize only</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Log</h2>
+    <div id="log"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Cluster commands</h2>
+    <pre><code>export RHCL_ZONE_ROOT_DOMAIN="$(oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}')"
+bash tests/mcp-servers-ai-catalog/scripts/apply.sh
+bash tests/mcp-servers-ai-catalog/scripts/validate.sh</code></pre>
+  </section>
+</main>
+<script>
+const TOOLS = {
+  "lab-info": ["get_lab_name", "list_target_zones", "ping"],
+  "text-tools": ["uppercase", "word_count", "reverse_text"],
+  "time-tools": ["now_utc", "format_timestamp", "add_minutes"],
+};
+const SERVER_HOST = {
+  "lab-info": "rhcl-lab-info-mcp",
+  "text-tools": "rhcl-text-tools-mcp",
+  "time-tools": "rhcl-time-tools-mcp",
+};
+const SAMPLE_ARGS = {
+  ping: { message: "req017" },
+  uppercase: { text: "rhcl lab" },
+  word_count: { text: "hello openshift ai mcp" },
+  reverse_text: { text: "RHCL" },
+  format_timestamp: { unix_seconds: Math.floor(Date.now() / 1000) },
+  add_minutes: { minutes: 15 },
+};
+
+const logEl = document.getElementById("log");
+const serverSel = document.getElementById("server");
+const toolSel = document.getElementById("tool");
+let zoneDomain = "";
+let sessionId = "";
+
+function logLine(text, level = "info") {
+  const line = document.createElement("div");
+  line.className = "line-" + level;
+  line.textContent = "[" + new Date().toISOString() + "] " + text;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function refreshTools() {
+  const tools = TOOLS[serverSel.value] || [];
+  toolSel.innerHTML = tools.map((t) => `<option value="${t}">${t}</option>`).join("");
+}
+
+function mcpUrl() {
+  const host = SERVER_HOST[serverSel.value];
+  if (zoneDomain) return `https://${host}.${zoneDomain}/mcp`;
+  return `https://${host}.${window.location.hostname.replace(/^[^.]+/, host)}/mcp`;
+}
+
+async function mcpRequest(method, params) {
+  const headers = {
+    "Content-Type": "application/json",
+    "Accept": "application/json, text/event-stream",
+  };
+  if (sessionId) headers["MCP-Session-Id"] = sessionId;
+  const res = await fetch(mcpUrl(), {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params }),
+  });
+  const sid = res.headers.get("mcp-session-id") || res.headers.get("MCP-Session-Id");
+  if (sid) sessionId = sid;
+  const text = await res.text();
+  return { status: res.status, text };
+}
+
+async function initialize() {
+  logLine("POST " + mcpUrl() + " (initialize)", "info");
+  const { status, text } = await mcpRequest("initialize", {
+    protocolVersion: "2024-11-05",
+    capabilities: {},
+    clientInfo: { name: "req017-static-page", version: "1.0.0" },
+  });
+  logLine("HTTP " + status, status >= 200 && status < 300 ? "success" : "error");
+  logLine(text.slice(0, 1200) || "(empty body)", "info");
+}
+
+async function callTool() {
+  const tool = toolSel.value;
+  const args = SAMPLE_ARGS[tool] || {};
+  await initialize();
+  logLine("tools/call → " + tool + " " + JSON.stringify(args), "info");
+  const { status, text } = await mcpRequest("tools/call", { name: tool, arguments: args });
+  logLine("HTTP " + status, status >= 200 && status < 300 ? "success" : "error");
+  logLine(text.slice(0, 2000) || "(empty body)", status >= 200 && status < 300 ? "success" : "error");
+}
+
+serverSel.addEventListener("change", refreshTools);
+document.getElementById("runBtn").addEventListener("click", () => callTool().catch((e) => logLine(e.message, "error")));
+document.getElementById("initBtn").addEventListener("click", () => initialize().catch((e) => logLine(e.message, "error")));
+
+fetch("/env.json")
+  .then((r) => (r.ok ? r.json() : {}))
+  .then((env) => {
+    zoneDomain = env.rhclZoneRootDomain || "";
+    if (zoneDomain) logLine("Zone domain from env.json: " + zoneDomain, "info");
+    else logLine("rhclZoneRootDomain not set — URLs use current host pattern", "warn");
+  })
+  .catch(() => logLine("env.json unavailable", "warn"))
+  .finally(refreshTools);
+</script>
+</body>
+</html>

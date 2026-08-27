@@ -3,15 +3,15 @@
 # Rate limit GLOBAL da API — soma de TODAS as requests, independente
 # do consumer. Funciona como um "guarda-chuva" acima da PlanPolicy:
 # mesmo que 10 consumers do tier `demo` estejam dentro dos 60/min
-# individuais deles, se o TOTAL da API ultrapassar 500/min ninguém
+# individual ones, if the API TOTAL exceeds 500/min nobody
 # passa. Protege o backend de picos agregados.
 #
-# Diferença pra PlanPolicy do passo 3:
+# Difference from the step-3 PlanPolicy:
 #   - PlanPolicy: 60/min POR consumer com plan-id=demo
 #   - RateLimitPolicy: 500/min TOTAL na API
 #
-# Se você não quer esse teto agregado, pode pular este passo — a
-# PlanPolicy sozinha já protege o backend por consumer.
+# If you don't want this aggregate ceiling, you can skip this step — the
+# PlanPolicy alone already protects the backend per consumer.
 apiVersion: kuadrant.io/v1
 kind: RateLimitPolicy
 metadata:

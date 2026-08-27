@@ -1,0 +1,123 @@
+# req035 — OTel Collector patched to handle the new `logs` pipeline.
+#
+# This is a strategic-merge patch: only the fields here are touched. The
+# existing `traces` pipeline (set up by req038) keeps working untouched —
+# we add a sibling `logs` pipeline that consumes the same OTLP receiver.
+#
+# Pipeline stages, in order:
+#   1. receivers.otlp — already listening on 4317 (gRPC) for traces; logs
+#      ride the same port (OTLP discriminates by signal type).
+#   2. processors.filter/errors — defence in depth. The Telemetry CR already
+#      filters by response code at the gateway, but a misconfigured
+#      Telemetry should never accidentally fire a full traffic-capture
+#      pipeline at the Collector.
+#   3. processors.attributes/scrub — drop PII before export. Authorization
+#      header, cookies and the api-key header are the obvious ones; expand
+#      as the bank's data-classification policy demands.
+#   4. processors.resource/tag — annotate every record with cluster +
+#      gateway identity so multi-cluster SIEM aggregation can shard.
+#   5. processors.batch — already present; reused.
+#   6. exporters.file/audit — append every record to a JSON-lines file
+#      mounted via emptyDir. POC-friendly: `oc exec` + tail and you see the
+#      live error stream. Production path swaps this for `otlphttp/loki` or
+#      `otlphttp/splunk` (commented out below).
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: otel-rhcl
+  namespace: observability
+spec:
+  config:
+    processors:
+      # Defence in depth — drops anything that slipped through with status
+      # < 400. The Telemetry CR already filters, but config drift is real.
+      filter/errors:
+        error_mode: ignore
+        logs:
+          log_record:
+            # response_code is a top-level attribute on Envoy access log
+            # records; the OTel Envoy ALS sender maps it from `response.code`.
+            - 'attributes["response_code"] == nil or attributes["response_code"] < 400'
+
+      # PII scrub. Drop sensitive headers BEFORE they reach the exporter so
+      # the audit file (and any downstream SIEM) never sees them.
+      attributes/scrub:
+        actions:
+          - key: authorization
+            action: delete
+          - key: cookie
+            action: delete
+          - key: set-cookie
+            action: delete
+          - key: api-key
+            action: delete
+          - key: x-api-key
+            action: delete
+
+      # Cluster + gateway identity. Helps when this stream lands in a
+      # multi-cluster aggregator and someone has to grep for "which
+      # gateway in which cluster emitted this 5xx".
+      resource/rhcl-tag:
+        attributes:
+          - key: cluster.name
+            value: rhcl-poc-bb
+            action: insert
+          - key: gateway.name
+            value: rhcl-apps-gateway
+            action: insert
+          - key: signal.kind
+            value: gateway-error-access-log
+            action: insert
+
+    exporters:
+      # POC exporter: append-only JSON-lines on a local emptyDir volume.
+      # `oc exec -it <collector-pod> -- tail -F /var/log/rhcl-errors.json`
+      # gives a live error stream. For prod, swap this for a real log
+      # backend (Loki / Splunk / a corporate SIEM endpoint).
+      file/audit:
+        path: /var/log/rhcl-errors.json
+        rotation:
+          max_megabytes: 100
+          max_days: 14
+          max_backups: 5
+        format: json
+
+      # --- Production-ready destinations (commented out — enable as needed) ---
+      #
+      # otlphttp/loki:
+      #   endpoint: https://lokistack-gateway-http.openshift-logging.svc:8080/api/logs/v1/application/otlp
+      #   tls:
+      #     ca_file: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+      #
+      # otlphttp/splunk:
+      #   endpoint: https://splunk-hec.example.internal:8088/services/collector
+      #   headers:
+      #     Authorization: "Splunk ${env:SPLUNK_HEC_TOKEN}"
+
+    service:
+      pipelines:
+        logs:
+          receivers:
+            - otlp
+          processors:
+            - memory_limiter      # reuse from traces pipeline
+            - filter/errors
+            - attributes/scrub
+            - resource/rhcl-tag
+            - k8sattributes       # reuse — enriches with pod/namespace/etc
+            - batch
+          exporters:
+            - file/audit
+            # - otlphttp/loki
+            # - otlphttp/splunk
+
+  # Mount an emptyDir for the audit file. emptyDir is enough for the PoC
+  # (the OTel Collector is a single replica anyway). For HA / durability,
+  # swap to a PVC backed by Block storage.
+  volumes:
+    - name: rhcl-errors-log
+      emptyDir:
+        sizeLimit: 1Gi
+  volumeMounts:
+    - name: rhcl-errors-log
+      mountPath: /var/log

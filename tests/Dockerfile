@@ -1,8 +1,9 @@
 # RHCL Lab — Tests catalog
 #
 # Static web server based on the Red Hat UBI9 nginx image. Serves every
-# req*/ directory under /reqs/, every req*.md spec at the same level, and a
-# landing page that lists all of them with one click each.
+# walkthrough directory under /reqs/ (one self-contained folder per capability,
+# each with a README.md and optional index.html) and a landing page that lists
+# all of them with one click each.
 #
 # Designed for OpenShift restricted-v2 SCC:
 #   * UBI9 nginx already runs as UID 1001 in group 0
@@ -31,17 +32,16 @@ FROM registry.access.redhat.com/ubi9/nginx-124:latest
 
 USER 0
 
-# Copy the build context (req*/, req*.md, catalog/). .dockerignore strips
-# Dockerfile, .dockerignore, templates/ and the tests README.md. The catalog/
-# folder is kept in the context because we copy assets out of it below — it
-# is removed from /reqs/ in the RUN step so it does not appear as a fake
-# requirement.
+# Copy the build context (the walkthrough directories + catalog/).
+# .dockerignore strips Dockerfile, .dockerignore, templates/ and the tests
+# README.md. The catalog/ folder is kept in the context because we copy assets
+# out of it below — it is removed from /reqs/ in the RUN step so it does not
+# appear as a fake walkthrough.
 COPY --chown=1001:0 . /opt/app-root/src/reqs/
 
 # Catalog landing page, markdown viewer, and the scanner script.
 COPY --chown=1001:0 catalog/index.html  /opt/app-root/src/index.html
 COPY --chown=1001:0 catalog/viewer.html /opt/app-root/src/viewer.html
-COPY --chown=1001:0 catalog/status.tsv  /opt/app-root/status.tsv
 COPY --chown=1001:0 catalog/generate-catalog.sh /opt/app-root/generate-catalog.sh
 COPY --chown=1001:0 catalog/generate-env.sh     /opt/app-root/generate-env.sh
 

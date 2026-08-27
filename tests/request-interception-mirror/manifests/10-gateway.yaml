@@ -1,0 +1,41 @@
+# Dedicated Gateway for REQ 030 — request interception (ext_authz + RequestMirror).
+#
+# Two HTTP listeners, one per strategy, each with its own hostname and HTTPRoute.
+# Uses GatewayClass "istio" (Sail Operator / OSSM 3.x).
+#
+# Prerequisites:
+#   - GatewayClass "istio" present
+#
+# Usage:
+#   export RHCL_ZONE_ROOT_DOMAIN=example.com
+#   envsubst < tests/request-interception-mirror/manifests/10-gateway.yaml | oc apply -f -
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: req030-interceptor-gateway
+  namespace: req030-gateway
+  labels:
+    app.kubernetes.io/part-of: rhcl-req030-interceptor
+    rhcl-lab/requirement: req030
+  annotations:
+    networking.istio.io/service-type: ClusterIP
+spec:
+  gatewayClassName: istio
+  listeners:
+    # Listener 1: external authorization (AuthorizationPolicy CUSTOM + ext_authz)
+    - name: http-extauthz
+      port: 8080
+      protocol: HTTP
+      hostname: "req030-extauthz.${RHCL_ZONE_ROOT_DOMAIN}"
+      allowedRoutes:
+        namespaces:
+          from: All
+
+    # Listener 2: request mirroring (HTTPRoute RequestMirror filter)
+    - name: http-mirror
+      port: 8081
+      protocol: HTTP
+      hostname: "req030-mirror.${RHCL_ZONE_ROOT_DOMAIN}"
+      allowedRoutes:
+        namespaces:
+          from: All

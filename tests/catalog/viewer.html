@@ -121,11 +121,32 @@
     margin-top: 48px; padding: 16px 32px;
     color: var(--rh-gray-700); font-size: 12px; text-align: center;
   }
+  .term-note {
+    background: #111; color: #e8e8e8;
+    border-radius: 4px; padding: 12px 16px;
+    font-size: 13px; margin-bottom: 20px;
+    border-left: 4px solid var(--rh-info);
+  }
+  .term-note b { color: #fff; }
+  .term-note code {
+    background: rgba(255,255,255,.12); color: #fff;
+    border: 0; padding: 1px 5px; border-radius: 3px;
+  }
+  article .pre-wrap { position: relative; }
+  article .pre-wrap pre { padding-top: 34px; }
+  article .copy-btn {
+    position: absolute; top: 6px; right: 6px;
+    font-family: var(--sans); font-size: 11px; font-weight: 600;
+    padding: 3px 10px; border-radius: 3px; cursor: pointer;
+    background: #2a2a2a; color: #e8e8e8; border: 1px solid #444;
+  }
+  article .copy-btn:hover { background: var(--rh-red); border-color: var(--rh-red); color: #fff; }
+  article .copy-btn.done { background: #3E8635; border-color: #3E8635; color: #fff; }
 </style>
 </head>
 <body>
 <header class="rh-header">
-  <a class="logo" href="/" aria-label="Voltar para o catálogo de testes">
+  <a class="logo" href="/" aria-label="Back to the tests catalog">
     <span style="display:inline-block;width:14px;height:14px;background:var(--rh-red);border-radius:2px;"></span>
     RHCL Lab
   </a>
@@ -157,7 +178,7 @@
   const safe = /^reqs\/[A-Za-z0-9_./-]+\.md$/.test(path) && !path.includes('..');
 
   if (!safe) {
-    content.innerHTML = '<div class="error">Missing or invalid <code>path</code> query parameter. Expected something like <code>?path=reqs/req001.md</code>.</div>';
+    content.innerHTML = '<div class="error">Missing or invalid <code>path</code> query parameter. Expected something like <code>?path=reqs/circuit-breaker-health-routing/README.md</code>.</div>';
   } else if (typeof marked === 'undefined') {
     content.innerHTML = '<div class="error">Markdown renderer (<code>assets/marked.min.js</code>) is not available. Use the <em>View raw</em> link above to read the file.</div>';
     rawLink.href = path;
@@ -175,10 +196,57 @@
       .then(md => {
         marked.setOptions({ gfm: true, breaks: false });
         content.innerHTML = marked.parse(md);
+        addTerminalHelpers(content);
       })
       .catch(err => {
         content.innerHTML = `<div class="error">Failed to load <code>${path}</code>: ${err.message}</div>`;
       });
+  }
+
+  // Add a "Copy" button to every command block and a one-time note pointing at
+  // the OpenShift Web Terminal. Copy a command, then paste it into the terminal
+  // (the >_ icon in the console masthead) — it runs as you, with your RBAC.
+  function addTerminalHelpers(root) {
+    const pres = root.querySelectorAll('pre');
+    if (!pres.length) return;
+
+    const note = document.createElement('div');
+    note.className = 'term-note';
+    note.innerHTML =
+      '<b>Running the commands.</b> Each block below has a <b>Copy</b> button. ' +
+      'Open the OpenShift <b>Web Terminal</b> (the <code>&gt;_</code> icon in the ' +
+      'console masthead) and paste — it runs as you, with your own cluster RBAC. ' +
+      'No credentials are stored by this page.';
+    root.insertBefore(note, root.firstChild);
+
+    pres.forEach((pre) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'pre-wrap';
+      pre.parentNode.insertBefore(wrap, pre);
+      wrap.appendChild(pre);
+
+      const btn = document.createElement('button');
+      btn.className = 'copy-btn';
+      btn.type = 'button';
+      btn.textContent = 'Copy';
+      btn.addEventListener('click', async () => {
+        const text = pre.innerText;
+        try {
+          await navigator.clipboard.writeText(text);
+        } catch {
+          const r = document.createRange();
+          r.selectNodeContents(pre);
+          const sel = window.getSelection();
+          sel.removeAllRanges(); sel.addRange(r);
+          try { document.execCommand('copy'); } catch {}
+          sel.removeAllRanges();
+        }
+        const old = btn.textContent;
+        btn.textContent = 'Copied'; btn.classList.add('done');
+        setTimeout(() => { btn.textContent = old; btn.classList.remove('done'); }, 1400);
+      });
+      wrap.appendChild(btn);
+    });
   }
 </script>
 </body>

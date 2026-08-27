@@ -1,0 +1,69 @@
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: KeycloakRealmImport
+metadata:
+  name: rhcl-realm
+  namespace: keycloak
+  labels: { app.kubernetes.io/part-of: rhcl-req71-oidc-jwt }
+spec:
+  keycloakCRName: rhcl
+  realm:
+    realm: rhcl
+    enabled: true
+    displayName: "RHCL PoC (Example Bank)"
+    sslRequired: external
+    accessTokenLifespan: 300
+    roles:
+      realm:
+        - name: banking-customer
+          description: "Bank client — accesses their own accounts"
+        - name: banking-admin
+          description: "Administrator — privileged operations"
+    clients:
+      - clientId: banking-api
+        name: "Banking API (RHCL PoC)"
+        enabled: true
+        protocol: openid-connect
+        publicClient: false
+        secret: banking-api-secret
+        standardFlowEnabled: true
+        directAccessGrantsEnabled: true
+        serviceAccountsEnabled: false
+        fullScopeAllowed: true
+        redirectUris: ["*"]
+        webOrigins: ["*"]
+        protocolMappers:
+          # Inject aud=banking-api into the access token so the gateway can
+          # enforce audience. (Default tokens only carry aud=account.)
+          - name: audience-banking-api
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            config:
+              included.client.audience: banking-api
+              id.token.claim: "false"
+              access.token.claim: "true"
+    users:
+      - username: alice
+        enabled: true
+        emailVerified: true
+        email: alice@example.com
+        firstName: Alice
+        lastName: Customer
+        credentials:
+          - type: password
+            value: alice123
+            temporary: false
+        realmRoles:
+          - banking-customer
+      - username: bob
+        enabled: true
+        emailVerified: true
+        email: bob@example.com
+        firstName: Bob
+        lastName: Admin
+        credentials:
+          - type: password
+            value: bob123
+            temporary: false
+        realmRoles:
+          - banking-customer
+          - banking-admin

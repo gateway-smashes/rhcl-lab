@@ -40,4 +40,4 @@ automation/cluster-secrets.sh
 *.pptx
 
 # req051 mTLS demo PKI — generated on demand by generate-certs.sh, never commit
-tests/req051/manifests/certs/
+tests/gateway-mtls-enforcement/manifests/certs/

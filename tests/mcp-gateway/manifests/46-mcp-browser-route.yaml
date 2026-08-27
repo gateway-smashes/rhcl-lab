@@ -1,0 +1,18 @@
+# OpenShift Route: TLS edge to dedicated MCP gateway Service, target listener port 8080.
+#
+#   export RHCL_ZONE_ROOT_DOMAIN=example.com
+#   envsubst < tests/mcp-gateway/manifests/46-mcp-browser-route.yaml | oc apply -f -
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: mcp-gateway-browser
+  namespace: mcp-gateway
+  labels:
+    rhcl-lab/requirement: req059-mcp-operator
+spec:
+  host: mcp-gateway.${RHCL_ZONE_ROOT_DOMAIN}
+  to:
+    kind: Service
+    name: rhcl-mcp-gateway-openshift-default
+  port:
+    targetPort: 8080

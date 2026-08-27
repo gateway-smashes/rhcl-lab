@@ -1,0 +1,96 @@
+# Custom policy expressions (CEL).
+#
+# Complemento: RateLimitPolicy usando CEL em `when.predicate` e
+# `counters.expression` to demonstrate custom expressions in
+# controle de taxa.
+#
+# Regras implementadas:
+#
+#   1. financial-writes    — Restrictive limit (5 req/min) for write operations
+#                            de escrita financeira (POST em /api/v*/transfers).
+#                            Counter por x-idempotency-key: mesma chave de
+#                            idempotency key shares the same bucket.
+#
+#   2. reads-per-consumer  — Limite por consumer (60 req/min) para GETs na
+#                            API v1. Counter por header x-consumer-id:
+#                            each consumer has its own bucket.
+#
+# CEL expressions demonstrated:
+#   • when.predicate com && e || combinando method + path
+#   • counters.expression extraindo valores de headers customizados
+#   • startsWith() para match de prefixo
+#
+# IMPORTANTE — aspas simples:
+#   Always use SINGLE quotes inside CEL expressions to reference
+#   headers (request.headers['x-foo']). Aspas duplas quebram o parser do
+#   Limitador (ver nota em tests/rate-limiting/manifests/03).
+#
+# NOTE — max 2 limits per RLP:
+#   O wasm-shim do Kuadrant pode falhar com 3+ entries em `limits` numa
+#   single RLP (known bug — see the rate-limiting item). We keep 2 limits here.
+#
+# Como aplicar:
+#   oc apply -f tests/custom-policy-expressions-cel/manifests/02-cel-ratelimit-expressions.yaml
+#
+# Validar:
+#   HOST=$(oc get httproute banking-api-connectivity -n rhcl-apps \
+#          -o jsonpath='{.spec.hostnames[0]}')
+#
+#   # Teste financial-writes (5 req/min por idempotency-key)
+#   for i in $(seq 1 8); do
+#     curl -sk -o /dev/null -w "%{http_code}\n" \
+#       -X POST "https://$HOST/api/v1/transfers" \
+#       -H "content-type: application/json" \
+#       -H "x-idempotency-key: same-key-demo" \
+#       -d '{"fromBank":"BB","toBank":"EXT","amount":10}'
+#   done | sort | uniq -c
+#   # Esperado: ~5x 200 + ~3x 429
+#
+#   # Teste reads-per-consumer (60 req/min por consumer-id)
+#   for i in $(seq 1 65); do
+#     curl -sk -o /dev/null -w "%{http_code}\n" \
+#       -H "x-consumer-id: consumer-alpha" \
+#       "https://$HOST/api/v1/accounts/summary"
+#   done | sort | uniq -c
+#   # Esperado: ~60x 200 + ~5x 429
+#
+#   # Consumer diferente tem bucket independente
+#   for i in $(seq 1 10); do
+#     curl -sk -o /dev/null -w "%{http_code}\n" \
+#       -H "x-consumer-id: consumer-beta" \
+#       "https://$HOST/api/v1/accounts/summary"
+#   done | sort | uniq -c
+#   # Expected: 10x 200 (the beta bucket is fresh)
+apiVersion: kuadrant.io/v1
+kind: RateLimitPolicy
+metadata:
+  name: req019-cel-ratelimit
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-req019-cel
+    rhcl.poc/item: "19"
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: banking-api-connectivity
+  limits:
+    financial-writes:
+      rates:
+        - limit: 5
+          window: 1m
+      when:
+        - predicate: "request.method == 'POST' && (request.path.startsWith('/api/v1/transfers') || request.path.startsWith('/api/v2/transfers'))"
+        - predicate: "request.headers['x-idempotency-key'] != ''"
+      counters:
+        - expression: "request.headers['x-idempotency-key']"
+
+    reads-per-consumer:
+      rates:
+        - limit: 60
+          window: 1m
+      when:
+        - predicate: "request.method == 'GET' && request.path.startsWith('/api/v1')"
+        - predicate: "request.headers['x-consumer-id'] != ''"
+      counters:
+        - expression: "request.headers['x-consumer-id']"

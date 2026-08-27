@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RHCL Lab — OIDC / JWT authentication</title>
+<style>
+  :root {
+    --rh-red:#EE0000; --rh-red-dark:#A30000; --rh-black:#151515;
+    --rh-gray-100:#F5F5F5; --rh-gray-200:#E0E0E0; --rh-gray-700:#4D4D4D;
+    --rh-success:#3E8635; --rh-warn:#F0AB00; --rh-danger:#C9190B; --rh-info:#2B9AF3;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans:"Red Hat Display","Red Hat Text",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box} html,body{margin:0;padding:0}
+  body{font-family:var(--sans);color:var(--rh-black);background:var(--rh-gray-100);line-height:1.45}
+  header.rh{background:var(--rh-black);color:#fff;padding:16px 32px;border-bottom:4px solid var(--rh-red)}
+  header.rh h1{font-size:20px;margin:0} header.rh small{color:var(--rh-gray-200)}
+  main{max-width:1000px;margin:0 auto;padding:24px 32px}
+  .card{background:#fff;border:1px solid var(--rh-gray-200);border-radius:8px;padding:20px;margin-bottom:20px}
+  .card h2{margin:0 0 12px;font-size:16px;border-left:4px solid var(--rh-red);padding-left:10px}
+  .card h3{margin:14px 0 6px;font-size:14px;color:var(--rh-gray-700)}
+  label{display:block;font-size:12px;color:var(--rh-gray-700);margin:8px 0 2px}
+  input{width:100%;padding:8px;border:1px solid var(--rh-gray-200);border-radius:4px;font-family:var(--mono);font-size:13px}
+  .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+  button{background:var(--rh-red);color:#fff;border:0;border-radius:4px;padding:10px 16px;font-weight:600;cursor:pointer;margin:6px 6px 0 0}
+  button:hover{background:var(--rh-red-dark)} button.ghost{background:#fff;color:var(--rh-black);border:1px solid var(--rh-gray-200)}
+  pre{background:#1b1b1b;color:#e6e6e6;padding:12px;border-radius:6px;overflow:auto;font-family:var(--mono);font-size:12px;max-height:380px}
+  .pill{display:inline-block;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:700;color:#fff}
+  .ok{background:var(--rh-success)} .bad{background:var(--rh-danger)} .warn{background:var(--rh-warn);color:#151515}
+  .info{background:var(--rh-info)}
+  .muted{color:var(--rh-gray-700);font-size:13px}
+  table{width:100%;border-collapse:collapse;font-size:13px} td,th{border-bottom:1px solid var(--rh-gray-200);padding:6px 8px;text-align:left}
+  th{background:var(--rh-gray-100)}
+  .ext-table td{vertical-align:top}
+  .ext-table code{background:var(--rh-gray-100);padding:1px 6px;border-radius:3px;font-family:var(--mono);font-size:12px}
+  details{margin-top:8px} details summary{cursor:pointer;font-weight:600;color:var(--rh-gray-700)}
+</style>
+</head>
+<body>
+<header class="rh">
+  <h1>OIDC / JWT validated at the gateway</h1>
+  <small>Keycloak (RHBK) issues the token · Authorino (AuthPolicy) validates and authorizes · the backend just echoes the claims</small>
+</header>
+<main>
+  <div class="card">
+    <h2>1. Configuration</h2>
+    <div class="grid">
+      <div><label>Keycloak base (issuer host)</label><input id="kc" value="https://keycloak.example.com"></div>
+      <div><label>Realm</label><input id="realm" value="rhcl"></div>
+      <div><label>Gateway host (banking-api)</label><input id="host" value="https://banking-api-connectivity.example.com"></div>
+      <div><label>Client ID</label><input id="cid" value="banking-api"></div>
+      <div><label>Client secret</label><input id="csecret" value="banking-api-secret"></div>
+      <div><label>Endpoint protegido</label><input id="path" value="/api/whoami"></div>
+      <div><label>User</label><input id="user" value="alice"></div>
+      <div><label>Senha</label><input id="pass" value="alice123"></div>
+    </div>
+    <p class="muted">alice = <b>banking-customer</b> · bob/bob123 = <b>banking-customer + banking-admin</b></p>
+  </div>
+
+  <div class="card">
+    <h2>2. Get a token (Keycloak) — password grant</h2>
+    <button onclick="getToken()">Get token</button>
+    <button class="ghost" onclick="clearToken()">Clear token</button>
+    <span id="tokstatus" class="muted">sem token</span>
+    <div id="claimsbox" style="display:none">
+      <p class="muted">Claims from the access token (decoded from the JWT — read-only in the browser):</p>
+      <table><tbody id="claims"></tbody></table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3. Chamar o gateway — <code id="p2">/api/whoami</code></h2>
+    <p class="muted">The gateway validates signature/iss/aud/exp and the role; only then does it forward the request with the verified claims (<code>x-jwt-*</code>).</p>
+    <button onclick="call('valid')">With a valid token</button>
+    <button class="ghost" onclick="call('none')">Sem token (espera 401)</button>
+    <button class="ghost" onclick="call('garbage')">Token forjado (espera 401)</button>
+    <p>Resultado: <span id="result" class="pill warn">—</span></p>
+    <p class="muted">Claims <b>verified by the gateway</b> and echoed by the backend (the <code>jwt</code> object):</p>
+    <pre id="out">—</pre>
+  </div>
+
+  <!-- ============================================================
+       4 · O QUE FOI CONFIGURADO NO CLUSTER PRA JWT FUNCIONAR
+       =========================================================== -->
+  <div class="card">
+    <h2>4. What was configured on the cluster for JWT to work</h2>
+    <p class="muted">
+      All configuration is declarative — three CRs versioned in Git, applied
+      by the <code>apps-install</code> / <code>rhbk-install</code> playbook.
+      The backend (<code>banking-api</code>) <b>has no line of authentication
+      code</b>: the gateway delivers the request with the claims already trusted.
+    </p>
+
+    <h3>① AuthPolicy — regra <span class="pill info">jwt-keycloak</span></h3>
+    <p class="muted">
+      Adds a <i>new identity</i> to the banking-api AuthPolicy, alongside
+      the <code>api-key-header</code>, <code>api-key-query</code> identities,
+      the existing <code>ai-mock</code> and <code>cors-preflight</code>. Authorino
+      accepts <b>any</b> identity it validates — so a client can use
+      api-key, JWT or both. The scope is controlled by the <code>when:</code> block.
+    </p>
+    <pre>apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: banking-api-connectivity-apikey
+  namespace: rhcl-apps
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: banking-api-connectivity
+  rules:
+    authentication:
+      # ─── new identity: JWT issued by RHBK ─────────────
+      jwt-keycloak:
+        jwt:
+          # Issuer URL = base do Keycloak + /realms/&lt;realm&gt;.
+          # Authorino busca o JWKS em &lt;issuer&gt;/protocol/openid-connect/certs,
+          # validates sig (RS256), iss, aud, exp. Automatic cache.
+          issuerUrl: https://keycloak.&lt;apps-domain&gt;/realms/rhcl
+        # CEL predicates — control WHERE this identity is required.
+        # Outras paths continuam usando api-key.
+        when:
+          - predicate: "request.path.startsWith('/api/whoami')"
+          - predicate: "request.method != 'OPTIONS'"  # libera CORS preflight</pre>
+
+    <h3>② AuthPolicy — bloco <span class="pill info">response.success</span> (claims injetadas)</h3>
+    <p class="muted">
+      Authorino reads the validated JWT claims and injects them as headers
+      <code>x-jwt-*</code> on the upstream request. The backend receives everything
+      already trusted — it just consumes the headers, revalidating nothing.
+    </p>
+    <pre>spec:
+  rules:
+    response:
+      success:
+        headers:
+          # auth.identity.* = JWT token claims after validation.
+          x-jwt-sub:                { plain: { selector: "auth.identity.sub" } }
+          x-jwt-preferred-username: { plain: { selector: "auth.identity.preferred_username" } }
+          x-jwt-email:              { plain: { selector: "auth.identity.email" } }
+          x-jwt-aud:                { plain: { selector: "auth.identity.aud" } }
+          x-jwt-roles:              { plain: { selector: "auth.identity.realm_access.roles" } }
+          # Unified header for audit/log — same key for api-key and JWT.
+          x-consumer-id:            { plain: { selector: "auth.identity.metadata.name" } }</pre>
+
+    <h3>③ Keycloak — Client <code>banking-api</code> no realm <code>rhcl</code></h3>
+    <p class="muted">
+      Importado via <code>KeycloakRealmImport</code> (CR do RHBK Operator).
+      Trecho relevante do client:
+    </p>
+    <pre>apiVersion: k8s.keycloak.org/v2alpha1
+kind: KeycloakRealmImport
+metadata:
+  name: rhcl-realm
+  namespace: rhcl-keycloak
+spec:
+  realm:
+    realm: rhcl
+    enabled: true
+    roles:
+      realm:
+        - { name: banking-customer }
+        - { name: banking-admin }
+    clients:
+      - clientId: banking-api
+        publicClient: false               # confidential client (tem secret)
+        secret: banking-api-secret        # demo only — use External Secrets in production
+        # Enables the password grant — used by this page's browser flow and by scripts.
+        # In production use the OIDC redirect flow (PKCE) instead.
+        directAccessGrantsEnabled: true
+        standardFlowEnabled: true
+        # webOrigins controls who Keycloak allows to make CORS against
+        # /protocol/openid-connect/token. "*" libera qualquer origem;
+        # adjust to the real host of your SPAs in production.
+        webOrigins: ["*"]
+        redirectUris: ["*"]
+    users:
+      - { username: alice, enabled: true, credentials: [{ type: password, value: alice123 }],
+          realmRoles: [banking-customer] }
+      - { username: bob,   enabled: true, credentials: [{ type: password, value: bob123 }],
+          realmRoles: [banking-customer, banking-admin] }</pre>
+
+    <details>
+      <summary>Como o gateway descobre o JWKS (RFC 8414)</summary>
+      <p class="muted" style="margin-top:8px">
+        Authorino faz <code>GET &lt;issuerUrl&gt;/.well-known/openid-configuration</code>
+        at startup and on periodic refresh (configurable cache TTL). From there it gets the
+        <code>jwks_uri</code>, fetches the public keys and uses them to validate the
+        signature. There is no shared secret between gateway and Keycloak — trust
+        is via the public JWKS.
+      </p>
+    </details>
+  </div>
+
+  <!-- ============================================================
+       5 · CUSTOMIZAÇÃO
+       =========================================================== -->
+  <div class="card">
+    <h2>5. Customization — flexibility for internal rules</h2>
+    <p class="muted">
+      The AuthPolicy exposes many extension points. All declarative, without changing
+      the app. Below are the main "hooks" commonly used in banking
+      production — each line can be adjusted via a Git PR, no rebuild.
+    </p>
+
+    <table class="ext-table">
+      <thead>
+        <tr><th style="width:25%">Extension point</th><th>What you change</th><th style="width:30%">Banking example</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>Multiple identities coexisting</b></td>
+          <td>
+            <code>rules.authentication.&lt;name&gt;</code> accepts multiple entries
+            (apiKey, jwt, oauth2, mtls, x509, anonymous, kubernetesTokenReview).
+            Authorino tries each in parallel and accepts the first that validates.
+          </td>
+          <td>
+            Internal employees use a <b>JWT from federated AD/LDAP</b> in Keycloak;
+            sistemas legados usam <b>api-key</b>; partners externos usam
+            <b>mTLS</b>. Mesma AuthPolicy.
+          </td>
+        </tr>
+
+        <tr>
+          <td><b>Predicates CEL (<code>when:</code>)</b></td>
+          <td>
+            CEL expressions evaluated by the gateway. Access to
+            <code>request.method</code>, <code>request.path</code>,
+            <code>request.headers</code>, <code>request.host</code>,
+            <code>connection.requested_server_name</code>, etc.
+          </td>
+          <td>
+            <code>"request.headers['x-channel'] == 'mobile'"</code> only allows the
+            <code>/transfers/payments</code> endpoint during business hours:
+            <code>"request.time.getHours() &gt;= 6 &amp;&amp; request.time.getHours() &lt; 22"</code>.
+          </td>
+        </tr>
+
+        <tr>
+          <td><b>Authorization by role/claim</b></td>
+          <td>
+            The <code>rules.authorization</code> block with <code>opa.rego</code> or
+            <code>patternMatching</code>. Decision after auth — can use
+            any JWT claim.
+          </td>
+          <td>
+            <code>POST /api/v1/transfers/&gt;5000</code> exige
+            <code>banking-admin</code> nas roles + claim <code>device_attested</code>;
+            <code>POST /api/v1/cards/block</code> exige
+            <code>auth.identity.acr == "urn:example:mfa:hardware"</code>.
+          </td>
+        </tr>
+
+        <tr>
+          <td><b>OPA Rego for complex rules</b></td>
+          <td>
+            <code>authorization.&lt;nome&gt;.opa.rego</code> aceita policy Rego
+            inline (ou via ConfigMap). Acesso a metadata, identidade,
+            request inteiro e atributos enriched (geo-IP, fraud score, etc.).
+          </td>
+          <td>
+            Block transfers when the 24h sum exceeds the plan
+            limit + alert the SIEM via webhook. All in ~20 lines of Rego.
+          </td>
+        </tr>
+
+        <tr>
+          <td><b>External metadata (enrichment)</b></td>
+          <td>
+            <code>rules.metadata.http</code> calls an external service during the
+            request flow — fraud score, KYC, risk score, a payments directory —
+            and the result becomes input to the authorization rules.
+          </td>
+          <td>
+            Pre-approval calls the <b>bank's fraud engine</b> via
+            <code>POST /risk/score</code> with user + amount + device; if
+            <code>score &gt; 80</code> it requires step-up.
+          </td>
+        </tr>
+
+        <tr>
+          <td><b>Step-up authentication</b></td>
+          <td>
+            Resposta condicional com <code>WWW-Authenticate: Bearer error="insufficient_user_authentication"</code>
+            when the token's <code>acr</code> is insufficient.
+          </td>
+          <td>
+            Login normal pode ler saldo (<code>acr=urn:example:auth:password</code>),
+            but <code>POST /transfers</code> returns 401 with a hint to re-authenticate
+            com biometria (<code>acr=urn:example:auth:biometric</code>) — frontend
+            redireciona pro fluxo MFA do Keycloak.
+          </td>
+        </tr>
+
+        <tr>
+          <td><b>Headers injetados no upstream</b></td>
+          <td>
+            <code>response.success.headers</code> permite qualquer header
+            customizado, com selector em <code>auth.identity.*</code>,
+            <code>auth.metadata.*</code>, <code>context.*</code>.
+          </td>
+          <td>
+            <code>x-customer-segment: {{ auth.identity.attributes.segment }}</code>,
+            <code>x-customer-id-hash: {{ sha256(auth.identity.customer_id) }}</code>,
+            <code>x-trace-id: {{ context.request.id }}</code>.
+          </td>
+        </tr>
+
+        <tr>
+          <td><b>Bloco <code>response.success.filters.identity</code></b></td>
+          <td>
+            Transforms the identity <i>before</i> it is used by RateLimit or
+            audit — useful to mask PII or collapse equivalent IDs.
+          </td>
+          <td>
+            Already in use in the lab: extracts <code>plan-id</code> and
+            <code>user-id</code> from the Secret annotations and exposes them to
+            the RateLimitPolicy to decide the plan (gold/silver/bronze) per call.
+          </td>
+        </tr>
+
+        <tr>
+          <td><b>Rate-limit by JWT claim</b></td>
+          <td>
+            <code>RateLimitPolicy</code> com <code>counters</code> usando
+            <code>auth.identity.preferred_username</code> ou qualquer claim
+            como discriminator.
+          </td>
+          <td>
+            <code>50 req/min per user</code> (claim <code>sub</code>),
+            <code>10 req/min</code> on <code>/api/v1/transfers</code> per user,
+            <code>1000 req/min</code> por <code>aud</code> (app cliente).
+          </td>
+        </tr>
+
+        <tr>
+          <td><b>Logs de auditoria estruturados</b></td>
+          <td>
+            gateway-error-logging: an EnvoyFilter + OTel Collector already capture every
+            <code>4xx/5xx</code> com claims + correlation_id + path. Custom-headers
+            via <code>response.success.headers</code> entram automaticamente no
+            audit log.
+          </td>
+          <td>
+            Compliance (e.g. GDPR): every denial goes to the SIEM with
+            <code>x-jwt-sub</code>, <code>x-customer-id-hash</code>,
+            <code>request_id</code>, <code>auth.reason</code> e
+            <code>trace_id</code> (correlation with Tempo).
+          </td>
+        </tr>
+
+        <tr>
+          <td><b>Federation with corporate AD/LDAP</b></td>
+          <td>
+            No Keycloak: <code>User Federation → LDAP / Active Directory</code>.
+            Bank users log in with the corporate credential; AD roles become
+            roles do realm; tudo isso aparece nos claims do JWT.
+          </td>
+          <td>
+            A corporate employee authenticates with their employee ID, claim
+            <code>realm_access.roles</code> chega com
+            <code>["banking-customer","cib-trader"]</code> — Rego decide acesso.
+          </td>
+        </tr>
+
+        <tr>
+          <td><b>Allow-list policy by <code>aud</code></b></td>
+          <td>
+            <code>jwt.audiences:</code> lista de audiences aceitas. Tokens com
+            <code>aud</code> outside the list are rejected before validating the
+            qualquer claim.
+          </td>
+          <td>
+            The same Keycloak realm serves <i>mobile</i> and <i>internet banking</i>;
+            The payments AuthPolicy only accepts tokens with <code>aud=payments-app</code>
+            (prevents a web token from being reused for internal tools).
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Composite example — rule "payments only with biometrics, in business hours, fraud-score &lt; 80"</h3>
+    <p class="muted">
+      Combining the 4 extension points above. The whole rule fits in the AuthPolicy:
+    </p>
+    <pre>spec:
+  rules:
+    metadata:
+      fraud-score:
+        http:
+          urlExpression: '"https://fraud.example.internal/risk/score"'
+          method: POST
+          body:
+            user: "{auth.identity.sub}"
+            amount: "{request.body.amount}"
+            device: "{request.headers.x-device-id}"
+        sharedSecretRef: { name: fraud-service-token, key: token }
+
+    authorization:
+      payments-policy:
+        opa:
+          rego: |
+            default allow = false
+            allow {
+              # 1. must be banking-customer
+              input.auth.identity.realm_access.roles[_] == "banking-customer"
+              # 2. must be business hours (6:00-22:00)
+              hour := time.weekday_hour(input.context.request.time)
+              hour &gt;= 6; hour &lt; 22
+              # 3. step-up: biometric ACR
+              input.auth.identity.acr == "urn:example:auth:biometric"
+              # 4. fraud-score from enrichment &lt; 80
+              to_number(input.metadata["fraud-score"].score) &lt; 80
+            }
+        when:
+          - predicate: "request.method == 'POST' &amp;&amp; request.path.startsWith('/api/v1/payments')"</pre>
+
+    <p class="muted" style="margin-top:14px">
+      All declarative, all in Git, all reviewable via PR. A regulatory rule
+      change = a commit. <b>No backend rebuild</b>, no app maintenance
+      window — just <code>oc apply</code>.
+    </p>
+  </div>
+</main>
+<script>
+let TOKEN = null;
+const $ = id => document.getElementById(id);
+const b64url = s => { s = s.replace(/-/g,'+').replace(/_/g,'/'); s += '='.repeat((4 - s.length%4)%4); return atob(s); };
+
+// Pre-fill Gateway host AND Keycloak base from /env.json.
+//   - apiHost           → "Gateway host (banking-api)"
+//   - rhclZoneRootDomain → derives "https://keycloak.<rhclZoneRootDomain>"
+// Keeps the hardcoded example.com default if env.json is absent
+// (standalone runs / image without the env var).
+(async function() {
+  try {
+    const r = await fetch('/env.json', { cache: 'no-store' });
+    if (!r.ok) return;
+    const env = (await r.json()) || {};
+    if (env.apiHost) {
+      const el = $('host'); if (el) el.value = 'https://' + env.apiHost;
+    }
+    if (env.rhclZoneRootDomain) {
+      const el = $('kc'); if (el) el.value = 'https://keycloak.' + env.rhclZoneRootDomain;
+    }
+  } catch (_) { /* keep hardcoded defaults */ }
+})();
+
+function clearToken(){ TOKEN=null; $('tokstatus').textContent='sem token'; $('claimsbox').style.display='none'; }
+
+async function getToken(){
+  const kc=$('kc').value.replace(/\/$/,''), realm=$('realm').value;
+  const body=new URLSearchParams({grant_type:'password',client_id:$('cid').value,client_secret:$('csecret').value,username:$('user').value,password:$('pass').value});
+  $('tokstatus').textContent='solicitando…';
+  try{
+    const r=await fetch(`${kc}/realms/${realm}/protocol/openid-connect/token`,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
+    const j=await r.json();
+    if(!r.ok || !j.access_token){ $('tokstatus').innerHTML='<span class="pill bad">ERRO</span> '+(j.error_description||j.error||r.status); return; }
+    TOKEN=j.access_token;
+    $('tokstatus').innerHTML='<span class="pill ok">TOKEN OK</span> expira em '+j.expires_in+'s';
+    const c=JSON.parse(b64url(TOKEN.split('.')[1]));
+    const rows=['preferred_username','email','iss','aud','scope'].map(k=>`<tr><td>${k}</td><td>${JSON.stringify(c[k])}</td></tr>`);
+    rows.push(`<tr><td>realm_access.roles</td><td>${JSON.stringify((c.realm_access||{}).roles)}</td></tr>`);
+    rows.push(`<tr><td>exp</td><td>${new Date(c.exp*1000).toISOString()}</td></tr>`);
+    $('claims').innerHTML=rows.join(''); $('claimsbox').style.display='block';
+  }catch(e){ $('tokstatus').innerHTML='<span class="pill bad">CORS/error</span> '+e.message+' — serve this page from an origin allowed on the client (webOrigins).'; }
+}
+
+async function call(mode){
+  const host=$('host').value.replace(/\/$/,''), path=$('path').value; $('p2').textContent=path;
+  const headers={};
+  if(mode==='valid'){ if(!TOKEN){ alert('Pegue um token primeiro.'); return; } headers['Authorization']='Bearer '+TOKEN; }
+  if(mode==='garbage'){ headers['Authorization']='Bearer not.a.valid.jwt'; }
+  $('result').className='pill warn'; $('result').textContent='…'; $('out').textContent='…';
+  try{
+    const r=await fetch(`${host}${path}`,{headers});
+    $('result').className='pill '+(r.ok?'ok':'bad'); $('result').textContent='HTTP '+r.status;
+    let txt; try{ const j=await r.json(); txt=JSON.stringify(j.jwt!==undefined?j.jwt:j,null,2);}catch(_){ txt=await r.text(); }
+    $('out').textContent=txt||'(vazio)';
+  }catch(e){ $('result').className='pill bad'; $('result').textContent='erro'; $('out').textContent=e.message; }
+}
+</script>
+</body>
+</html>

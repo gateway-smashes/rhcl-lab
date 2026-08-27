@@ -2,5 +2,5 @@ Categories for status.tsv
 
 done: check verde
 partial: alerta amarelo
-blocked: exclamação vermelha
+blocked: red exclamation
 not-started ou ausente: cinza

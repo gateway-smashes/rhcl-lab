@@ -1,7 +1,7 @@
 # Tutorial template — standardization guide
 
 > **This is not a tutorial itself** — it is the canonical structure that
-> every `tests/reqNNN.md` must follow. Model file: [`req030.md`](req030.md).
+> every `tests/reqNNN.md` must follow. Model file: [`request-interception-mirror`](../request-interception-mirror/README.md).
 
 ---
 

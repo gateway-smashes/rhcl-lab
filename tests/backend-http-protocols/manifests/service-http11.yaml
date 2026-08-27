@@ -1,0 +1,19 @@
+# Service to demonstrate HTTP/1.1 upstream (Envoy's default behavior).
+# Aponta para os mesmos pods banking-api-v1 existentes no namespace.
+# Sem appProtocol definido → Envoy usa HTTP/1.1 como protocolo upstream.
+apiVersion: v1
+kind: Service
+metadata:
+  name: req054-backend-http11
+  namespace: {{ apps_namespace }}
+  labels:
+    app.kubernetes.io/part-of: req054-http-versions
+    rhcl.poc/item: "54"
+spec:
+  selector:
+    app: banking-api-v1
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP

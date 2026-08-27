@@ -1,0 +1,52 @@
+# HTTPRoutes for the revocation gateway — one per listener/hostname.
+#
+# Usage:
+#   export RHCL_ZONE_ROOT_DOMAIN=example.com
+#   envsubst < tests/mtls-ocsp-crl-revocation/manifests/20-httproute.yaml | oc apply -f -
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: req050-crl-route
+  namespace: req050-gateway
+  labels:
+    app.kubernetes.io/part-of: rhcl-req050-revocation
+spec:
+  parentRefs:
+    - name: req050-revocation-gateway
+      namespace: req050-gateway
+      sectionName: https-crl
+  hostnames:
+    - "req050-crl.${RHCL_ZONE_ROOT_DOMAIN}"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      backendRefs:
+        - name: banking-api-v1
+          namespace: rhcl-apps
+          port: 8080
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: req050-ocsp-route
+  namespace: req050-gateway
+  labels:
+    app.kubernetes.io/part-of: rhcl-req050-revocation
+spec:
+  parentRefs:
+    - name: req050-revocation-gateway
+      namespace: req050-gateway
+      sectionName: https-ocsp
+  hostnames:
+    - "req050-ocsp.${RHCL_ZONE_ROOT_DOMAIN}"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      backendRefs:
+        - name: banking-api-v1
+          namespace: rhcl-apps
+          port: 8080

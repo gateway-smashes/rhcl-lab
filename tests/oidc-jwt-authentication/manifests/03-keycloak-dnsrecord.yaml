@@ -1,0 +1,18 @@
+# Specific record beats the *.example.com wildcard (which points at the gateway):
+# send keycloak.example.com to the ROUTER LB so the operator-managed Route serves it.
+apiVersion: kuadrant.io/v1alpha1
+kind: DNSRecord
+metadata:
+  name: keycloak-poc-rhcl
+  namespace: openshift-ingress
+  labels: { app.kubernetes.io/part-of: rhcl-req71-oidc-jwt }
+spec:
+  rootHost: keycloak.example.com
+  providerRef:
+    name: rhcl-dns-credentials
+  endpoints:
+    - dnsName: keycloak.example.com
+      recordTTL: 60
+      recordType: CNAME
+      targets:
+        - a6ece2cddae604d5ebe81c93a414e863-920827267.us-east-2.elb.amazonaws.com

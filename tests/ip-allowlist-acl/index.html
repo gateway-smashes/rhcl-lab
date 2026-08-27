@@ -1,0 +1,761 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RHCL Lab — REQ 72: IP-based ACL</title>
+<style>
+  :root {
+    --rh-red: #EE0000;
+    --rh-red-dark: #A30000;
+    --rh-black: #151515;
+    --rh-gray-100: #F5F5F5;
+    --rh-gray-200: #E0E0E0;
+    --rh-gray-700: #4D4D4D;
+    --rh-success: #3E8635;
+    --rh-warn: #F0AB00;
+    --rh-danger: #C9190B;
+    --rh-info: #2B9AF3;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: "Red Hat Display", "Red Hat Text", -apple-system, BlinkMacSystemFont,
+            "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    color: var(--rh-black);
+    background: var(--rh-gray-100);
+    line-height: 1.45;
+  }
+  header.rh-header {
+    background: var(--rh-black);
+    color: #fff;
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 4px solid var(--rh-red);
+  }
+  header.rh-header .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 0.5px;
+    color: inherit;
+    text-decoration: none;
+  }
+  header.rh-header a.logo:hover { color: var(--rh-red); }
+  header.rh-header a.logo:focus-visible {
+    outline: 2px solid var(--rh-red);
+    outline-offset: 4px;
+    border-radius: 2px;
+  }
+  header.rh-header .logo svg { display: block; }
+  header.rh-header .title {
+    margin-left: auto;
+    font-size: 14px;
+    color: #cfcfcf;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px;
+  }
+  h1 {
+    font-size: 28px;
+    margin: 0 0 4px 0;
+    color: var(--rh-black);
+  }
+  h2 {
+    font-size: 16px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--rh-gray-700);
+    margin: 32px 0 12px 0;
+    border-bottom: 1px solid var(--rh-gray-200);
+    padding-bottom: 8px;
+  }
+  .subtitle {
+    color: var(--rh-gray-700);
+    margin: 0 0 24px 0;
+  }
+  .panel {
+    background: #fff;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 4px;
+    padding: 20px;
+  }
+  .panel + .panel { margin-top: 16px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .row + .row { margin-top: 12px; }
+  label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--rh-gray-700);
+    display: block;
+    margin-bottom: 4px;
+  }
+  input[type="text"], select {
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 8px 10px;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 3px;
+    background: #fff;
+    color: var(--rh-black);
+    flex: 1;
+    min-width: 240px;
+  }
+  input:focus, select:focus {
+    outline: 2px solid var(--rh-red);
+    outline-offset: -1px;
+    border-color: var(--rh-red);
+  }
+  button {
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    padding: 8px 16px;
+    border: 1px solid var(--rh-red);
+    background: var(--rh-red);
+    color: #fff;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  button:hover { background: var(--rh-red-dark); border-color: var(--rh-red-dark); }
+  button.secondary {
+    background: #fff;
+    color: var(--rh-black);
+    border-color: var(--rh-gray-200);
+  }
+  button.secondary:hover { background: var(--rh-gray-100); }
+  button.success {
+    background: var(--rh-success);
+    border-color: var(--rh-success);
+  }
+  button.success:hover { background: #2E6B27; border-color: #2E6B27; }
+  button.danger {
+    background: var(--rh-danger);
+    border-color: var(--rh-danger);
+  }
+  button.danger:hover { background: #9F140A; border-color: #9F140A; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .log {
+    background: var(--rh-black);
+    color: #e8e8e8;
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 16px;
+    border-radius: 3px;
+    max-height: 480px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .log .entry { padding: 4px 0; border-bottom: 1px solid #2a2a2a; }
+  .log .entry:last-child { border-bottom: none; }
+  .log .ts { color: #6a6a6a; margin-right: 8px; }
+  .log .lvl { font-weight: 700; margin-right: 8px; }
+  .log .lvl.info    { color: var(--rh-info); }
+  .log .lvl.success { color: #6EC664; }
+  .log .lvl.warn    { color: var(--rh-warn); }
+  .log .lvl.error   { color: #F87171; }
+
+  .callout {
+    background: #FFF8E1;
+    border-left: 4px solid var(--rh-warn);
+    padding: 12px 16px;
+    font-size: 13px;
+    color: var(--rh-black);
+    margin: 16px 0;
+  }
+  .callout strong { color: var(--rh-red-dark); }
+
+  pre.scenario {
+    background: var(--rh-gray-100);
+    border: 1px solid var(--rh-gray-200);
+    padding: 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    overflow-x: auto;
+    color: var(--rh-black);
+  }
+  pre.cmd {
+    background: var(--rh-black);
+    color: #e8e8e8;
+    padding: 12px 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    border-radius: 3px;
+    overflow-x: auto;
+  }
+
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+  }
+  .stat {
+    background: var(--rh-gray-100);
+    padding: 12px;
+    border-radius: 3px;
+    border: 1px solid var(--rh-gray-200);
+  }
+  .stat .label {
+    font-size: 11px;
+    color: var(--rh-gray-700);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .stat .value {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--rh-black);
+    margin-top: 4px;
+  }
+  .stat .value.success { color: var(--rh-success); }
+  .stat .value.danger  { color: var(--rh-danger); }
+
+  footer {
+    max-width: 1100px;
+    margin: 32px auto;
+    padding: 0 32px;
+    color: var(--rh-gray-700);
+    font-size: 12px;
+    text-align: center;
+  }
+
+  table.manifests {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin: 12px 0;
+  }
+  table.manifests th,
+  table.manifests td {
+    border: 1px solid var(--rh-gray-200);
+    padding: 8px 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+  table.manifests th {
+    background: var(--rh-gray-100);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--rh-gray-700);
+  }
+  table.manifests code { font-size: 12px; }
+  .card-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--rh-gray-700);
+    margin: 20px 0 8px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .card-title:first-child { margin-top: 0; }
+  .panel p.hint {
+    margin: 0 0 12px;
+    font-size: 13px;
+    color: var(--rh-gray-700);
+  }
+
+  pre.yaml {
+    background: var(--rh-gray-100);
+    border: 1px solid var(--rh-gray-200);
+    padding: 12px 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    border-radius: 3px;
+    overflow-x: auto;
+    color: var(--rh-black);
+    margin: 0;
+  }
+
+  .steps {
+    margin: 0 0 16px;
+    padding-left: 22px;
+    font-size: 14px;
+  }
+  .steps li { margin: 8px 0; }
+  .steps li code { font-size: 12px; }
+  .steps-subtitle {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--rh-gray-700);
+    margin: 16px 0 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .steps-subtitle:first-child { margin-top: 0; }
+</style>
+</head>
+<body>
+
+<header class="rh-header">
+  <a class="logo" href="/" aria-label="Back to the test catalog">
+    <svg width="36" height="28" viewBox="0 0 36 28" xmlns="http://www.w3.org/2000/svg" aria-label="Red Hat">
+      <path fill="#EE0000" d="M26 14c2.5 0 5 .8 5 3 0 .8-.3 1.4-.7 2H5.7c-.4-.6-.7-1.2-.7-2 0-2.2 2.5-3 5-3 0-3 3-7 8-7 2 0 3 1 4 1 1.5 0 2-1 3.5-1 1 0 2 1 2 3 0 2-1 4-1.5 4z"/>
+      <rect x="3" y="20" width="30" height="4" rx="1" fill="#151515"/>
+    </svg>
+    RHCL Lab
+  </a>
+  <div class="title">REQ 72</div>
+</header>
+
+<main>
+  <h1>IP-based ACL</h1>
+  <p class="subtitle">
+    Source-IP <strong>blocking</strong> (deny-list) at the gateway, with a single
+    validated engine: an <strong>OPA/Rego <code>AuthPolicy</code></strong>
+    evaluated by Authorino over <code>x-forwarded-for</code>. Two variants —
+    block a single IP, or block a CIDR range. Target: the
+    <code>ipfilter-php</code> probe (route <code>ipfilter</code>, endpoint
+    <code>/api/ip</code>). Apply <strong>one</strong> manifest and watch
+    <code>200</code> vs <code>403</code>.
+  </p>
+
+  <div class="callout">
+    <strong>Other approaches exist</strong> (OPA allow-list, CEL
+    <code>AuthPolicy</code>, native Envoy RBAC via <code>EnvoyFilter</code>) but
+    are intentionally not shown here — this package keeps only the OPA deny-list
+    path validated end to end. See
+    <code>tests/ip-allowlist-acl/README.md</code> for the full write-up.
+  </div>
+
+  <h2>How it works</h2>
+  <div class="panel">
+    <p class="hint">
+      The <code>AuthPolicy</code> carries one inline-Rego authorization rule that
+      Authorino runs on every request. <code>allow</code> is set to
+      <code>true</code> only for non-blocked traffic; when the request matches the
+      block list, <code>allow</code> stays <strong>undefined</strong>, which
+      Authorino treats as a deny (<code>403</code>). No <code>default allow</code>
+      is needed.
+    </p>
+
+    <div class="card-title">Variant 1 — block a single IP (manifest 01)</div>
+<pre class="yaml">xff := object.get(input.context.request.http.headers, "x-forwarded-for", "")
+
+allow {
+  not contains(xff, "203.0.113.10")
+}</pre>
+
+    <div class="card-title">Variant 2 — block a CIDR range (manifest 02)</div>
+<pre class="yaml">blocked_ranges := [
+  "203.0.113.0/24",
+]
+
+xff := object.get(input.context.request.http.headers, "x-forwarded-for", "")
+
+xff_ips := [trim(ip, " ") | ip := split(xff, ",")[_]]
+
+blocked {
+  ip := xff_ips[_]
+  count(net.cidr_contains_matches(blocked_ranges, [ip])) > 0
+}
+
+allow {
+  not blocked
+}</pre>
+
+    <pre class="scenario">
+   browser ──TLS──► Router ──► Gateway/Envoy ──ext_authz──► Authorino
+   forges XFF                      │                            │
+                                   │             OPA evaluates:
+                                   │               XFF blocked IP / range ?
+                                   ▼
+                          200 or 403 ──► ipfilter-php (/api/ip)
+    </pre>
+  </div>
+
+  <h2>Console</h2>
+  <div class="panel" id="controls">
+    <p class="hint">
+      The forge-and-fetch buttons below call <code>/api/ip</code> with a spoofed
+      <code>x-forwarded-for</code>. They work when this page is served
+      <strong>same-origin</strong> with the probe (i.e. at
+      <code>https://ipfilter.&lt;domain&gt;/</code>, which the
+      <code>ipfilter-php</code> app already serves). From another origin the
+      browser blocks the cross-origin fetch (these deny-list manifests carry no
+      CORS headers) — use the app's own page or <code>curl</code> below.
+    </p>
+
+    <div class="row">
+      <div style="flex:2; min-width:280px;">
+        <label for="host">Gateway hostname</label>
+        <input id="host" type="text"
+               value="ipfilter.example.com"
+               placeholder="ipfilter.example.com" />
+      </div>
+      <div style="flex:1; min-width:200px;">
+        <label for="path">Path</label>
+        <input id="path" type="text" value="/api/ip" />
+      </div>
+    </div>
+
+    <div class="row">
+      <div style="flex:1; min-width:200px;">
+        <label for="scenario">Variant applied in the cluster</label>
+        <select id="scenario">
+          <option value="ip">Block single IP (manifest 01)</option>
+          <option value="range">Block CIDR range (manifest 02)</option>
+        </select>
+      </div>
+      <div style="flex:2; min-width:280px;">
+        <label for="xff">x-forwarded-for (simulated source IP)</label>
+        <input id="xff" type="text" value="8.8.8.8" />
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:8px;">
+      <button id="runCustom">Run with custom IP</button>
+      <button class="success" id="runAllowed">Run with allowed IP</button>
+      <button class="danger" id="runBlocked">Run with blocked IP</button>
+      <button class="secondary" id="clearLogButton">Clear log</button>
+    </div>
+
+    <div class="callout" style="margin-top:16px;">
+      <strong>Defaults:</strong> blocked → <code>203.0.113.10</code>
+      (matched by both variants); allowed → <code>8.8.8.8</code>. For the range
+      variant, the whole <code>203.0.113.0/24</code> is blocked.
+    </div>
+  </div>
+
+  <h2>Log</h2>
+  <div class="log" id="log" aria-live="polite"></div>
+
+  <h2>Stats</h2>
+  <div class="panel">
+    <div class="summary" id="summary">
+      <div class="stat"><div class="label">Total</div><div class="value" id="stat-total">0</div></div>
+      <div class="stat"><div class="label">200 OK</div><div class="value success" id="stat-ok">0</div></div>
+      <div class="stat"><div class="label">403 Forbidden</div><div class="value danger" id="stat-deny">0</div></div>
+      <div class="stat"><div class="label">Other</div><div class="value" id="stat-other">0</div></div>
+    </div>
+  </div>
+
+  <h2>Apply</h2>
+  <div class="panel">
+    <p class="hint">
+      Run from the repository root. The playbook creates a default
+      <code>AuthPolicy</code> named <code>ipfilter-ip-acl</code> on the same
+      route; only one <code>AuthPolicy</code> is Enforced per target, so remove it
+      first to avoid a two-policies-one-target conflict.
+    </p>
+
+    <table class="manifests">
+      <thead>
+        <tr>
+          <th>File</th>
+          <th>Engine</th>
+          <th>Mode</th>
+          <th>CR / namespace</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>00-httproute-ipfilter.yaml</code></td>
+          <td>—</td>
+          <td>—</td>
+          <td><code>HTTPRoute</code> / <code>rhcl-apps</code></td>
+        </tr>
+        <tr>
+          <td><code>01-block-ip-opa.yaml</code></td>
+          <td>OPA/Rego → Authorino</td>
+          <td>Deny-list (single IP)</td>
+          <td><code>AuthPolicy</code> / <code>rhcl-apps</code></td>
+        </tr>
+        <tr>
+          <td><code>02-block-range-opa.yaml</code></td>
+          <td>OPA/Rego → Authorino</td>
+          <td>Deny-list (CIDR range)</td>
+          <td><code>AuthPolicy</code> / <code>rhcl-apps</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+<pre class="cmd" id="cmdApply">export ROOT=tests/ip-allowlist-acl/manifests
+export RHCL_ZONE_ROOT_DOMAIN=example.com  # adjust
+
+# Route + ipfilter-php service (skip if apps-install already created it)
+envsubst &lt; $ROOT/00-httproute-ipfilter.yaml | oc apply -f -
+
+# Remove the playbook default policy to avoid a target conflict
+oc -n rhcl-apps delete authpolicy ipfilter-ip-acl --ignore-not-found
+
+# Block a single IP...
+oc apply -f $ROOT/01-block-ip-opa.yaml
+# ...or block a CIDR range (same name — replaces the one above):
+# oc apply -f $ROOT/02-block-range-opa.yaml
+
+oc -n rhcl-apps wait authpolicy/ipfilter-block-xff \
+  --for=condition=Enforced=True --timeout=120s</pre>
+
+    <div class="card-title">AuthPolicy (manifest 01 — single IP)</div>
+    <pre class="yaml" id="yamlAuthPolicy"></pre>
+
+    <div class="card-title">AuthPolicy (manifest 02 — CIDR range)</div>
+    <pre class="yaml" id="yamlAuthPolicyRange"></pre>
+  </div>
+
+  <h2>Validate by curl</h2>
+  <div class="panel">
+    <p class="hint">
+      The proven path. These are the exact commands run in the lab — substitute
+      your gateway hostname.
+    </p>
+<pre class="cmd" id="cmdCurl"># Blocked IP -> 403
+curl -k -i -H "X-Forwarded-For: 203.0.113.10" https://ipfilter.example.com/
+
+# Any other IP -> 200
+curl -k -i -H "X-Forwarded-For: 8.8.8.8" https://ipfilter.example.com/</pre>
+    <div class="callout">
+      <strong>Same-origin shortcut:</strong> open
+      <code>https://ipfilter.&lt;domain&gt;/</code> directly — the
+      <code>ipfilter-php</code> probe serves a console there that forges XFF and
+      calls <code>/api/ip</code> same-origin, so no CORS is involved.
+    </div>
+  </div>
+
+  <h2>Cleanup</h2>
+  <div class="panel">
+<pre class="cmd">oc -n rhcl-apps delete authpolicy ipfilter-block-xff --ignore-not-found
+# The ipfilter route is playbook-managed — only remove if applied standalone:
+# oc -n rhcl-apps delete httproute ipfilter --ignore-not-found</pre>
+  </div>
+</main>
+
+<footer>
+  RHCL Lab — Red Hat Connectivity Link proof-of-concept
+</footer>
+
+<script>
+  // ---- Log helpers ----------------------------------------------------------
+  const logEl = document.getElementById("log");
+
+  function logLine(message, level = "info") {
+    const ts = new Date().toISOString().split("T")[1].replace("Z", "");
+    const entry = document.createElement("div");
+    entry.className = "entry";
+    entry.innerHTML =
+      `<span class="ts">${ts}</span>` +
+      `<span class="lvl ${level}">${level.toUpperCase()}</span>` +
+      escapeHtml(message);
+    logEl.appendChild(entry);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+  }
+
+  function clearLog() {
+    logEl.innerHTML = "";
+    stats = { total: 0, ok: 0, deny: 0, other: 0 };
+    renderStats();
+  }
+
+  document.getElementById("clearLogButton").addEventListener("click", clearLog);
+
+  // ---- Stats ----------------------------------------------------------------
+  let stats = { total: 0, ok: 0, deny: 0, other: 0 };
+  function renderStats() {
+    document.getElementById("stat-total").textContent = stats.total;
+    document.getElementById("stat-ok").textContent = stats.ok;
+    document.getElementById("stat-deny").textContent = stats.deny;
+    document.getElementById("stat-other").textContent = stats.other;
+  }
+
+  // ---- Host bootstrap -------------------------------------------------------
+  const DEFAULT_GATEWAY_HOST = "ipfilter.example.com";
+  const hostInput = document.getElementById("host");
+
+  hostInput.addEventListener("input", () => {
+    hostInput.dataset.userEdited = "1";
+  });
+
+  // ---- Runtime env from /env.json (tests container at boot) -----------------
+  window.rhclEnv = {};
+
+  async function loadRuntimeEnv() {
+    const candidates = ["/env.json", "../../env.json", "../env.json"];
+    for (const url of candidates) {
+      try {
+        const r = await fetch(url, { cache: "no-store" });
+        if (!r.ok) continue;
+        const env = await r.json();
+        if (env && typeof env === "object") {
+          window.rhclEnv = env;
+          return env;
+        }
+      } catch { /* try next */ }
+    }
+    return {};
+  }
+
+  function applyEnvDefaults() {
+    const domain = (window.rhclEnv && window.rhclEnv.rhclZoneRootDomain) || "";
+    const gatewayHost = domain ? `ipfilter.${domain}` : DEFAULT_GATEWAY_HOST;
+
+    if (!hostInput.dataset.userEdited) {
+      hostInput.value = gatewayHost;
+    }
+
+    const curlEl = document.getElementById("cmdCurl");
+    if (curlEl) {
+      curlEl.textContent = curlEl.textContent.replace(
+        /ipfilter\.azuredns\.rhcl\.com\.br/g,
+        gatewayHost
+      );
+    }
+
+    logLine(`env.json · RHCL_ZONE_ROOT_DOMAIN=${domain || "(default)"} · host=${gatewayHost}`, "info");
+    refreshAuthPolicyDoc();
+  }
+
+  function refreshAuthPolicyDoc() {
+    const authPolicy = `# Deny-list — blocks one source IP via inline OPA/Rego
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: ipfilter-block-xff               # separate CR from the playbook default
+  namespace: rhcl-apps
+spec:
+  targetRef:                             # binds to the whole ipfilter HTTPRoute
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: ipfilter
+  rules:
+    authorization:
+      block-xff:
+        opa:
+          rego: |
+            xff := object.get(input.context.request.http.headers, "x-forwarded-for", "")
+            allow {
+              not contains(xff, "203.0.113.10")
+            }`;
+
+    const authPolicyRange = `# Deny-list — blocks a CIDR range via inline OPA/Rego
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: ipfilter-block-xff               # same name as 01 — applying one swaps the other
+  namespace: rhcl-apps
+spec:
+  targetRef:                             # binds to the whole ipfilter HTTPRoute
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: ipfilter
+  rules:
+    authorization:
+      block-xff-range:
+        opa:
+          rego: |
+            blocked_ranges := [
+              "203.0.113.0/24",
+            ]
+            xff := object.get(input.context.request.http.headers, "x-forwarded-for", "")
+            xff_ips := [trim(ip, " ") | ip := split(xff, ",")[_]]
+            blocked {
+              ip := xff_ips[_]
+              count(net.cidr_contains_matches(blocked_ranges, [ip])) > 0
+            }
+            allow {
+              not blocked
+            }`;
+
+    const authEl = document.getElementById("yamlAuthPolicy");
+    if (authEl) authEl.textContent = authPolicy;
+    const authRangeEl = document.getElementById("yamlAuthPolicyRange");
+    if (authRangeEl) authRangeEl.textContent = authPolicyRange;
+  }
+
+  refreshAuthPolicyDoc();
+
+  // ---- Probe ----------------------------------------------------------------
+  function url(p) {
+    const host = document.getElementById("host").value.trim();
+    if (!host) throw new Error("Hostname is required");
+    return "https://" + host + p;
+  }
+
+  async function probe(xff) {
+    const path = document.getElementById("path").value.trim() || "/api/ip";
+    const target = url(path);
+    const headers = xff ? { "x-forwarded-for": xff } : {};
+    const label = xff || "(no XFF — peer source)";
+
+    logLine(`GET ${target}  x-forwarded-for: ${label}`, "info");
+    const t0 = performance.now();
+    let status = 0;
+    let bodyHint = "";
+    try {
+      const r = await fetch(target, { headers, credentials: "omit" });
+      status = r.status;
+      try {
+        const t = await r.text();
+        bodyHint = t.length > 120 ? t.slice(0, 120) + "…" : t;
+      } catch (_) { /* ignore */ }
+    } catch (e) {
+      const msg = e.message || String(e);
+      logLine(
+        `Network/CORS error: ${msg} — cross-origin fetch is blocked (these manifests carry no CORS). ` +
+        `Open https://ipfilter.<domain>/ directly (same-origin) or use curl.`,
+        "error"
+      );
+      stats.total++; stats.other++; renderStats();
+      return;
+    }
+    const ms = Math.round(performance.now() - t0);
+
+    stats.total++;
+    let level = "info";
+    if (status === 200) { stats.ok++; level = "success"; }
+    else if (status === 403) { stats.deny++; level = "warn"; }
+    else { stats.other++; level = "error"; }
+    renderStats();
+
+    logLine(`→ ${status} (${ms} ms) ${bodyHint}`, level);
+  }
+
+  // Both variants block 203.0.113.10; the range variant blocks the whole /24.
+  const ALLOWED_IP = "8.8.8.8";
+  const BLOCKED_IP = "203.0.113.10";
+
+  document.getElementById("runCustom").addEventListener("click", () => {
+    const xff = document.getElementById("xff").value.trim();
+    probe(xff);
+  });
+  document.getElementById("runAllowed").addEventListener("click", () => {
+    document.getElementById("xff").value = ALLOWED_IP;
+    probe(ALLOWED_IP);
+  });
+  document.getElementById("runBlocked").addEventListener("click", () => {
+    document.getElementById("xff").value = BLOCKED_IP;
+    probe(BLOCKED_IP);
+  });
+
+  loadRuntimeEnv().then(applyEnvDefaults).finally(() => {
+    renderStats();
+    logLine(
+      "Ready. Apply one manifest (01 single IP, or 02 CIDR range) and run. " +
+      "Same-origin only — otherwise use curl.",
+      "info"
+    );
+  });
+</script>
+</body>
+</html>

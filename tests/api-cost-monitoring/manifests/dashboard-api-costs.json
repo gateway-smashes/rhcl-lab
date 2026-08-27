@@ -1,0 +1,396 @@
+{
+  "__inputs": [],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "9.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus" }
+  ],
+  "id": null,
+  "uid": "rhcl-api-costs",
+  "title": "RHCL API Costs",
+  "description": "Cost monitoring. Cross-references istio_requests_total (per-consumer HTTP calls) with bank_ai_tokens_total (per-consumer AI tokens emitted by banking-api Micrometer counter) and applies a per-1k price to surface monetary cost. Override price_calls_per_1k / price_tokens_per_1k from the dashboard variables.",
+  "tags": ["rhcl", "kuadrant", "cost", "req018"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "1m",
+  "time": { "from": "now-24h", "to": "now" },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "liveNow": false,
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "options": [],
+        "refresh": 1,
+        "skipUrlSync": false
+      },
+      {
+        "name": "currency",
+        "type": "constant",
+        "label": "Currency",
+        "current": { "value": "BRL", "text": "BRL", "selected": true },
+        "query": "BRL",
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "price_calls_per_1k",
+        "type": "textbox",
+        "label": "Price per 1k calls",
+        "current": { "value": "0.10", "text": "0.10", "selected": true },
+        "query": "0.10",
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "price_tokens_per_1k",
+        "type": "textbox",
+        "label": "Price per 1k AI tokens",
+        "current": { "value": "0.20", "text": "0.20", "selected": true },
+        "query": "0.20",
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "range",
+        "type": "textbox",
+        "label": "Window",
+        "current": { "value": "24h", "text": "24h", "selected": true },
+        "query": "24h",
+        "hide": 0,
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Totals (last $range)",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Total cost",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyBRL",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "A",
+          "expr": "(sum(increase(istio_requests_total{reporter=\"source\"}[$range])) / 1000) * ${price_calls_per_1k} + (sum(increase(bank_ai_tokens_total[$range])) / 1000) * ${price_tokens_per_1k}",
+          "legendFormat": "Total"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Total calls",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "options": {
+        "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "A",
+          "expr": "sum(increase(istio_requests_total{reporter=\"source\"}[$range]))",
+          "legendFormat": "Calls"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Total AI tokens",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "options": {
+        "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "purple", "value": null }] } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "A",
+          "expr": "sum(increase(bank_ai_tokens_total[$range]))",
+          "legendFormat": "Tokens"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Distinct consumers",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "options": {
+        "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "A",
+          "expr": "count(sum by (request_headers_x_consumer_id) (increase(istio_requests_total{reporter=\"source\"}[$range])) > 0)",
+          "legendFormat": "Consumers"
+        }
+      ]
+    },
+    {
+      "id": 101,
+      "type": "row",
+      "title": "By consumer",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 }
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Top consumers by cost",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 9, "w": 14, "x": 0, "y": 6 },
+      "options": { "showHeader": true, "sortBy": [{ "displayName": "Cost", "desc": true }] },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Consumer" }, "properties": [{ "id": "custom.width", "value": 280 }] },
+          { "matcher": { "id": "byName", "options": "Cost" }, "properties": [{ "id": "unit", "value": "currencyBRL" }, { "id": "decimals", "value": 2 }] },
+          { "matcher": { "id": "byName", "options": "Calls" }, "properties": [{ "id": "unit", "value": "short" }] },
+          { "matcher": { "id": "byName", "options": "AI tokens" }, "properties": [{ "id": "unit", "value": "short" }] }
+        ]
+      },
+      "transformations": [
+        { "id": "merge", "options": {} },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "request_headers_x_consumer_id": "Consumer",
+              "Value #A": "Calls",
+              "Value #B": "AI tokens",
+              "Value #C": "Cost"
+            }
+          }
+        }
+      ],
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "A",
+          "format": "table",
+          "instant": true,
+          "expr": "sum by (request_headers_x_consumer_id) (increase(istio_requests_total{reporter=\"source\"}[$range]))"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "B",
+          "format": "table",
+          "instant": true,
+          "expr": "sum by (request_headers_x_consumer_id) (label_replace(increase(bank_ai_tokens_total[$range]), \"request_headers_x_consumer_id\", \"$1\", \"consumer_id\", \"(.*)\"))"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "C",
+          "format": "table",
+          "instant": true,
+          "expr": "(sum by (request_headers_x_consumer_id) (increase(istio_requests_total{reporter=\"source\"}[$range])) / 1000) * ${price_calls_per_1k} + (sum by (request_headers_x_consumer_id) (label_replace(increase(bank_ai_tokens_total[$range]), \"request_headers_x_consumer_id\", \"$1\", \"consumer_id\", \"(.*)\")) / 1000) * ${price_tokens_per_1k}"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "piechart",
+      "title": "Calls share by consumer",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 9, "w": 10, "x": 14, "y": 6 },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "right" },
+        "tooltip": { "mode": "single" },
+        "pieType": "donut",
+        "reduceOptions": { "calcs": ["sum"], "fields": "", "values": false }
+      },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" } }, "overrides": [] },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "A",
+          "expr": "sum by (request_headers_x_consumer_id) (increase(istio_requests_total{reporter=\"source\"}[$range]))",
+          "legendFormat": "{{request_headers_x_consumer_id}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 102,
+      "type": "row",
+      "title": "Cost trend",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 }
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Per-minute cost rate",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" },
+          "unit": "currencyBRL"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "A",
+          "expr": "(sum(rate(istio_requests_total{reporter=\"source\"}[5m])) * 60 / 1000) * ${price_calls_per_1k}",
+          "legendFormat": "Calls cost (BRL/min)"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "B",
+          "expr": "(sum(rate(bank_ai_tokens_total[5m])) * 60 / 1000) * ${price_tokens_per_1k}",
+          "legendFormat": "Tokens cost (BRL/min)"
+        }
+      ]
+    },
+    {
+      "id": 103,
+      "type": "row",
+      "title": "Routes & products",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 }
+    },
+    {
+      "id": 30,
+      "type": "table",
+      "title": "Top routes by AI token spend",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 25 },
+      "options": { "showHeader": true, "sortBy": [{ "displayName": "Tokens", "desc": true }] },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Tokens" }, "properties": [{ "id": "unit", "value": "short" }] },
+          { "matcher": { "id": "byName", "options": "Cost" }, "properties": [{ "id": "unit", "value": "currencyBRL" }, { "id": "decimals", "value": 2 }] }
+        ]
+      },
+      "transformations": [
+        { "id": "merge", "options": {} },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "route": "Route",
+              "Value #A": "Tokens",
+              "Value #B": "Cost"
+            }
+          }
+        }
+      ],
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "A",
+          "format": "table",
+          "instant": true,
+          "expr": "sum by (route) (increase(bank_ai_tokens_total[$range]))"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "B",
+          "format": "table",
+          "instant": true,
+          "expr": "(sum by (route) (increase(bank_ai_tokens_total[$range])) / 1000) * ${price_tokens_per_1k}"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "type": "table",
+      "title": "Cost by APIProduct (via destination_service)",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 25 },
+      "options": { "showHeader": true, "sortBy": [{ "displayName": "Cost", "desc": true }] },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Calls" }, "properties": [{ "id": "unit", "value": "short" }] },
+          { "matcher": { "id": "byName", "options": "Cost" }, "properties": [{ "id": "unit", "value": "currencyBRL" }, { "id": "decimals", "value": 2 }] }
+        ]
+      },
+      "transformations": [
+        { "id": "merge", "options": {} },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "destination_service_name": "Service",
+              "Value #A": "Calls",
+              "Value #B": "Cost"
+            }
+          }
+        }
+      ],
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "A",
+          "format": "table",
+          "instant": true,
+          "expr": "sum by (destination_service_name) (increase(istio_requests_total{reporter=\"source\"}[$range]))"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "refId": "B",
+          "format": "table",
+          "instant": true,
+          "expr": "(sum by (destination_service_name) (increase(istio_requests_total{reporter=\"source\"}[$range])) / 1000) * ${price_calls_per_1k}"
+        }
+      ]
+    }
+  ]
+}

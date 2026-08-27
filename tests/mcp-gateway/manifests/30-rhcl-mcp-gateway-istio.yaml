@@ -1,0 +1,33 @@
+# Dedicated Istio Gateway for MCP (GatewayClass `istio` — Sail/OSSM3, BB lab).
+# Do not apply 30-gateway-istio-compat-service.yaml: the controller creates
+# Service rhcl-mcp-gateway-istio automatically.
+#
+#   export RHCL_ZONE_ROOT_DOMAIN=pocrhcl.redhat.lab.example.com
+#   export MCP_GATEWAY_SERVICE_TYPE=ClusterIP
+#   envsubst < tests/mcp-gateway/manifests/30-rhcl-mcp-gateway-istio.yaml | oc apply -f -
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: rhcl-mcp-gateway
+  namespace: mcp-gateway
+  labels:
+    rhcl-lab/requirement: req059-mcp-operator
+  annotations:
+    networking.istio.io/service-type: ${MCP_GATEWAY_SERVICE_TYPE}
+spec:
+  gatewayClassName: istio
+  listeners:
+    - name: mcp
+      hostname: mcp-gateway.${RHCL_ZONE_ROOT_DOMAIN}
+      port: 8080
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: mcps
+      hostname: banking-api-mcp-server.${RHCL_ZONE_ROOT_DOMAIN}
+      port: 8080
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: All

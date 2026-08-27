@@ -1,0 +1,8 @@
+apiVersion: psc.example.com/v1
+kind: DnsIngress
+metadata:
+  name: req051-untrusted
+  namespace: req051-gateway
+spec:
+  hostname: req051-untrusted.${RHCL_ZONE_ROOT_DOMAIN}
+  ingressClass: nginx

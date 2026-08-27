@@ -1,0 +1,37 @@
+# Gateway with an HTTPS listener on port 443. The certificate referenced by
+# `tls.certificateRefs[0]` does NOT need to exist before the TLSPolicy is
+# applied — Kuadrant + cert-manager will create the Certificate and populate
+# the Secret with that exact name.
+#
+# Replace the hostname with one of the cluster's apps domains:
+#   echo "*.apps.$(oc get dns cluster -o jsonpath='{.spec.baseDomain}')"
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: req55-gateway
+  namespace: req55-gateway
+  labels:
+    kuadrant.io/gateway: "true"
+    app.kubernetes.io/part-of: rhcl-req55-tls
+spec:
+  gatewayClassName: istio
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      hostname: "*.apps.example.com"
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: https
+      port: 443
+      protocol: HTTPS
+      hostname: "*.apps.example.com"
+      allowedRoutes:
+        namespaces:
+          from: All
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: req55-gateway-tls
+            kind: Secret

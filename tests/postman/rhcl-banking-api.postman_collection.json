@@ -1,15 +1,15 @@
 {
   "info": {
     "name": "RHCL Banking API (Gateway)",
-    "description": "Endpoints da banking-api expostos pelo Kuadrant Gateway. Autenticação via API key no header `api-key`. Configure as variáveis de ambiente `gateway_host` e `api_key` antes de executar.",
+    "description": "banking-api endpoints exposed by the Kuadrant Gateway. Authentication via API key in the `api-key` header. Set the `gateway_host` and `api_key` environment variables before running.",
     "_postman_id": "rhcl-banking-api-collection",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     {
       "key": "gateway_host",
-      "value": "banking-api-connectivity.apps.cluster-qrqbr.qrqbr.sandbox1142.opentlc.com",
-      "description": "Hostname do gateway (sem scheme). Substitua pelo domínio do seu cluster."
+      "value": "banking-api-connectivity.apps.example.com",
+      "description": "Gateway hostname (no scheme). Replace with your cluster domain."
     },
     {
       "key": "api_key",
@@ -36,7 +36,7 @@
               "host": ["{{gateway_host}}"],
               "path": ["api", "v1", "accounts", "summary"]
             },
-            "description": "Resumo das contas — backend v1. Retorna saldo, investimentos e features disponíveis."
+            "description": "Account summary — backend v1. Returns balance, investments and available features."
           }
         },
         {
@@ -77,13 +77,13 @@
               "host": ["{{gateway_host}}"],
               "path": ["api", "v1", "accounts", "reset"]
             },
-            "description": "Reseta o saldo de uma conta bancária específica no backend v1. Requer `bankName` no body."
+            "description": "Resets the balance of a specific bank account on backend v1. Requires `bankName` in the body."
           }
         }
       ]
     },
     {
-      "name": "Banking — Transferências",
+      "name": "Banking — Transfers",
       "item": [
         {
           "name": "POST /api/v1/transfers",
@@ -96,7 +96,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"from\": \"Example Bank\",\n  \"to\": \"Beta Bank\",\n  \"amount\": 150.00\n}",
+              "raw": "{\n  \"from\": \"Example Bank\",\n  \"to\": \"Nubank\",\n  \"amount\": 150.00\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
@@ -105,7 +105,7 @@
               "host": ["{{gateway_host}}"],
               "path": ["api", "v1", "transfers"]
             },
-            "description": "Realiza uma transferência — backend v1. Retorna status `RECEIVED`."
+            "description": "Makes a transfer — backend v1. Returns status `RECEIVED`."
           }
         },
         {
@@ -119,7 +119,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"from\": \"Example Bank\",\n  \"to\": \"Beta Bank\",\n  \"amount\": 150.00\n}",
+              "raw": "{\n  \"from\": \"Example Bank\",\n  \"to\": \"Nubank\",\n  \"amount\": 150.00\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
@@ -128,7 +128,7 @@
               "host": ["{{gateway_host}}"],
               "path": ["api", "v2", "transfers"]
             },
-            "description": "Realiza uma transferência — backend v2. Retorna status `AUTHORIZED`."
+            "description": "Makes a transfer — backend v2. Returns status `AUTHORIZED`."
           }
         }
       ]
@@ -215,7 +215,7 @@
               "host": ["{{gateway_host}}"],
               "path": ["api", "tls", "info"]
             },
-            "description": "Informações sobre o certificado TLS e protocolo negociado na conexão com o backend."
+            "description": "Information about the TLS certificate and protocol negotiated on the connection to the backend."
           }
         }
       ]
@@ -247,7 +247,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"model\": \"banking-mock-gpt\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Qual é o saldo total das minhas contas?\" }\n  ],\n  \"stream\": false\n}",
+              "raw": "{\n  \"model\": \"banking-mock-gpt\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"What is the total balance of my accounts?\" }\n  ],\n  \"stream\": false\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
@@ -270,7 +270,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"model\": \"banking-mock-gpt\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Resuma minha situação financeira.\" }\n  ],\n  \"stream\": true\n}",
+              "raw": "{\n  \"model\": \"banking-mock-gpt\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Summarize my financial situation.\" }\n  ],\n  \"stream\": true\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
@@ -341,7 +341,7 @@
                 }
               ]
             },
-            "description": "Endpoint com falha aleatória. Retorna 200 ou 500 com base no `failRate`."
+            "description": "Endpoint with random failure. Returns 200 or 500 based on `failRate`."
           }
         },
         {
@@ -373,13 +373,13 @@
                 }
               ]
             },
-            "description": "Retorna o status HTTP especificado após o delay. Útil para testar circuit breakers e timeouts."
+            "description": "Returns the specified HTTP status after the delay. Useful for testing circuit breakers and timeouts."
           }
         }
       ]
     },
     {
-      "name": "Auth — Validação",
+      "name": "Auth — Validation",
       "item": [
         {
           "name": "GET sem API key (401 esperado)",
@@ -394,11 +394,11 @@
               "host": ["{{gateway_host}}"],
               "path": ["api", "v1", "accounts", "summary"]
             },
-            "description": "Valida que o gateway retorna 401 quando a API key está ausente."
+            "description": "Validates that the gateway returns 401 when the API key is absent."
           }
         },
         {
-          "name": "GET com API key inválida (401 esperado)",
+          "name": "GET with an invalid API key (401 expected)",
           "request": {
             "method": "GET",
             "header": [
@@ -411,7 +411,7 @@
               "host": ["{{gateway_host}}"],
               "path": ["api", "v1", "accounts", "summary"]
             },
-            "description": "Valida que o Authorino rejeita API keys inválidas com 401."
+            "description": "Validates that Authorino rejects invalid API keys with 401."
           }
         }
       ]

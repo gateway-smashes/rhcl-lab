@@ -1,0 +1,779 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RHCL Lab — REQ 23 / 46: WebSockets para APIs em tempo real</title>
+<style>
+  :root {
+    --rh-red: #EE0000;
+    --rh-red-dark: #A30000;
+    --rh-black: #151515;
+    --rh-gray-100: #F5F5F5;
+    --rh-gray-200: #E0E0E0;
+    --rh-gray-700: #4D4D4D;
+    --rh-success: #3E8635;
+    --rh-warn: #F0AB00;
+    --rh-info: #2B9AF3;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: "Red Hat Display", "Red Hat Text", -apple-system, BlinkMacSystemFont,
+            "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    color: var(--rh-black);
+    background: var(--rh-gray-100);
+    line-height: 1.45;
+  }
+  header.rh-header {
+    background: var(--rh-black);
+    color: #fff;
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 4px solid var(--rh-red);
+  }
+  header.rh-header .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: 0.5px;
+    color: inherit;
+    text-decoration: none;
+  }
+  header.rh-header a.logo:hover { color: var(--rh-red); }
+  header.rh-header a.logo:focus-visible {
+    outline: 2px solid var(--rh-red);
+    outline-offset: 4px;
+    border-radius: 2px;
+  }
+  header.rh-header .title {
+    margin-left: auto;
+    font-size: 14px;
+    color: #cfcfcf;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px;
+  }
+  h1 { font-size: 28px; margin: 0 0 4px 0; }
+  h2 {
+    font-size: 16px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--rh-gray-700);
+    margin: 32px 0 12px 0;
+    border-bottom: 1px solid var(--rh-gray-200);
+    padding-bottom: 8px;
+  }
+  .subtitle { color: var(--rh-gray-700); margin: 0 0 24px 0; }
+  .panel {
+    background: #fff;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 4px;
+    padding: 20px;
+  }
+  .panel + .panel { margin-top: 16px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .row + .row { margin-top: 12px; }
+  label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--rh-gray-700);
+    display: block;
+    margin-bottom: 4px;
+  }
+  input[type="text"], input[type="url"], select, textarea {
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 8px 10px;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 3px;
+    background: #fff;
+    color: var(--rh-black);
+    flex: 1;
+    min-width: 280px;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: 2px solid var(--rh-red);
+    outline-offset: -1px;
+    border-color: var(--rh-red);
+  }
+  button {
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    padding: 8px 16px;
+    border: 1px solid var(--rh-red);
+    background: var(--rh-red);
+    color: #fff;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  button:hover { background: var(--rh-red-dark); border-color: var(--rh-red-dark); }
+  button.secondary {
+    background: #fff;
+    color: var(--rh-black);
+    border-color: var(--rh-gray-200);
+  }
+  button.secondary:hover { background: var(--rh-gray-100); }
+  button.preset {
+    background: #fff;
+    color: var(--rh-black);
+    border-color: var(--rh-gray-200);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+  button.preset:hover { background: var(--rh-gray-100); border-color: var(--rh-red); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .log {
+    background: var(--rh-black);
+    color: #e8e8e8;
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 16px;
+    border-radius: 3px;
+    max-height: 520px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .log .entry { padding: 4px 0; border-bottom: 1px solid #2a2a2a; }
+  .log .entry:last-child { border-bottom: none; }
+  .log .ts { color: #6a6a6a; margin-right: 8px; }
+  .log .lvl { font-weight: 700; margin-right: 8px; }
+  .log .lvl.info    { color: var(--rh-info); }
+  .log .lvl.success { color: #6EC664; }
+  .log .lvl.warn    { color: var(--rh-warn); }
+  .log .lvl.error   { color: #F87171; }
+
+  .callout {
+    background: #FFF8E1;
+    border-left: 4px solid var(--rh-warn);
+    padding: 12px 16px;
+    font-size: 13px;
+    margin: 16px 0;
+  }
+  .callout strong { color: var(--rh-red-dark); }
+  .callout code {
+    font-family: var(--mono);
+    background: rgba(0,0,0,.06);
+    padding: 1px 4px;
+    border-radius: 2px;
+  }
+
+  pre.scenario, pre.curl {
+    background: var(--rh-gray-100);
+    border: 1px solid var(--rh-gray-200);
+    padding: 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    overflow-x: auto;
+    margin: 0;
+  }
+  pre.curl { background: #1f1f1f; color: #e8e8e8; border-color: #1f1f1f; }
+
+  .curl-block { position: relative; margin-top: 8px; }
+  .curl-block .copy {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 11px;
+    padding: 4px 8px;
+    background: #fff;
+    color: var(--rh-black);
+    border: 1px solid var(--rh-gray-200);
+  }
+  .curl-block .copy:hover { background: var(--rh-gray-100); border-color: var(--rh-red); }
+
+  .badge {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--rh-gray-100);
+    border: 1px solid var(--rh-gray-200);
+    padding: 2px 8px;
+    border-radius: 12px;
+    color: var(--rh-gray-700);
+    margin-left: 8px;
+  }
+  .badge.ok { background: #E6F4E5; color: #1E5E1A; border-color: #B5DBB1; }
+  .badge.bad { background: #FBE5E5; color: #7A1212; border-color: #F2B8B8; }
+  .badge.pending { background: #FFF3CD; color: #856404; border-color: #FFE69C; }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+  }
+  .card-title {
+    font-weight: 700;
+    font-size: 13px;
+    margin-bottom: 8px;
+    color: var(--rh-black);
+  }
+  .kv {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--rh-gray-700);
+  }
+  .kv b { color: var(--rh-black); font-weight: 600; }
+
+  .stage-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 8px 0;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .stage-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid #ccc;
+    background: transparent;
+  }
+  .stage-dot.reached { border-color: var(--rh-success); background: var(--rh-success); }
+  .stage-dot.current { border-color: var(--rh-warn); background: var(--rh-warn); }
+  .stage-arrow { color: #ccc; font-size: 14px; }
+  .stage-label { font-size: 12px; color: var(--rh-gray-700); }
+  .stage-label.active { color: var(--rh-black); font-weight: 700; }
+
+  footer {
+    max-width: 1100px;
+    margin: 32px auto;
+    padding: 0 32px;
+    color: var(--rh-gray-700);
+    font-size: 12px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header class="rh-header">
+  <a class="logo" href="/" aria-label="Back to the tests catalog">
+    <svg width="36" height="28" viewBox="0 0 36 28" xmlns="http://www.w3.org/2000/svg" aria-label="Red Hat">
+      <path fill="#EE0000" d="M26 14c2.5 0 5 .8 5 3 0 .8-.3 1.4-.7 2H5.7c-.4-.6-.7-1.2-.7-2 0-2.2 2.5-3 5-3 0-3 3-7 8-7 2 0 3 1 4 1 1.5 0 2-1 3.5-1 1 0 2 1 2 3 0 2-1 4-1.5 4z"/>
+      <rect x="3" y="20" width="30" height="4" rx="1" fill="#151515"/>
+    </svg>
+    RHCL Lab
+  </a>
+  <div class="title">REQ 23 / 46</div>
+</header>
+
+<main>
+  <h1>
+    WebSockets para APIs em tempo real
+    <span class="badge" id="wsBadge">disconnected</span>
+  </h1>
+  <p class="subtitle">
+    Demonstrates that RHCL routes <strong>WebSocket</strong> traffic between
+    the frontend and backend, enabling real-time balance and transfer-status
+    updates.
+  </p>
+
+  <h2>Scenario</h2>
+  <div class="panel">
+    <pre class="scenario">
+[ Frontend / Browser ]                  [ RHCL / Gateway (Istio) ]            [ Backend (Quarkus) ]
+        |                                          |                                  |
+        |  GET /ws/live HTTP/1.1                   |                                  |
+        |  Upgrade: websocket                      |                                  |
+        |  Connection: Upgrade                     |                                  |
+        | ---------------------------------------->|  HTTPRoute match: /ws             |
+        |                                          | -------------------------------->|
+        |                                          |  HTTP/1.1 101 Switching Protocols |
+        |                                          |<---------------------------------|
+        |  101 Switching Protocols                 |                                  |
+        |<-----------------------------------------|                                  |
+        |                                          |                                  |
+        |  ===== WebSocket connection open =====   |                                  |
+        |                                          |                                  |
+        |          { "type": "backend.health" }    |                                  |
+        |<=========================================|<=================================|
+        |    { "type": "transfer.pending" }        |                                  |
+        |<=========================================|<=================================|
+        |    { "type": "transfer.processing" }     |                                  |
+        |<=========================================|<=================================|
+        |    { "type": "transfer.completed" }      |                                  |
+        |<=========================================|<=================================|
+        |    { "type": "balance.updated" }         |                                  |
+        |<=========================================|<=================================|
+    </pre>
+    <div class="callout">
+      <strong>HTTPRoute required.</strong> The <code>/ws</code> path must be
+      mapped in the gateway <code>HTTPRoute</code>. Without that rule, Istio
+      rejects the connection before the HTTP → WebSocket upgrade happens —
+      resulting in <code>WebSocket connection failed</code> in the browser
+      console.
+    </div>
+  </div>
+
+  <h2>WebSocket connection</h2>
+  <div class="panel" id="controls">
+    <div class="row">
+      <div style="flex:1; min-width:280px;">
+        <label for="wsUrl">WebSocket URL</label>
+        <input id="wsUrl" type="url" value="ws://localhost:8080/ws/live" />
+      </div>
+      <div style="align-self:flex-end;">
+        <button id="connectBtn">Connect</button>
+        <button class="secondary" id="disconnectBtn" disabled>Disconnect</button>
+        <button class="secondary" id="clearLogButton">Clear log</button>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:16px;">
+      <label style="margin:0; align-self:center;">Presets:</label>
+      <button class="preset" data-ws="ws://localhost:8080/ws/live">
+        Direct → localhost:8080
+      </button>
+      <button class="preset" data-ws="" id="presetGateway" disabled title="Set the Gateway URL below first">
+        Via RHCL Gateway (set below)
+      </button>
+    </div>
+
+    <div class="row" style="margin-top:16px;">
+      <div style="flex:1; min-width:280px;">
+        <label for="gatewayBaseUrl">RHCL Gateway base URL (HTTPS)</label>
+        <input id="gatewayBaseUrl" type="url" placeholder="https://banking-api-connectivity.apps.example.com" />
+      </div>
+      <div style="align-self:flex-end;">
+        <button class="secondary" id="saveGatewayBtn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <h2>Transfer trigger</h2>
+  <div class="panel">
+    <div class="row">
+      <div style="flex:1; min-width:280px;">
+        <label for="transferUrl">Transfer endpoint (REST)</label>
+        <input id="transferUrl" type="url" value="http://localhost:8080/api/v1/transfers" />
+      </div>
+      <div style="align-self:flex-end;">
+        <button class="secondary" id="transferBtn">Send transfer</button>
+      </div>
+    </div>
+    <div class="callout" style="margin-bottom:0;">
+      Trigger a transfer via REST API to generate WebSocket events. The
+      backend will broadcast <code>transfer.pending</code> →
+      <code>transfer.processing</code> → <code>transfer.completed</code> →
+      <code>balance.updated</code> through the WebSocket connection above.
+    </div>
+  </div>
+
+  <h2>Real-time transfer status</h2>
+  <div class="panel">
+    <div class="stage-row" id="stageRow">
+      <span class="stage-dot" id="dot-pending"></span>
+      <span class="stage-label" id="lbl-pending">PENDING</span>
+      <span class="stage-arrow">→</span>
+      <span class="stage-dot" id="dot-processing"></span>
+      <span class="stage-label" id="lbl-processing">PROCESSING</span>
+      <span class="stage-arrow">→</span>
+      <span class="stage-dot" id="dot-completed"></span>
+      <span class="stage-label" id="lbl-completed">COMPLETED</span>
+      <span class="stage-arrow">→</span>
+      <span class="stage-dot" id="dot-balance"></span>
+      <span class="stage-label" id="lbl-balance">BALANCE UPDATED</span>
+    </div>
+    <div class="kv" id="transferDetail">(waiting for transfer events...)</div>
+  </div>
+
+  <h2>WebSocket message log</h2>
+  <div class="log" id="log" aria-live="polite"></div>
+
+  <h2>Connection details</h2>
+  <div class="panel grid-2">
+    <div>
+      <div class="card-title">WebSocket state</div>
+      <div class="kv" id="wsState">
+        <div><b>status:</b> disconnected</div>
+        <div><b>messages received:</b> 0</div>
+        <div><b>connected at:</b> —</div>
+      </div>
+    </div>
+    <div>
+      <div class="card-title">Last event</div>
+      <div class="kv" id="lastEvent">(no events yet)</div>
+    </div>
+  </div>
+
+  <h2>Shell verification commands</h2>
+  <div class="panel">
+    <p style="margin-top:0;">
+      Copy and run these commands from a terminal to test the WebSocket
+      connection independently from the browser.
+    </p>
+
+    <div class="card-title" style="margin-top:12px;">websocat (recommended)</div>
+    <div class="curl-block">
+      <pre class="curl" id="cmdWebsocat"></pre>
+      <button class="copy" data-target="cmdWebsocat">Copy</button>
+    </div>
+
+    <div class="card-title" style="margin-top:16px;">wscat (Node.js)</div>
+    <div class="curl-block">
+      <pre class="curl" id="cmdWscat"></pre>
+      <button class="copy" data-target="cmdWscat">Copy</button>
+    </div>
+
+    <div class="card-title" style="margin-top:16px;">curl — verify HTTP upgrade handshake</div>
+    <div class="curl-block">
+      <pre class="curl" id="cmdCurl"></pre>
+      <button class="copy" data-target="cmdCurl">Copy</button>
+    </div>
+
+    <div class="callout" style="margin-top:16px;">
+      <strong>What success looks like.</strong> The <code>websocat</code>/<code>wscat</code>
+      commands should print JSON messages every second (<code>backend.health</code>
+      heartbeats). After triggering a transfer, you should see
+      <code>transfer.pending</code>, <code>transfer.processing</code>,
+      <code>transfer.completed</code>, and <code>balance.updated</code> events
+      streamed in sequence. The <code>curl</code> command should return
+      <code>HTTP/1.1 101 Switching Protocols</code>.
+    </div>
+  </div>
+</main>
+
+<footer>
+  RHCL Lab — REQ 23 / 46 · WebSockets para APIs em tempo real
+</footer>
+
+<script>
+  const logEl = document.getElementById("log");
+  const wsUrlInput = document.getElementById("wsUrl");
+  const gatewayInput = document.getElementById("gatewayBaseUrl");
+  const transferUrlInput = document.getElementById("transferUrl");
+  const connectBtn = document.getElementById("connectBtn");
+  const disconnectBtn = document.getElementById("disconnectBtn");
+  const wsBadge = document.getElementById("wsBadge");
+  const wsStateEl = document.getElementById("wsState");
+  const lastEventEl = document.getElementById("lastEvent");
+  const transferDetailEl = document.getElementById("transferDetail");
+  const presetGatewayBtn = document.getElementById("presetGateway");
+
+  let ws = null;
+  let msgCount = 0;
+  let connectedAt = null;
+
+  // ---- helpers --------------------------------------------------------------
+  function logLine(message, level = "info") {
+    const ts = new Date().toISOString().split("T")[1].replace("Z", "");
+    const entry = document.createElement("div");
+    entry.className = "entry";
+    entry.innerHTML =
+      `<span class="ts">${ts}</span>` +
+      `<span class="lvl ${level}">${level.toUpperCase()}</span>` +
+      escapeHtml(message);
+    logEl.appendChild(entry);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function escapeHtml(s) {
+    return String(s)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+  }
+
+  // ---- badge / state display ------------------------------------------------
+  function setBadge(state) {
+    wsBadge.textContent = state;
+    wsBadge.className = "badge";
+    if (state === "connected") wsBadge.classList.add("ok");
+    else if (state === "connecting") wsBadge.classList.add("pending");
+    else wsBadge.classList.add("bad");
+  }
+
+  function updateStatePanel() {
+    wsStateEl.innerHTML = `
+      <div><b>status:</b> ${ws ? (ws.readyState === 1 ? "OPEN" : "CONNECTING") : "CLOSED"}</div>
+      <div><b>messages received:</b> ${msgCount}</div>
+      <div><b>connected at:</b> ${connectedAt || "—"}</div>
+      <div><b>url:</b> ${ws ? escapeHtml(ws.url) : "—"}</div>
+    `;
+  }
+
+  // ---- transfer stage indicators --------------------------------------------
+  const stages = ["pending", "processing", "completed", "balance"];
+  const stageTypeMap = {
+    "transfer.pending": "pending",
+    "transfer.processing": "processing",
+    "transfer.completed": "completed",
+    "balance.updated": "balance",
+  };
+
+  function resetStages() {
+    stages.forEach((s) => {
+      document.getElementById("dot-" + s).className = "stage-dot";
+      document.getElementById("lbl-" + s).className = "stage-label";
+    });
+    transferDetailEl.textContent = "(waiting for transfer events...)";
+  }
+
+  function advanceStage(type, payload) {
+    const stage = stageTypeMap[type];
+    if (!stage) return;
+
+    const idx = stages.indexOf(stage);
+    stages.forEach((s, i) => {
+      const dot = document.getElementById("dot-" + s);
+      const lbl = document.getElementById("lbl-" + s);
+      dot.className = "stage-dot";
+      lbl.className = "stage-label";
+      if (i < idx) {
+        dot.classList.add("reached");
+      } else if (i === idx) {
+        dot.classList.add("current");
+        lbl.classList.add("active");
+      }
+    });
+
+    const details = [];
+    if (payload.transferId) details.push("transferId: " + payload.transferId);
+    if (payload.amount !== undefined) details.push("amount: R$ " + payload.amount);
+    if (payload.fromBank) details.push("from: " + payload.fromBank);
+    if (payload.toBank) details.push("to: " + payload.toBank);
+    if (payload.accountTotal !== undefined) details.push("accountTotal: R$ " + payload.accountTotal);
+    transferDetailEl.textContent = details.join(" · ") || type;
+  }
+
+  // ---- WebSocket connection -------------------------------------------------
+  function doConnect() {
+    const url = wsUrlInput.value.trim();
+    if (!url) { logLine("WebSocket URL is empty.", "warn"); return; }
+
+    if (ws) {
+      ws.close();
+      ws = null;
+    }
+
+    msgCount = 0;
+    connectedAt = null;
+    resetStages();
+    setBadge("connecting");
+    logLine("Connecting to " + url + " ...", "info");
+
+    try {
+      ws = new WebSocket(url);
+    } catch (err) {
+      logLine("Failed to create WebSocket: " + err.message, "error");
+      setBadge("error");
+      updateStatePanel();
+      return;
+    }
+
+    ws.onopen = function () {
+      connectedAt = new Date().toISOString();
+      setBadge("connected");
+      connectBtn.disabled = true;
+      disconnectBtn.disabled = false;
+      logLine("WebSocket OPEN — connection established.", "success");
+      updateStatePanel();
+    };
+
+    ws.onclose = function (ev) {
+      setBadge("disconnected");
+      connectBtn.disabled = false;
+      disconnectBtn.disabled = true;
+      logLine("WebSocket CLOSED (code: " + ev.code + ", reason: " + (ev.reason || "none") + ")", "warn");
+      updateStatePanel();
+      ws = null;
+    };
+
+    ws.onerror = function () {
+      logLine("WebSocket ERROR — check the console for details. Common cause: /ws path not in HTTPRoute.", "error");
+      setBadge("error");
+      updateStatePanel();
+    };
+
+    ws.onmessage = function (ev) {
+      msgCount++;
+      updateStatePanel();
+
+      let payload;
+      try {
+        payload = JSON.parse(ev.data);
+      } catch {
+        logLine("RAW: " + ev.data, "info");
+        return;
+      }
+
+      const type = payload.type || "unknown";
+
+      if (type === "backend.health") {
+        logLine("♥ heartbeat — instance: " + (payload.instance || "?"), "info");
+        return;
+      }
+
+      const level = type.startsWith("transfer.") || type === "balance.updated" ? "success" : "info";
+      const summary = JSON.stringify(payload, null, 2);
+      logLine(type + " — " + summary, level);
+
+      advanceStage(type, payload);
+
+      const rows = Object.entries(payload)
+        .map(([k, v]) => `<div><b>${escapeHtml(k)}:</b> ${escapeHtml(JSON.stringify(v))}</div>`)
+        .join("");
+      lastEventEl.innerHTML = rows;
+    };
+
+    updateStatePanel();
+  }
+
+  function doDisconnect() {
+    if (ws) {
+      ws.close();
+      logLine("Disconnect requested.", "info");
+    }
+  }
+
+  connectBtn.addEventListener("click", doConnect);
+  disconnectBtn.addEventListener("click", doDisconnect);
+
+  // ---- presets --------------------------------------------------------------
+  document.querySelectorAll("button.preset[data-ws]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const url = btn.dataset.ws;
+      if (!url) return;
+      wsUrlInput.value = url;
+      refreshShellCommands();
+      logLine("Preset selected: " + url, "info");
+    });
+  });
+
+  const STORAGE_KEY = "rhcl.req023.gatewayBaseUrl";
+  const savedGateway = localStorage.getItem(STORAGE_KEY);
+  if (savedGateway) {
+    gatewayInput.value = savedGateway;
+    applyGatewayUrl(savedGateway);
+  }
+
+  document.getElementById("saveGatewayBtn").addEventListener("click", () => {
+    const v = gatewayInput.value.trim().replace(/\/+$/, "");
+    if (!v) {
+      localStorage.removeItem(STORAGE_KEY);
+      presetGatewayBtn.dataset.ws = "";
+      presetGatewayBtn.disabled = true;
+      presetGatewayBtn.title = "Set the Gateway URL below first";
+      logLine("Gateway URL cleared.", "warn");
+      return;
+    }
+    localStorage.setItem(STORAGE_KEY, v);
+    applyGatewayUrl(v);
+    logLine("Gateway URL saved: " + v, "success");
+  });
+
+  function applyGatewayUrl(baseUrl) {
+    const scheme = baseUrl.startsWith("https://") ? "wss" : "ws";
+    const stripped = baseUrl.replace(/^https?:\/\//, "");
+    const wsUrl = scheme + "://" + stripped + "/ws/live";
+    presetGatewayBtn.dataset.ws = wsUrl;
+    presetGatewayBtn.disabled = false;
+    presetGatewayBtn.title = wsUrl;
+
+    const transferBase = baseUrl + "/api/v1/transfers";
+    transferUrlInput.value = transferBase;
+  }
+
+  document.getElementById("clearLogButton").addEventListener("click", () => {
+    logEl.innerHTML = "";
+  });
+
+  // ---- copy buttons ---------------------------------------------------------
+  document.querySelectorAll("button.copy").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.target;
+      const txt = document.getElementById(id)?.textContent || "";
+      try {
+        await navigator.clipboard.writeText(txt);
+        const old = btn.textContent;
+        btn.textContent = "Copied!";
+        setTimeout(() => (btn.textContent = old), 1200);
+      } catch {
+        logLine("Clipboard copy failed — select the text manually.", "warn");
+      }
+    });
+  });
+
+  // ---- trigger transfer via REST --------------------------------------------
+  document.getElementById("transferBtn").addEventListener("click", async () => {
+    const url = transferUrlInput.value.trim();
+    if (!url) { logLine("Transfer URL is empty.", "warn"); return; }
+
+    const amounts = [500, 1000, 5000];
+    const amount = amounts[Math.floor(Math.random() * amounts.length)];
+    const traceId = "poc-" + Date.now() + "-" + String(Math.floor(Math.random() * 99999)).padStart(5, "0");
+
+    logLine("POST " + url + " (amount: R$ " + amount + ")", "info");
+    resetStages();
+
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-flow-trace-id": traceId,
+          "x-client-app": "rhcl-req023-poc",
+        },
+        body: JSON.stringify({
+          fromBank: "Example Bank",
+          toBank: "EXTERNAL",
+          amount: amount,
+          description: "REQ 23/46 WebSocket PoC transfer",
+          clientTraceId: traceId,
+        }),
+      });
+      const body = await res.text();
+      logLine("Transfer response: " + res.status + " " + res.statusText, res.ok ? "success" : "warn");
+      logLine("Body: " + body, "info");
+      logLine("Watch the WebSocket log above for real-time lifecycle events.", "info");
+    } catch (err) {
+      logLine("Transfer failed: " + err.name + ": " + err.message, "error");
+    }
+  });
+
+  // ---- shell commands -------------------------------------------------------
+  function refreshShellCommands() {
+    const url = wsUrlInput.value.trim() || "ws://localhost:8080/ws/live";
+    const httpUrl = url.replace(/^ws:/, "http:").replace(/^wss:/, "https:");
+
+    document.getElementById("cmdWebsocat").textContent =
+`# Connect to WebSocket and print received messages
+websocat ${url}`;
+
+    document.getElementById("cmdWscat").textContent =
+`# Install (requires Node.js): npm install -g wscat
+wscat -c ${url}`;
+
+    document.getElementById("cmdCurl").textContent =
+`# Verify that the gateway accepts the WebSocket upgrade.
+# Expected: HTTP/1.1 101 Switching Protocols
+curl -iv --no-buffer \\
+  -H "Connection: Upgrade" \\
+  -H "Upgrade: websocket" \\
+  -H "Sec-WebSocket-Version: 13" \\
+  -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \\
+  ${httpUrl}`;
+  }
+  wsUrlInput.addEventListener("input", refreshShellCommands);
+  refreshShellCommands();
+
+  logLine("Page loaded. Enter a WebSocket URL and click Connect to start.", "info");
+  logLine("Use the preset buttons to quickly switch between direct and RHCL Gateway.", "info");
+</script>
+</body>
+</html>

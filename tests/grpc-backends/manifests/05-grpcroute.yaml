@@ -1,0 +1,63 @@
+# GRPCRoute for req048 — idiomatic gRPC routing via the RHCL gateway.
+#
+# Exemplo COMPLEMENTAR ao 04-httproute.yaml. Diferente do HTTPRoute, que
+# routes gRPC as generic HTTP (PathPrefix /), GRPCRoute matches
+# by gRPC service/method (rules.matches.method) and guarantees HTTP/2
+# HTTP/2 fim-a-fim por contrato da Gateway API (trailers com grpc-status,
+# semantics (no upgrade from HTTP/1.1).
+#
+# Coexistence: uses its own hostname/listener (req048-grpcroute) because the
+# spec da Gateway API aceita apenas UMA rota (a mais antiga) quando um
+# HTTPRoute e um GRPCRoute com hostnames intersectantes compartilham o
+# mesmo listener.
+#
+# RHCL 1.3.5 limitation: AuthPolicy/RateLimitPolicy cannot target a
+# GRPCRoute (targetRef aceita apenas Gateway e HTTPRoute) e o wasm-shim
+# Kuadrant's enforcement is only generated from HTTPRoutes — this GRPCRoute's
+# traffic does NOT go through Kuadrant policies (not even the gateway
+# deny-all). For gRPC with Kuadrant governance, use the HTTPRoute.
+#
+# Placeholders substituted by the apply-grpcroute.sh script via sed:
+#   {{ namespace }}         → req048-grpc
+#   {{ gateway_name }}      → nome do gateway detectado
+#   {{ gateway_namespace }} → openshift-ingress
+#   {{ hostname }}          → req048-grpcroute.<CLUSTER_DOMAIN>
+apiVersion: gateway.networking.k8s.io/v1
+kind: GRPCRoute
+metadata:
+  name: req048-grpcroute
+  namespace: {{ namespace }}
+  labels:
+    app.kubernetes.io/part-of: req048-grpc-backend
+    rhcl.poc/item: "48"
+spec:
+  parentRefs:
+  - name: {{ gateway_name }}
+    namespace: {{ gateway_namespace }}
+    sectionName: req048-grpcroute
+  hostnames:
+  - "{{ hostname }}"
+  rules:
+  # Business service: matches all BankingService methods
+  # (GetSummary, StreamHealth, EchoStream). To route a specific
+  # method, add "method: GetSummary" to the match.
+  - matches:
+    - method:
+        service: io.gatewaysmashes.rhcl.grpc.BankingService
+    backendRefs:
+    - name: req048-grpc-backend
+      port: 8080
+  # Infrastructure services: reflection (grpcurl list) and health.
+  # GRPCRoute matching is explicit per service — calls to services
+  # that match no rule are rejected by the gateway (the client
+  # gRPC recebe UNIMPLEMENTED).
+  - matches:
+    - method:
+        service: grpc.reflection.v1.ServerReflection
+    - method:
+        service: grpc.reflection.v1alpha.ServerReflection
+    - method:
+        service: grpc.health.v1.Health
+    backendRefs:
+    - name: req048-grpc-backend
+      port: 8080

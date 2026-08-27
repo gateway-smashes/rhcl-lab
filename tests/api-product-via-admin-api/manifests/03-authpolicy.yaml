@@ -1,0 +1,62 @@
+# PIX API — AuthPolicy: api-key required (header `api-key`), except OPTIONS preflight.
+# Selector pega secrets com label app=pix-api-keys (isolado das chaves do banking-api).
+# response.success.filters exporta userid/plan-id pra correlacionar com a PlanPolicy.
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: pix-api-apikey
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-req31-admin-api
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: pix-api-connectivity
+  rules:
+    authentication:
+      cors-preflight:
+        when:
+          - predicate: "request.method == 'OPTIONS'"
+        anonymous: {}
+      api-key-header:
+        when:
+          - predicate: "request.method != 'OPTIONS'"
+        apiKey:
+          # true: Authorino busca Secrets em QUALQUER ns (o Authorino vive no ns
+          # dele — kuadrant-system; o Secret da api-key vive em rhcl-apps). Sem
+          # this, Authorino does not see the Secret and returns 401 "missing api-key header".
+          allNamespaces: true
+          selector:
+            matchLabels:
+              authorino.kuadrant.io/managed-by: authorino
+              app: pix-api-keys
+        credentials:
+          customHeader:
+            name: api-key
+    response:
+      success:
+        filters:
+          identity:
+            json:
+              properties:
+                userid:
+                  selector: auth.identity.metadata.annotations.secret\.kuadrant\.io/user-id
+                plan-id:
+                  selector: auth.identity.metadata.annotations.secret\.kuadrant\.io/plan-id
+        headers:
+          # x-consumer-id: nome do Secret da api-key (ex.: pix-api-key-tester).
+          # Capturado pelo Telemetry CR do req041 como label `request_headers_x_consumer_id`
+          # no `istio_requests_total` → alimenta o card "Top consumers" no
+          # custom-rhcl-console plugin (API Product detail).
+          x-consumer-id:
+            plain:
+              selector: auth.identity.metadata.name
+      unauthenticated:
+        code: 401
+        message:
+          value: "Unauthorized: missing api-key header"
+      unauthorized:
+        code: 403
+        message:
+          value: "Forbidden: invalid api-key or no matching plan"

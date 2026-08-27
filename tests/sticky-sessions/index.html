@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RHCL Lab — Sticky sessions</title>
+<style>
+  :root {
+    --rh-red: #EE0000;
+    --rh-red-dark: #A30000;
+    --rh-black: #151515;
+    --rh-gray-100: #F5F5F5;
+    --rh-gray-200: #E0E0E0;
+    --rh-gray-300: #C7C7C7;
+    --rh-gray-700: #4D4D4D;
+    --rh-success: #3E8635;
+    --rh-warn: #F0AB00;
+    --rh-danger: #C9190B;
+    --rh-info: #2B9AF3;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: "Red Hat Display", "Red Hat Text", -apple-system, BlinkMacSystemFont,
+            "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: var(--sans); color: var(--rh-black);
+         background: var(--rh-gray-100); line-height: 1.45; }
+  header.rh-header {
+    background: var(--rh-black); color: white;
+    padding: 16px 32px; display: flex; align-items: center; gap: 16px;
+  }
+  header.rh-header .logo {
+    width: 32px; height: 32px; background: var(--rh-red); border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 18px;
+  }
+  header.rh-header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header.rh-header .subtitle { color: var(--rh-gray-300); font-size: 13px; }
+  main { padding: 24px 32px; max-width: 1200px; margin: 0 auto; }
+  .card {
+    background: white; border: 1px solid var(--rh-gray-200);
+    border-radius: 6px; padding: 20px; margin-bottom: 20px;
+  }
+  .card h2 {
+    margin: 0 0 12px; font-size: 16px; font-weight: 600;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card h3 { margin: 18px 0 8px; font-size: 14px; font-weight: 600; }
+  .card h2 .badge {
+    background: var(--rh-red); color: white; font-size: 11px;
+    padding: 2px 8px; border-radius: 999px; font-weight: 600;
+  }
+  .card h2 .badge.muted { background: var(--rh-gray-700); }
+  .card p { margin: 0 0 12px; color: var(--rh-gray-700); font-size: 14px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--rh-gray-700); font-weight: 500; }
+  input[type=text], input[type=number] {
+    font-family: var(--sans); font-size: 14px;
+    border: 1px solid var(--rh-gray-300); border-radius: 4px;
+    padding: 6px 10px; min-width: 180px;
+  }
+  input:focus { outline: 2px solid var(--rh-info); border-color: var(--rh-info); }
+  button {
+    font-family: var(--sans); font-size: 14px; font-weight: 600;
+    background: var(--rh-red); color: white; border: none; border-radius: 4px;
+    padding: 8px 18px; cursor: pointer; transition: background 0.15s;
+  }
+  button:hover { background: var(--rh-red-dark); }
+  button:disabled { background: var(--rh-gray-300); cursor: not-allowed; }
+  button.secondary { background: white; color: var(--rh-black);
+                     border: 1px solid var(--rh-gray-300); }
+  button.secondary:hover { background: var(--rh-gray-100); }
+  pre {
+    background: var(--rh-black); color: #E0E0E0; padding: 12px 16px;
+    border-radius: 4px; font-family: var(--mono); font-size: 12px;
+    overflow-x: auto; margin: 8px 0; white-space: pre;
+  }
+  code { font-family: var(--mono); font-size: 13px;
+         background: var(--rh-gray-200); padding: 2px 6px; border-radius: 3px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px;
+           border-bottom: 1px solid var(--rh-gray-200); vertical-align: top; }
+  th { font-weight: 600; background: var(--rh-gray-100); }
+  td.mono { font-family: var(--mono); }
+  .callout {
+    padding: 12px 14px; background: var(--rh-gray-100);
+    border-left: 3px solid var(--rh-warn); border-radius: 0 4px 4px 0;
+    margin: 12px 0; font-size: 13px;
+  }
+  .callout strong { color: var(--rh-warn); }
+  .callout.info { border-left-color: var(--rh-info); }
+  .callout.info strong { color: var(--rh-info); }
+  .callout.danger { border-left-color: var(--rh-danger); }
+  .callout.danger strong { color: var(--rh-danger); }
+  .callout.success { border-left-color: var(--rh-success); }
+  .callout.success strong { color: var(--rh-success); }
+  /* Bucket-by-cookie result table */
+  .bucket-row {
+    display: grid;
+    grid-template-columns: 120px 1fr auto;
+    gap: 12px; align-items: center;
+    padding: 8px 10px;
+    background: var(--rh-gray-100);
+    border-radius: 4px; margin-bottom: 6px;
+    font-size: 13px;
+  }
+  .bucket-row .cookie {
+    font-family: var(--mono); font-weight: 600; color: var(--rh-info);
+  }
+  .bucket-row .pods { font-family: var(--mono); font-size: 12px; }
+  .bucket-row .pods.single { color: var(--rh-success); font-weight: 600; }
+  .bucket-row .pods.multi  { color: var(--rh-danger);  font-weight: 600; }
+  .bucket-row .count {
+    background: white; padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; color: var(--rh-gray-700);
+  }
+  .pod-pill {
+    display: inline-block;
+    font-family: var(--mono); font-size: 11px;
+    padding: 2px 8px; margin: 2px 2px 0 0; border-radius: 4px;
+    background: white; border: 1px solid var(--rh-gray-300);
+  }
+  .pod-pill .qty { color: var(--rh-gray-700); font-weight: 600; }
+  .verdict {
+    margin-top: 16px; padding: 12px 14px;
+    border-radius: 4px; font-size: 14px; font-weight: 600;
+  }
+  .verdict.ok   { background: #e8f5e8; color: var(--rh-success); border: 1px solid var(--rh-success); }
+  .verdict.bad  { background: #fbecec; color: var(--rh-danger);  border: 1px solid var(--rh-danger); }
+</style>
+</head>
+<body>
+
+<header class="rh-header">
+  <div class="logo">RH</div>
+  <div>
+    <h1>RHCL Lab — Sticky Session (Item 7)</h1>
+    <div class="subtitle">RHCL Lab · Red Hat Connectivity Link</div>
+  </div>
+</header>
+
+<main>
+
+  <!-- =================================================================== -->
+  <!-- Overview                                                             -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2><span class="badge">Sticky sessions</span> Session-aware load balancing</h2>
+    <p>
+      <strong>Requirement:</strong> session affinity across replicas of the
+      backend, configured by an HTTP cookie at the gateway level.
+    </p>
+    <p>
+      This demo uses the <code>banking-api-v1</code> backend (already
+      exposed by <code>rhcl-apps-gateway</code> via HTTPRoute
+      <code>banking-api-connectivity</code>), with 2+ replicas and a
+      <code>DestinationRule</code> do Istio aplicando
+      <code>consistentHash.httpCookie</code>.
+    </p>
+    <div class="callout info">
+      <strong>The path matters</strong> — the demo <strong>must</strong> use
+      the <code>rhcl-apps-gateway</code> hostname (Gateway API). If it enters
+      via the default OpenShift Route <code>(*.apps.&lt;cluster&gt;)</code>, traffic
+      vai HAProxy → Service direto, <strong>bypassa o Istio</strong>, e a
+      the DestinationRule is silently ignored. The "sticky" you see
+      on that path comes from HAProxy's default cookie, not from
+      <code>CUSTOM_COOKIE_SESSION</code> do Envoy.
+    </div>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- Configuration                                                        -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2>Configuration</h2>
+    <div class="row">
+      <div class="field">
+        <label for="host">Hostname do gateway (banking-api)</label>
+        <input type="text" id="host"
+               placeholder="banking-api-connectivity.apps.cluster.example.com" />
+      </div>
+      <div class="field">
+        <label for="path">Path (public, no API key)</label>
+        <input type="text" id="path" value="/api/echo" />
+      </div>
+      <div class="field">
+        <label for="reqs">Reqs por cookie</label>
+        <input type="number" id="reqs" value="8" min="2" max="50" />
+      </div>
+    </div>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- Setup                                                                -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2><span class="badge">Setup</span> Uma vez por cluster</h2>
+
+    <h3>1. Scale to 2 replicas</h3>
+    <p>
+      Sticky with 1 replica is a false positive (every request hits the same pod
+      independentemente da DR).
+    </p>
+    <pre>oc scale deploy/banking-api-v1 -n rhcl-apps --replicas=2
+oc rollout status deploy/banking-api-v1 -n rhcl-apps</pre>
+
+    <h3>2. Backend reporta o nome do pod no <code>/api/echo</code></h3>
+    <p>
+      Quarkus reads <code>APP_INSTANCE_NAME</code> and returns it in the field
+      <code>instance</code>. Trocar o valor fixo por <code>fieldRef</code>
+      makes each pod report its own name.
+    </p>
+    <pre>oc set env deploy/banking-api-v1 -n rhcl-apps APP_INSTANCE_NAME-
+
+oc patch deploy/banking-api-v1 -n rhcl-apps --type=json -p '[
+  {
+    "op": "add",
+    "path": "/spec/template/spec/containers/0/env/0",
+    "value": {
+      "name": "APP_INSTANCE_NAME",
+      "valueFrom": {"fieldRef": {"fieldPath": "metadata.name"}}
+    }
+  }
+]'
+oc rollout status deploy/banking-api-v1 -n rhcl-apps</pre>
+
+    <h3>3. Patch da DestinationRule existente</h3>
+    <p>
+      The <code>DestinationRule banking-api-v1-http1</code> already exists (manages
+      the connection pool). Just add the <code>loadBalancer</code>:
+    </p>
+    <pre>oc patch destinationrule banking-api-v1-http1 -n rhcl-apps --type=json -p '[
+  {
+    "op": "add",
+    "path": "/spec/trafficPolicy/loadBalancer",
+    "value": {
+      "consistentHash": {
+        "httpCookie": {
+          "name": "CUSTOM_COOKIE_SESSION",
+          "path": "/",
+          "ttl": "1800s"
+        }
+      }
+    }
+  }
+]'</pre>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- 1. Baseline                                                          -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2><span class="badge">1</span> Baseline — round-robin sem cookie</h2>
+    <p>
+      Without a cookie, the DR has no hash key, so Envoy does round-robin
+      and traffic spreads across the 2 pods. This step proves the DR
+      <em>is</em> active and that there are multiple pods behind the Service.
+    </p>
+    <button id="run-baseline">Test baseline</button>
+    <pre>HOST=$(oc get httproute banking-api-connectivity -n rhcl-apps -o jsonpath='{.spec.hostnames[0]}')
+for i in $(seq 1 10); do
+  # occasional backend 503s do not break the script
+  curl -sk "https://$HOST/api/echo" 2>/dev/null \
+    | python3 -c '
+import json, sys
+try: print(json.load(sys.stdin).get("instance",""))
+except: pass
+' 2>/dev/null
+done | grep -v '^$' | sort | uniq -c</pre>
+    <div id="baseline-out"></div>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- 2. Set-Cookie                                                        -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2><span class="badge">2</span> Verificar caminho (browser) + Set-Cookie (CLI)</h2>
+    <p>
+      In the browser (cross-origin), <code>Set-Cookie</code> is a
+      "forbidden response header" da spec do Fetch — JS nunca consegue
+      read it. So the button here validates what <em>is</em> visible
+      from the browser: that the call reaches the backend and that the
+      <code>instance</code> field of <code>/api/echo</code> holds
+      <strong>nome de pod</strong> (= setup do <code>APP_INSTANCE_NAME</code>
+      via <code>fieldRef</code> deu certo). Se vier <code>backend-a</code>,
+      the env var did not reach the process (Quarkus default).
+    </p>
+    <button id="run-cookie">Verificar caminho</button>
+    <p style="margin-top: 16px;">To see the literal cookie, use the CLI only:</p>
+    <pre>curl -sk -i "https://$HOST/api/echo" | grep -i 'set-cookie'
+# set-cookie: CUSTOM_COOKIE_SESSION="37c5519780cbe86f"; Max-Age=1800; Path=/; HttpOnly</pre>
+    <div id="cookie-out"></div>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- 3. Sticky                                                            -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2><span class="badge">3</span> Sticky — 5 cookies × N reqs</h2>
+    <p>
+      Each cookie represents <strong>a session</strong>. Each session must
+      stick to <strong>a single pod</strong>. Different cookies may
+      land on different pods (distribution is hash-based).
+    </p>
+    <button id="run-sticky">Test sticky</button>
+    <pre>for cookieval in aaa111 bbb222 ccc333 ddd444 eee555; do
+  pods=$(for i in $(seq 1 8); do
+    curl -sk -H "Cookie: CUSTOM_COOKIE_SESSION=$cookieval" \
+         "https://$HOST/api/echo" 2>/dev/null \
+      | python3 -c '
+import json, sys
+try: print(json.load(sys.stdin).get("instance",""))
+except: pass
+' 2>/dev/null
+  done | grep -v '^$' | sort -u | tr '\n' ',' | sed 's/,$//')
+  echo "cookie=$cookieval → pods: $pods"
+done</pre>
+    <div id="sticky-out"></div>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- Troubleshooting                                                      -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2>Troubleshooting</h2>
+    <table>
+      <thead>
+        <tr><th style="width:40%;">Symptom</th><th>Diagnosis</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Set-Cookie vem com nome <code>&lt;md5hash&gt;</code> em vez de <code>CUSTOM_COOKIE_SESSION</code></td>
+          <td>Traffic entered via the OpenShift Route, not the Gateway API. Confirm the hostname matches <code>spec.hostnames</code> of <code>HTTPRoute banking-api-connectivity</code>.</td>
+        </tr>
+        <tr>
+          <td>Round-robin acontece mesmo com cookie</td>
+          <td>The DR was not applied or its <code>host</code> does not match the Service. <code>oc get destinationrule banking-api-v1-http1 -n rhcl-apps -o yaml</code>.</td>
+        </tr>
+        <tr>
+          <td>401 / 403 em <code>/api/echo</code></td>
+          <td>A gateway-level deny-all AuthPolicy is catching it. The <code>/api/echo</code> route is <code>anonymous</code> in the <code>banking-api-connectivity-apikey</code> AuthPolicy — confirm <code>Enforced=True</code>.</td>
+        </tr>
+        <tr>
+          <td><code>instance</code> always the same, but there are 2 replicas</td>
+          <td><code>APP_INSTANCE_NAME</code> is still fixed. Re-run setup step 2 (<code>fieldRef metadata.name</code>).</td>
+        </tr>
+        <tr>
+          <td>Sticky degrades after <code>oc rollout restart</code></td>
+          <td>Expected — new pods have new names, so the cookie hash maps to another bucket. Sessions opened before the restart "jump" to a pod (still stable thereafter).</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- Rollback                                                             -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2>Rollback</h2>
+    <pre># Voltar DR para o estado original (sem sticky)
+oc patch destinationrule banking-api-v1-http1 -n rhcl-apps --type=json -p '[
+  {"op": "remove", "path": "/spec/trafficPolicy/loadBalancer"}
+]'
+
+# Voltar APP_INSTANCE_NAME para valor fixo
+oc patch deploy/banking-api-v1 -n rhcl-apps --type=json -p '[
+  {"op": "remove", "path": "/spec/template/spec/containers/0/env/0"}
+]'
+oc set env deploy/banking-api-v1 -n rhcl-apps APP_INSTANCE_NAME=banking-api-v1
+oc rollout status deploy/banking-api-v1 -n rhcl-apps
+
+# (Optional) back to 1 replica
+oc scale deploy/banking-api-v1 -n rhcl-apps --replicas=1</pre>
+  </div>
+
+</main>
+
+<script>
+  // -------------------------------------------------------------------
+  // Host pre-fill via /env.json apiHost.
+  // -------------------------------------------------------------------
+  (async function() {
+    let apiHost = '';
+    try {
+      const r = await fetch('/env.json', { cache: 'no-store' });
+      if (r.ok) apiHost = ((await r.json()) || {}).apiHost || '';
+    } catch (_) { /* env.json missing — fall back */ }
+    const fallback = window.location.host;
+    const useHost = apiHost
+      || (fallback && !fallback.startsWith('localhost') && !fallback.startsWith('127.') ? fallback : '');
+    const el = document.getElementById('host');
+    if (el && !el.value) el.value = useHost;
+  })();
+
+  function urlFor() {
+    const host = document.getElementById('host').value.trim();
+    if (!host) throw new Error('Hostname required');
+    const path = document.getElementById('path').value || '/api/echo';
+    return 'https://' + host + path;
+  }
+
+  // Fetch /api/echo, extract `instance` (= pod name when APP_INSTANCE_NAME
+  // is set via fieldRef metadata.name). Returns the pod name or null on
+  // parse/transport failure.
+  //
+  // Why no `credentials: 'include'`: the lab gateway returns
+  // `Access-Control-Allow-Origin: *` + `Access-Control-Allow-Credentials: true`,
+  // which is an invalid CORS combo — browsers throw NetworkError on any
+  // credentialed cross-origin request to a wildcard origin. Without
+  // credentials the request goes through, but the browser drops cookies
+  // automatically. That means the browser-side demo can show
+  // round-robin (no cookies = each req independently load-balanced) but
+  // cannot prove sticky session — the CLI form below is the only way
+  // to demonstrate adherence per cookie. We surface this in the sticky
+  // card's verdict.
+  async function fetchInstance() {
+    try {
+      const r = await fetch(urlFor());
+      if (!r.ok) return null;
+      const j = await r.json();
+      return j && j.instance ? j.instance : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // -------------------------------------------------------------------
+  // 1. Baseline — N requests with no cookie, count by pod.
+  // -------------------------------------------------------------------
+  document.getElementById('run-baseline').addEventListener('click', async (ev) => {
+    const btn = ev.target;
+    btn.disabled = true; btn.textContent = 'Running…';
+    const out = document.getElementById('baseline-out');
+    out.innerHTML = '';
+    try {
+      const N = +document.getElementById('reqs').value * 2 || 10;
+      const counts = {};
+      let failed = 0;
+      const results = await Promise.all(Array.from({length: N}, () => fetchInstance({})));
+      for (const inst of results) {
+        if (!inst) { failed++; continue; }
+        counts[inst] = (counts[inst] || 0) + 1;
+      }
+      const podKeys = Object.keys(counts);
+      const pills = podKeys.map(p => `<span class="pod-pill">${p} <span class="qty">×${counts[p]}</span></span>`).join('');
+      const verdict = podKeys.length >= 2
+        ? '<div class="verdict ok">✓ Round-robin across 2+ pods — DR active, replicas to balance.</div>'
+        : '<div class="verdict bad">⚠ Only 1 pod responded. Confirm there are 2+ replicas (<code>oc get deploy banking-api-v1 -n rhcl-apps</code>).</div>';
+      out.innerHTML = `<p><strong>${N - failed}/${N}</strong> reqs OK (${failed} falhas)</p>${pills}${verdict}`;
+    } catch (e) { alert(e.message); }
+    btn.disabled = false; btn.textContent = 'Test baseline';
+  });
+
+  // -------------------------------------------------------------------
+  // 2. Sanity check do caminho — confirma que o backend retorna pod-name
+  //    no campo `instance` (= setup APP_INSTANCE_NAME via fieldRef OK).
+  //
+  //    Why we don't read Set-Cookie here: `Set-Cookie` is a "forbidden
+  //    response header" per the Fetch spec — JS can NEVER read it via
+  //    `Response.headers.get(...)`, independente de CORS, HttpOnly etc.
+  //    Capturing the literal cookie only works with `curl` on the CLI. Here
+  //    in the browser the best we can do is infer from the
+  //    formato do `instance`: se for pod-name (banking-api-vN-...-...),
+  //    the APP_INSTANCE_NAME setup is OK; if it is `backend-a`, that is the
+  //    Quarkus default when the env var did not reach the process.
+  // -------------------------------------------------------------------
+  document.getElementById('run-cookie').addEventListener('click', async (ev) => {
+    const btn = ev.target;
+    btn.disabled = true; btn.textContent = 'Running…';
+    const out = document.getElementById('cookie-out');
+    out.innerHTML = '';
+    try {
+      const r = await fetch(urlFor());
+      const status = r.status;
+      const j = r.ok ? await r.json().catch(() => ({})) : {};
+      const inst = j.instance || '(none)';
+      const isPodName = /^banking-api-v\d+-[a-z0-9]+-[a-z0-9]+$/.test(inst);
+      const isDefault = inst === 'backend-a';
+      const items = [];
+      items.push(`<p>HTTP <strong>${status}</strong> — instance: <code>${inst}</code></p>`);
+      if (isPodName) {
+        items.push(`<div class="verdict ok">✓ Backend reports the pod name. The <code>APP_INSTANCE_NAME</code> setup (fieldRef metadata.name) is OK — the sticky-demo precondition is met. To confirm Envoy's cookie is <code>CUSTOM_COOKIE_SESSION</code> use <code>curl -i</code> on the CLI (Set-Cookie is not readable by JS in the browser).</div>`);
+      } else if (isDefault) {
+        items.push(`<div class="verdict bad">⚠ Backend returned <code>backend-a</code> — that is the <strong>Quarkus default</strong> when <code>APP_INSTANCE_NAME</code> is not set in the process. Setup step 2 (env via fieldRef) did not reach the pod. Run <code>oc set env deploy/banking-api-v1 -n rhcl-apps --list | grep APP_INSTANCE</code> to confirm.</div>`);
+      } else if (!r.ok) {
+        items.push(`<div class="verdict bad">⚠ HTTP ${status}. Check that the gateway is routing, that the <code>anonymous</code> AuthPolicy applies to <code>/api/echo</code>, and that banking-api is healthy.</div>`);
+      } else {
+        items.push(`<div class="verdict bad">⚠ Instance inesperada (<code>${inst}</code>). Esperava pod-name (banking-api-vN-...-...) ou <code>backend-a</code>. Pode ser outra app respondendo nesse hostname.</div>`);
+      }
+      out.innerHTML = items.join('');
+    } catch (e) {
+      out.innerHTML = `<div class="verdict bad">⚠ Network failure: ${e.message}. Typical causes: CORS, wrong hostname, gateway unavailable, invalid TLS certificate.</div>`;
+    }
+    btn.disabled = false; btn.textContent = 'Verificar caminho';
+  });
+
+  // -------------------------------------------------------------------
+  // 3. Sticky — CLI only, really.
+  //
+  //    The browser side is fundamentally limited for this demo:
+  //
+  //    (a) `Cookie:` is a forbidden request header — JS cannot set
+  //        arbitrary cookies via fetch.
+  //    (b) `credentials: 'include'` (the only way the browser attaches
+  //        cross-origin cookies automatically) requires
+  //        a specific `Allow-Origin`, not `*`. The default lab config
+  //        uses `*` + `Allow-Credentials: true`, an invalid CORS
+  //        combo → NetworkError.
+  //    (c) `Set-Cookie` is a forbidden response header — JS never reads it.
+  //
+  //    So even with the "ideal" config, the browser can only
+  //    show 1 sticky session (its own cookie jar), never
+  //    5 in parallel. For 5 distinct sessions you need
+  //    the CLI `curl`. Rather than pretend a browser-side button
+  //    proves anything, we drop it and offer a useful
+  //    alternative: running the baseline (Button 1) and sanity (Button 2) proves
+  //    the gateway+backend+env are correct; the CLI proves the stickiness.
+  // -------------------------------------------------------------------
+  document.getElementById('run-sticky').addEventListener('click', (ev) => {
+    const out = document.getElementById('sticky-out');
+    out.innerHTML = `
+      <div class="callout info">
+        <strong>A sticky session can only be truly proven from the CLI.</strong>
+        It is not an RHCL limitation — it is the browser spec:
+        <ul style="margin:8px 0 0 16px;font-size:13px;">
+          <li><code>Cookie:</code> is a "forbidden request header" — JS cannot set arbitrary cookies via <code>fetch()</code>.</li>
+          <li>Cross-origin cookies only travel with <code>credentials: 'include'</code>, which requires a specific <code>Access-Control-Allow-Origin</code> (not <code>*</code>). The default lab config uses <code>*</code>, so the browser blocks it.</li>
+          <li><code>Set-Cookie</code> is a "forbidden response header" — JS never reads it.</li>
+        </ul>
+        <p style="margin:8px 0 0;">Use the <code>curl</code> block above — it builds 5 distinct cookies manually and shows per-pod stickiness. To validate from the browser, open the page in <strong>5 different incognito tabs</strong> and check that each stays on the same pod across refresh (button 1 on this page) — each tab has its own cookie jar, so it acts as 5 sessions.</p>
+      </div>
+    `;
+  });
+</script>
+
+</body>
+</html>

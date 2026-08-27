@@ -9,9 +9,9 @@ export const options = {
 };
 
 const endpoints = {
-  v1: 'https://banking-api-v1-rhcl-apps.apps.cluster1.poc.rhcl.com.br/api/whoami',
-  v2: 'https://banking-api-v2-rhcl-apps.apps.cluster1.poc.rhcl.com.br/api/whoami',
-  weighted: 'https://weighted.poc.rhcl.com.br/api/whoami',
+  v1: 'https://banking-api-v1-rhcl-apps.apps.example.com/api/whoami',
+  v2: 'https://banking-api-v2-rhcl-apps.apps.example.com/api/whoami',
+  weighted: 'https://weighted.example.com/api/whoami',
 };
 
 const latencyV1 = new Trend('latency_v1');

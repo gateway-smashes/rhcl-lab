@@ -1,0 +1,60 @@
+# Deployment do banking-api com gRPC habilitado no namespace req048-grpc.
+# The image is pulled from the ImageStream in rhcl-apps (requires the image-puller RoleBinding).
+# O Quarkus serve gRPC e gRPC-Web na mesma porta 8080 (use-separate-server=false).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: req048-banking-api
+  namespace: {{ namespace }}
+  labels:
+    app: req048-banking-api
+    app.kubernetes.io/part-of: req048-grpc-backend
+    rhcl.poc/item: "48"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: req048-banking-api
+  template:
+    metadata:
+      labels:
+        app: req048-banking-api
+        app.kubernetes.io/part-of: req048-grpc-backend
+        rhcl.poc/item: "48"
+    spec:
+      containers:
+        - name: banking-api
+          image: image-registry.openshift-image-registry.svc:5000/rhcl-apps/banking-api:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+              name: grpc-web
+          env:
+            - name: QUARKUS_GRPC_SERVER_USE_SEPARATE_SERVER
+              value: "false"
+            - name: QUARKUS_GRPC_SERVER_GRPC_WEB
+              value: "true"
+            - name: QUARKUS_GRPC_SERVER_ENABLE_REFLECTION_SERVICE
+              value: "true"
+            - name: QUARKUS_HTTP_PORT
+              value: "8080"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10

@@ -1,0 +1,51 @@
+# HTTPRoute for req054 — routes traffic based on path prefix:
+#   /http11/* → req054-backend-http11 (Envoy conecta via HTTP/1.1)
+#   /h2/*    → req054-backend-h2c    (Envoy conecta via HTTP/2 h2c)
+#
+# Usa URLRewrite para remover o prefixo antes de enviar ao backend,
+# because banking-api-v1 does not recognize the /http11 or /h2 prefixes.
+#
+# The hostname is substituted by the apply.sh script via sed:
+#   sed -e "s/{{ hostname }}/$HOST/g" ...
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: req054-http-versions
+  namespace: {{ apps_namespace }}
+  labels:
+    app.kubernetes.io/part-of: req054-http-versions
+    rhcl.poc/item: "54"
+spec:
+  parentRefs:
+  - name: {{ gateway_name }}
+    namespace: {{ gateway_namespace }}
+    sectionName: req054-http
+  hostnames:
+  - "{{ hostname }}"
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /http11
+    filters:
+    - type: URLRewrite
+      urlRewrite:
+        path:
+          type: ReplacePrefixMatch
+          replacePrefixMatch: /
+    backendRefs:
+    - name: req054-backend-http11
+      port: 8080
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /h2
+    filters:
+    - type: URLRewrite
+      urlRewrite:
+        path:
+          type: ReplacePrefixMatch
+          replacePrefixMatch: /
+    backendRefs:
+    - name: req054-backend-h2c
+      port: 8080

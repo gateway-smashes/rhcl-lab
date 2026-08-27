@@ -1,0 +1,13 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: keycloak-tls
+  namespace: keycloak
+  labels: { app.kubernetes.io/part-of: rhcl-req71-oidc-jwt }
+spec:
+  secretName: keycloak-tls
+  dnsNames:
+    - keycloak.example.com
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer

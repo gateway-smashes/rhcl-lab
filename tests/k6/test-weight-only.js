@@ -15,7 +15,7 @@ export const options = {
 };
 
 const URL =
-  'https://weighted.poc.rhcl.com.br/api/whoami';
+  'https://weighted.example.com/api/whoami';
 
 const latencyWeighted = new Trend('latency_weighted');
 const errorWeighted = new Rate('error_weighted');

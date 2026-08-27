@@ -1,0 +1,44 @@
+# req018 — ServiceMonitor: raspa /q/metrics do banking-api pro UWM.
+#
+# Sem esse manifest, `bank_ai_tokens_total` fica preso no pod — o
+# User Workload Monitoring's Prometheus does not discover targets in
+# the `rhcl-apps` namespace by default.
+#
+# Prerequisite: UWM enabled on the cluster. Check with:
+#   oc -n openshift-monitoring get cm cluster-monitoring-config -o yaml \
+#     | grep enableUserWorkload
+# Should return `enableUserWorkload: true`. If not, edit the ConfigMap
+# `cluster-monitoring-config` no namespace `openshift-monitoring` e
+# to add (this is cluster-wide config — may need cluster admin):
+#
+#   data:
+#     config.yaml: |
+#       enableUserWorkload: true
+#
+# We do not patch this automatically, for safety (it is the OpenShift
+# monitoring operator's config, not RHCL's).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: banking-api
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-banking-poc
+    rhcl.poc/req: req018
+spec:
+  # Selector covers backend v1 and v2 — both Services expose /q/metrics
+  # no port `http`.
+  selector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - banking-api-v1
+          - banking-api-v2
+  endpoints:
+    - port: http
+      path: /q/metrics
+      # 30s is the practical minimum — below that UWM starts dropping
+      # samples in bursts. For finer resolution, also adjust
+      # the UWM Prometheus scrape_interval.
+      interval: 30s

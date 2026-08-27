@@ -1,0 +1,874 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RHCL Lab — Rate limiting</title>
+<style>
+  :root {
+    --rh-red: #EE0000;
+    --rh-red-dark: #A30000;
+    --rh-black: #151515;
+    --rh-gray-100: #F5F5F5;
+    --rh-gray-200: #E0E0E0;
+    --rh-gray-300: #C7C7C7;
+    --rh-gray-700: #4D4D4D;
+    --rh-success: #3E8635;
+    --rh-warn: #F0AB00;
+    --rh-danger: #C9190B;
+    --rh-info: #2B9AF3;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: "Red Hat Display", "Red Hat Text", -apple-system, BlinkMacSystemFont,
+            "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    color: var(--rh-black);
+    background: var(--rh-gray-100);
+    line-height: 1.45;
+  }
+  header.rh-header {
+    background: var(--rh-black);
+    color: white;
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  header.rh-header .logo {
+    width: 32px; height: 32px;
+    background: var(--rh-red);
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 18px;
+  }
+  header.rh-header h1 {
+    margin: 0; font-size: 18px; font-weight: 600;
+  }
+  header.rh-header .subtitle {
+    color: var(--rh-gray-300); font-size: 13px;
+  }
+  main { padding: 24px 32px; max-width: 1200px; margin: 0 auto; }
+  .card {
+    background: white;
+    border: 1px solid var(--rh-gray-200);
+    border-radius: 6px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .card h2 {
+    margin: 0 0 12px; font-size: 16px; font-weight: 600;
+    color: var(--rh-black); display: flex; align-items: center; gap: 8px;
+  }
+  .card h3 {
+    margin: 18px 0 8px; font-size: 14px; font-weight: 600;
+    color: var(--rh-black);
+  }
+  .card h2 .badge {
+    background: var(--rh-red); color: white;
+    font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    font-weight: 600;
+  }
+  .card h2 .badge.muted {
+    background: var(--rh-gray-700);
+  }
+  .card p { margin: 0 0 12px; color: var(--rh-gray-700); font-size: 14px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--rh-gray-700); font-weight: 500; }
+  input[type=text], input[type=number], select {
+    font-family: var(--sans); font-size: 14px;
+    border: 1px solid var(--rh-gray-300); border-radius: 4px;
+    padding: 6px 10px; min-width: 180px;
+  }
+  input[type=text]:focus, input[type=number]:focus, select:focus {
+    outline: 2px solid var(--rh-info); border-color: var(--rh-info);
+  }
+  button {
+    font-family: var(--sans); font-size: 14px; font-weight: 600;
+    background: var(--rh-red); color: white;
+    border: none; border-radius: 4px;
+    padding: 8px 18px; cursor: pointer;
+    transition: background 0.15s;
+  }
+  button:hover { background: var(--rh-red-dark); }
+  button:disabled { background: var(--rh-gray-300); cursor: not-allowed; }
+  button.secondary { background: white; color: var(--rh-black); border: 1px solid var(--rh-gray-300); }
+  button.secondary:hover { background: var(--rh-gray-100); }
+  pre {
+    background: var(--rh-black); color: #E0E0E0;
+    padding: 12px 16px; border-radius: 4px;
+    font-family: var(--mono); font-size: 12px;
+    overflow-x: auto; margin: 8px 0;
+    white-space: pre;
+  }
+  code { font-family: var(--mono); font-size: 13px;
+         background: var(--rh-gray-200); padding: 2px 6px; border-radius: 3px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--rh-gray-200); vertical-align: top; }
+  th { font-weight: 600; background: var(--rh-gray-100); }
+  td.mono { font-family: var(--mono); }
+  .timeline {
+    display: flex; gap: 2px; flex-wrap: wrap; margin-top: 12px;
+    background: var(--rh-gray-100); padding: 8px; border-radius: 4px;
+    min-height: 40px;
+  }
+  .tick { width: 14px; height: 24px; border-radius: 2px;
+          font-size: 9px; color: white; display: flex;
+          align-items: center; justify-content: center; }
+  .tick.ok      { background: var(--rh-success); }
+  .tick.lim     { background: var(--rh-warn); color: var(--rh-black); }
+  .tick.err     { background: var(--rh-danger); }
+  .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .stat { background: var(--rh-gray-100); padding: 12px; border-radius: 4px; }
+  .stat .label { font-size: 11px; color: var(--rh-gray-700); text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat .value { font-size: 22px; font-weight: 700; color: var(--rh-black); margin-top: 4px; }
+  .stat .value.danger { color: var(--rh-danger); }
+  .stat .value.success { color: var(--rh-success); }
+  .callout {
+    padding: 12px 14px;
+    background: var(--rh-gray-100);
+    border-left: 3px solid var(--rh-warn);
+    border-radius: 0 4px 4px 0;
+    margin: 12px 0;
+    font-size: 13px;
+    color: var(--rh-black);
+  }
+  .callout strong { color: var(--rh-warn); }
+  .callout.info { border-left-color: var(--rh-info); }
+  .callout.info strong { color: var(--rh-info); }
+  .callout.danger { border-left-color: var(--rh-danger); }
+  .callout.danger strong { color: var(--rh-danger); }
+  /* "Next sprint" visually separates the Redis/multi-cluster cards. */
+  .sprint-divider {
+    margin: 32px 0 20px;
+    padding: 16px 20px;
+    background: linear-gradient(90deg, var(--rh-black) 0%, var(--rh-gray-700) 100%);
+    color: white;
+    border-radius: 6px;
+    border-left: 6px solid var(--rh-warn);
+  }
+  .sprint-divider h2 {
+    margin: 0 0 6px; font-size: 16px; font-weight: 600; color: white;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .sprint-divider .sprint-tag {
+    background: var(--rh-warn); color: var(--rh-black);
+    font-size: 10px; padding: 2px 8px; border-radius: 999px;
+    font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .sprint-divider p { margin: 0; color: var(--rh-gray-300); font-size: 13px; }
+  .card.next-sprint { border-left: 4px solid var(--rh-warn); }
+</style>
+</head>
+<body>
+
+<header class="rh-header">
+  <div class="logo">RH</div>
+  <div>
+    <h1>RHCL Lab — Rate limiting</h1>
+    <div class="subtitle">RHCL Lab · Red Hat Connectivity Link</div>
+  </div>
+</header>
+
+<main>
+
+  <!-- =================================================================== -->
+  <!-- Prerequisites                                                         -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2>Prerequisites</h2>
+    <p>Before running any scenario, make sure the cluster has the minimum stack:</p>
+    <pre>oc whoami
+
+oc get httproute banking-api-connectivity -n rhcl-apps
+oc get gateway rhcl-apps-gateway -n openshift-ingress
+oc get limitador limitador -n kuadrant-system</pre>
+    <p>
+      The <code>/api/echo</code> route is public (no API key) — used in demos
+      that do not need auth. For scenarios exercising
+      <code>auth.identity.userid</code> (the <code>per-user</code> counter),
+      use <code>/api/v1/...</code> with a
+      <code>gold</code>/<code>silver</code>/<code>bronze</code> (see
+      <code>demo-environment/README.md</code>).
+    </p>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- Configuration                                                        -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2>Configuration</h2>
+    <div class="row">
+      <div class="field">
+        <label for="host">Gateway hostname</label>
+        <input type="text" id="host"
+               placeholder="banking-api-connectivity.apps.example.com" />
+      </div>
+      <div class="field">
+        <label for="path">Path</label>
+        <input type="text" id="path" value="/api/echo" />
+      </div>
+      <div class="field">
+        <label for="count">Requests</label>
+        <input type="number" id="count" value="30" min="1" max="500" />
+      </div>
+    </div>
+    <p style="margin-top: 12px;">
+      The <strong>Run</strong> buttons below fire requests from the browser
+      against the gateway and plot the outcome in the
+      <a href="#results">result</a> cards. Use <code>/api/echo</code> (public) to
+      test without auth.
+    </p>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- Scenario 1 — global, same site                                       -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2><span class="badge">Scenario 1</span> Global, same site</h2>
+    <p>
+      A simple global RLP on the <code>HTTPRoute</code>. Counters shared
+      across Gateway instances behind the same Limitador.
+    </p>
+
+    <h3>Apply the policy</h3>
+    <pre>oc apply -f manifests/01-global-same-site.yaml</pre>
+
+    <h3>Fire load (CLI alternative)</h3>
+    <pre>HOST=$(oc get httproute banking-api-connectivity -n rhcl-apps -o jsonpath='{.spec.hostnames[0]}')
+
+# 60 requests IN PARALLEL against /api/echo. Sequential does not exceed the
+# 10s window because of the TLS handshake — use ampersand + wait.
+{ for i in $(seq 1 60); do
+    curl -sk -o /dev/null -w "%{http_code}\n" "https://$HOST/api/echo" &
+  done; wait; } | sort | uniq -c
+# Expected with policy 20/10s: 20x 200 + 40x 429</pre>
+
+    <h3>Fire load (from this browser)</h3>
+    <p>Same burst, run by the browser and plotted below.</p>
+    <button id="run-single">Run burst</button>
+
+    <h3>Prove the shared counter by scaling the gateway</h3>
+    <p>
+      To show the limit is shared across multiple Envoy instances,
+      scale the gateway Deployment:
+    </p>
+    <pre>GW_DEPLOY=$(oc get deploy -n openshift-ingress \
+  -l gateway.networking.k8s.io/gateway-name=rhcl-apps-gateway \
+  -o jsonpath='{.items[0].metadata.name}')
+oc scale deploy/$GW_DEPLOY -n openshift-ingress --replicas=3
+oc rollout status deploy/$GW_DEPLOY -n openshift-ingress
+
+# Repeat the burst — it should hit the SAME limit (20/10s) even with 3 Envoys
+# serving, because all 3 talk to the same Limitador.</pre>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- Scenario 2 — custom counters                                         -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2><span class="badge">Scenario 2</span> Custom counters</h2>
+    <p>
+      An RLP with counters separated by <strong>header</strong>
+      (<code>x-customer-id</code>) and by <strong>authenticated user</strong>
+      (via PlanPolicy e <code>auth.identity.userid</code>).
+    </p>
+
+    <h3>Apply the policy</h3>
+    <pre>oc apply -f manifests/03-custom-counters.yaml</pre>
+
+    <h3>2a — Counter por header <code>x-customer-id</code> (CLI)</h3>
+    <pre>HOST=$(oc get httproute banking-api-connectivity -n rhcl-apps -o jsonpath='{.spec.hostnames[0]}')
+
+# Client "alpha" — 10 parallel reqs (limit 5/min)
+{ for i in $(seq 1 10); do
+    curl -sk -o /dev/null -w "alpha=%{http_code}\n" \
+      -H "x-customer-id: alpha" "https://$HOST/api/echo" &
+  done; wait; } | sort | uniq -c
+
+# Client "beta" — counter independent of alpha
+{ for i in $(seq 1 10); do
+    curl -sk -o /dev/null -w "beta=%{http_code}\n" \
+      -H "x-customer-id: beta" "https://$HOST/api/echo" &
+  done; wait; } | sort | uniq -c
+# Expected: alpha 5/5, beta 5/5 — counters separated by header value</pre>
+
+    <h3>2a — Counter by header (from this browser)</h3>
+    <div class="row">
+      <div class="field">
+        <label>Header values (comma)</label>
+        <input type="text" id="header-values" value="alpha,beta,gamma" />
+      </div>
+      <div class="field">
+        <label>Header name</label>
+        <input type="text" id="header-name" value="x-customer-id" />
+      </div>
+    </div>
+    <button id="run-header" style="margin-top: 12px;">Run</button>
+
+    <h3>2b — Counter by authenticated user (via PlanPolicy)</h3>
+    <p>
+      The lab already has the <code>PlanPolicy banking-api-plans</code>, which generates an
+      automatic RLP using the APIKey <code>plan-id</code>
+      (<code>auth.identity.metadata.annotations.secret.kuadrant.io/plan-id</code>).
+      Tiers: <code>gold</code>=unlimited, <code>silver</code>=50/min,
+      <code>bronze</code>=10/min.
+    </p>
+    <pre># bronze caps at 10/min
+{ for i in $(seq 1 15); do
+    curl -sk -o /dev/null -w "bronze=%{http_code}\n" \
+      -H "api-key: carol-bronze-secret" "https://$HOST/api/v1/accounts/summary" &
+  done; wait; } | sort | uniq -c
+# Expected: 10x 200 + 5x 429</pre>
+
+    <h3>2b — Counter by APIKey (from this browser)</h3>
+    <div class="row">
+      <div class="field">
+        <label>API Keys (comma)</label>
+        <input type="text" id="apikeys"
+               value="alice-gold-secret,bob-silver-secret,carol-bronze-secret" />
+      </div>
+      <div class="field">
+        <label>Authenticated path</label>
+        <input type="text" id="auth-path" value="/api/v1/accounts/summary" />
+      </div>
+    </div>
+    <button id="run-apikey" style="margin-top: 12px;">Run</button>
+
+    <div class="callout">
+      <strong>Composition</strong> — having <code>req063-custom-counters</code>
+      enforced (target HTTPRoute) makes <code>banking-api-plans</code>
+      (same target) go <strong>Overridden</strong>. To coexist,
+      use <code>sectionName</code> to differentiate targeted rules, or
+      apply PlanPolicy/RLP on different resources.
+    </div>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- Scenario 3 — Gateway + API                                           -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2><span class="badge">Scenario 3</span> Gateway + API together</h2>
+    <p>
+      A Gateway-level RLP with <code>defaults</code> coexisting with an API-level
+      RLP (HTTPRoute). Demonstrates how RHCL resolves
+      conflicts between policies at different levels.
+    </p>
+
+    <h3>Apply both policies</h3>
+    <pre># API-level (HTTPRoute)
+oc apply -f manifests/01-global-same-site.yaml
+
+# Gateway-level (with defaults)
+oc apply -f manifests/04-api-vs-gateway.yaml
+
+# View the policies
+oc get ratelimitpolicy -A -l app.kubernetes.io/part-of=rhcl-req61-65-ratelimit</pre>
+    <p>
+      A request must pass <strong>both</strong> limits; the more
+      restrictive one wins.
+    </p>
+
+    <h3>Force a non-negotiable ceiling (<code>overrides</code>)</h3>
+    <p>
+      To make the Gateway-level limit <strong>non-negotiable</strong>, edit
+      <code>manifests/04-api-vs-gateway.yaml</code> trocando
+      <code>defaults:</code> to <code>overrides:</code>. After that, even an
+      API team setting <code>100000/s</code> in its policy cannot
+      exceed the ceiling set at the Gateway.
+    </p>
+
+    <div class="callout info">
+      <strong>Reuse the Run buttons</strong> above (Scenario 1 or 2) to
+      validate the outcome — any burst exceeding the more
+      restrictive limit falls to 429.
+    </div>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- Shared result (filled after any Run)                                 -->
+  <!-- =================================================================== -->
+  <div class="card" id="results" style="display:none;">
+    <h2>Result</h2>
+    <div class="summary" id="summary"></div>
+    <div class="timeline" id="timeline"></div>
+    <h3 style="font-size:14px;margin-top:16px;">Distribution by bucket</h3>
+    <table id="dist">
+      <thead>
+        <tr><th>Bucket</th><th>200</th><th>429</th><th>Other</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- Cleanup                                                               -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2>Cleanup</h2>
+    <pre># Test RLPs (keeps banking-api-plans from the install)
+oc delete -f manifests/01-global-same-site.yaml \
+          -f manifests/03-custom-counters.yaml \
+          -f manifests/04-api-vs-gateway.yaml --ignore-not-found</pre>
+    <div class="callout danger">
+      <strong>Note</strong> — do not use <code>oc delete -f manifests/</code>
+      sem listar os arquivos. O glob inclui o
+      <code>05-external-architecture.md</code> (not a manifest) and errors.
+    </div>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- Troubleshooting                                                      -->
+  <!-- =================================================================== -->
+  <div class="card">
+    <h2>Troubleshooting</h2>
+    <table>
+      <thead>
+        <tr><th style="width:35%;">Symptom</th><th>Diagnosis</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>No 429 even after many sequential requests</td>
+          <td>
+            Sequential <code>curl</code> adds ~200ms between reqs due
+            to the TLS handshake. The 10s window may not be exceeded. Use
+            <strong>paralelo</strong>:
+            <code>{ for i in ...; do curl … &amp; done; wait; }</code>
+          </td>
+        </tr>
+        <tr>
+          <td>Too many 429 (all requests)</td>
+          <td>
+            The counter is blocking. Check the window — short windows
+            (<code>1s</code>) plus delays can confuse it. Use
+            <code>1m</code> in the demo.
+          </td>
+        </tr>
+        <tr>
+          <td>Limitador CrashLoops after applying an RLP with <code>request.headers["..."]</code></td>
+          <td>
+            Quoting bug: double quotes inside the CEL nest into the
+            descriptor key unescaped. Use <strong>single quotes</strong>:
+            <code>request.headers['x-customer-id']</code>.
+          </td>
+        </tr>
+        <tr>
+          <td>An RLP with 3+ <code>limits</code> entries applies nothing</td>
+          <td>
+            Observed when one entry uses <code>auth.identity</code>
+            and another uses only <code>request.*</code>. Limit to
+            <strong>2 entradas</strong> em <code>limits</code> por RLP, ou
+            compose separate RLPs with distinct <code>sectionName</code>.
+          </td>
+        </tr>
+        <tr>
+          <td>The Gateway RLP has no effect</td>
+          <td>
+            When both (Gateway-level <code>defaults</code> and API-level)
+            coexist, API-level wins. For an absolute ceiling use
+            <code>overrides:</code> no Gateway-level.
+          </td>
+        </tr>
+        <tr>
+          <td>Multiple RLPs <code>Enforced=False/Overridden</code></td>
+          <td>
+            Only <strong>one RLP per target</strong> is enforced. For
+            composition, use distinct targets (HTTPRoute + Gateway with
+            <code>overrides</code>) or <code>sectionName</code> to target
+            specific rules.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- Visual divider — "next sprint"                                       -->
+  <!-- =================================================================== -->
+  <div class="sprint-divider">
+    <h2><span class="sprint-tag">Next sprint</span> External Redis and Multi-Cluster</h2>
+    <p>
+      The scenarios below are demonstrated when the <strong>second cluster</strong>
+      is available. Documented here for reference and to run
+      manually on the current cluster.
+    </p>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- Scenario 4 — external Redis                                          -->
+  <!-- =================================================================== -->
+  <div class="card next-sprint">
+    <h2><span class="badge muted">Scenario 4</span> Shared Redis (externalized state)</h2>
+    <p>
+      By default, Limitador keeps counters <strong>in memory</strong>
+      in its own pod. For true global rate limiting (and multi-site), the
+      state must move to an external store. Here we use a <strong>Redis
+      in the same cluster</strong>, in a dedicated
+      <code>shared-store</code>.
+    </p>
+
+    <h3>Step 1 — Bring up Redis in <code>shared-store</code></h3>
+    <pre>oc apply -f manifests/06-redis-shared-store.yaml
+oc -n shared-store rollout status deploy/redis
+
+# Sanity check
+POD=$(oc -n shared-store get pod -l app=redis -o jsonpath='{.items[0].metadata.name}')
+oc -n shared-store exec $POD -- sh -c 'redis-cli -a "$REDIS_PASSWORD" ping'
+# PONG</pre>
+
+    <h3>Step 2 — Point Limitador at Redis</h3>
+    <pre>oc apply -f manifests/02-limitador-redis.yaml
+oc -n kuadrant-system rollout status deploy/limitador-limitador
+
+# Confirma o storage
+oc -n kuadrant-system get limitador limitador -o jsonpath='{.spec.storage}'; echo</pre>
+
+    <h3>Step 3 — Validate (counters now live in Redis)</h3>
+    <pre>oc apply -f manifests/01-global-same-site.yaml
+HOST=$(oc get httproute banking-api-connectivity -n rhcl-apps -o jsonpath='{.spec.hostnames[0]}')
+
+{ for i in $(seq 1 60); do
+    curl -sk -o /dev/null -w "%{http_code}\n" "https://$HOST/api/echo" &
+  done; wait; } | sort | uniq -c
+# Expected with 01 (20/10s): 20x 200 + 40x 429
+
+# PROOF — the state is in Redis (not the pod's memory):
+POD=$(oc -n shared-store get pod -l app=redis -o jsonpath='{.items[0].metadata.name}')
+oc -n shared-store exec $POD -- sh -c 'redis-cli -a "$REDIS_PASSWORD" --scan' \
+  | grep -i counter
+# namespace:{rhcl-apps/banking-api-connectivity},counter:{"limit":...}</pre>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- Scenario 4 (part 2) — multi-cluster                                  -->
+  <!-- =================================================================== -->
+  <div class="card next-sprint">
+    <h2><span class="badge muted">Scenario 4</span> Multi-cluster — 2 clusters sharing counters</h2>
+    <p>
+      Each cluster runs its own Limitador, but <strong>all point at the
+      same Redis</strong>. Validated across two independent OpenShift
+      clusters (distinct AWS sandboxes, both <code>us-east-2</code>).
+    </p>
+
+    <h3>Topology</h3>
+    <table>
+      <thead><tr><th>Cluster</th><th>Role</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Cluster A</strong> (<code>x5xfd</code>)</td>
+          <td>
+            Hosts Redis in <code>shared-store</code> and exposes it via a
+            <code>LoadBalancer</code> (ELB classic, TCP 6379)
+            <strong>restrito por <code>loadBalancerSourceRanges</code> ao IP de
+            cluster B egress IP</strong>. The demo Redis has no TLS or strong ACL,
+            so the source-range is the network lock.
+          </td>
+        </tr>
+        <tr>
+          <td><strong>Cluster B</strong> (<code>lpv5p</code>)</td>
+          <td>
+            Receives the full stack (Gateway API + Kuadrant + the
+            <code>banking-api</code>); o <code>URL</code> do Secret
+            <code>limitador-redis</code> URL points at cluster A's ELB.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Network prerequisite</h3>
+    <p>
+      Redis must be reachable from all clusters — a Service via
+      LoadBalancer/TCP Route (as here), VPC peering, or a central managed
+      Redis (ElastiCache / Azure Cache / Memorystore).
+    </p>
+    <pre># (Cluster B) find the egress IP — it becomes the LB source-range
+oc --kubeconfig=$KCFG_B run egress \
+  --image=registry.access.redhat.com/ubi9/ubi-minimal \
+  --restart=Never --rm -i -- curl -s ifconfig.me
+# ex.: 18.188.159.202
+
+# (Cluster A) expose Redis ONLY to that IP (LoadBalancer Service with sourceRanges):
+#   spec.type: LoadBalancer
+#   spec.loadBalancerSourceRanges: ["18.188.159.202/32"]
+REDIS_LB=$(oc -n shared-store get svc redis-lb \
+  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+
+# (Cluster B) limitador-redis Secret URL:
+#   redis://default:&lt;password&gt;@$REDIS_LB:6379/0</pre>
+
+    <h3>Where the limit comes from — the RateLimitPolicy</h3>
+    <p>
+      The <code>20/10s</code> is not infra config: it is declared in a
+      <strong>RateLimitPolicy</strong> anexada à HTTPRoute. É a MESMA policy
+      (<code>manifests/01-global-same-site.yaml</code>) from the earlier scenarios
+      — and it must exist <strong>identically on both
+      clusters</strong>:
+    </p>
+    <pre>apiVersion: kuadrant.io/v1
+kind: RateLimitPolicy
+metadata:
+  name: req061-global-same-site
+  namespace: rhcl-apps
+spec:
+  targetRef:                      # attaches to the HTTPRoute (not the Gateway)
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: banking-api-connectivity
+  limits:
+    global-burst:
+      rates:
+        - limit: 20               # &larr; THE LIMIT: 20 requests…
+          window: 10s             # &larr; …per 10s window</pre>
+    <p>
+      Show it live <strong>on each cluster</strong> before the test — the
+      <code>spec.limits</code> must be identical on both sides (that is what
+      guarantees the same counter key):
+    </p>
+    <pre># run on EACH cluster (A and B) — must print exactly the same thing:
+oc get ratelimitpolicy req061-global-same-site -n rhcl-apps \
+  -o jsonpath='{.spec.limits}{"\n"}'
+#   {"global-burst":{"rates":[{"limit":20,"window":"10s"}]}}
+
+# and confirm Kuadrant accepted AND is enforcing the policy on both:
+oc get ratelimitpolicy req061-global-same-site -n rhcl-apps \
+  -o jsonpath='{range .status.conditions[*]}{.type}={.status} {end}{"\n"}'
+#   Accepted=True Enforced=True</pre>
+
+    <h3>Counter identity</h3>
+    <p>
+      Both Limitadors must compute <strong>the same counter
+      identity</strong>. Since the counter namespace is
+      <code>{ns-da-route}/{nome-da-route}</code>
+      (<code>rhcl-apps/banking-api-connectivity</code>) and the descriptor is
+      derived from the RLP content, just apply the <strong>same HTTPRoute
+      (same name/namespace) + the same RateLimitPolicy</strong> on both
+      clusters — Kuadrant then generates the identical key
+      (<code>limit.global_burst__69c1664f</code>, namespace
+      <code>rhcl-apps/banking-api-connectivity</code>).
+    </p>
+
+    <h3>⚠️ <code>redis</code> vs <code>redis-cached</code></h3>
+    <p>
+      O <code>02-limitador-redis.yaml</code> usa <code>redis-cached</code>,
+      which keeps a <strong>local counter cache per site</strong> and
+      syncs to Redis in batches (<code>flush-period</code>). This optimizes
+      latency/availability, but <strong>does NOT guarantee a strict global
+      limit</strong>: a site with a "cold" cache admits requests before
+      seeing the others' usage.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Storage</th>
+          <th>Sequential test (A:18 → B:18, limit 20/10s)</th>
+          <th>Behavior</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>redis-cached</code></td>
+          <td>A=18×200, <strong>B=18×200</strong> (36 total)</td>
+          <td>Local per-site cache → over-admits. Eventually consistent.</td>
+        </tr>
+        <tr>
+          <td><code>redis</code></td>
+          <td>A=18×200, <strong>B=5×200 + 13×429</strong> (≈23 total)</td>
+          <td>Every check hits Redis → <strong>strict</strong> global limit.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      For a <strong>strict</strong> global limit across sites, switch the
+      storage to pure <code>redis</code> on <strong>both</strong> clusters:
+    </p>
+    <pre>oc -n kuadrant-system patch limitador limitador --type=json \
+  -p '[{"op":"replace","path":"/spec/storage","value":{"redis":{"configSecretRef":{"name":"limitador-redis"}}}}]'
+oc -n kuadrant-system rollout status deploy/limitador-limitador</pre>
+
+    <h3>Cross-cluster validation (with strict <code>redis</code>)</h3>
+    <pre># Consume most of the budget on cluster A, then hit B
+for i in $(seq 1 18); do
+  curl -sk -o /dev/null "https://$HOST_A/api/echo" &
+done; wait    # ~18x 200
+
+sleep 1
+
+for i in $(seq 1 18); do
+  curl -sk -o /dev/null "https://$HOST_B/api/echo" &
+done; wait    # maioria 429
+# Cluster B sees A's usage via the shared counter
+# → caps at the same 20/10s.
+
+# PROOF of the single counter: the SAME Redis key rises with traffic from ANY site
+POD=$(oc -n shared-store get pod -l app=redis -o jsonpath='{.items[0].metadata.name}')
+oc -n shared-store exec $POD -- sh -c \
+  'redis-cli -a "$REDIS_PASSWORD" --no-auth-warning --scan --pattern "*global_burst*"'
+# 0 → 5 (after 5x on cluster A) → 10 (after 5x on cluster B): one counter, two sites.</pre>
+
+    <div class="callout">
+      <strong>Small overages</strong> (e.g. 23 instead of 20) are normal under
+      concurrency against any distributed counter —
+      <code>check</code>-then-<code>increment</code> is not atomic on a burst.
+    </div>
+
+    <div class="callout danger">
+      <strong>Production</strong> — the <code>06-redis-shared-store.yaml</code> Redis
+      uses <code>emptyDir</code> (volatile) and no TLS (intra-cluster traffic).
+      For production: PVC + replication/Sentinel or a managed Redis, and
+      <code>rediss://</code> (TLS) in the <code>URL</code>.
+    </div>
+
+    <h3>Redis scenario cleanup</h3>
+    <pre># Revert Limitador to in-memory
+oc -n kuadrant-system patch limitador limitador --type=merge \
+  -p '{"spec":{"storage":null}}'
+oc -n kuadrant-system delete secret limitador-redis --ignore-not-found
+
+# Drop the shared-store Redis (deletes the whole namespace)
+oc delete -f manifests/06-redis-shared-store.yaml --ignore-not-found</pre>
+  </div>
+
+</main>
+
+<script>
+  // Pre-fill the host field from /env.json (apiHost) when the catalog
+  // image has it baked in (Ansible role injects APPS_CONNECTIVITY_ROUTE_HOSTNAME
+  // on the Deployment → generate-env.sh writes it to env.json on startup).
+  // Falls back to window.location.host if env.json is missing/empty — that
+  // preserves the previous behaviour for standalone / dev runs of this page.
+  (async function() {
+    let apiHost = '';
+    try {
+      const r = await fetch('/env.json', { cache: 'no-store' });
+      if (r.ok) apiHost = ((await r.json()) || {}).apiHost || '';
+    } catch (_) { /* env.json missing — fall back below */ }
+    const fallback = window.location.host;
+    const useHost = apiHost
+      || (fallback && !fallback.startsWith('localhost') && !fallback.startsWith('127.') ? fallback : '');
+    const el = document.getElementById('host');
+    if (el && !el.value) el.value = useHost;
+  })();
+
+  function url(path) {
+    const host = document.getElementById('host').value.trim();
+    if (!host) throw new Error('Hostname required');
+    return 'https://' + host + path;
+  }
+
+  // Generic burst executor — fires N reqs in parallel (up to concurrency),
+  // labels each with a bucket label.
+  async function burst(target, count, headers, bucket, results) {
+    const concurrency = 5;
+    let done = 0;
+    async function worker() {
+      while (done < count) {
+        const i = done++;
+        if (i >= count) return;
+        const t0 = performance.now();
+        try {
+          const r = await fetch(target, { headers });
+          results.push({ bucket, code: r.status, ms: performance.now() - t0, t: Date.now() });
+        } catch (e) {
+          results.push({ bucket, code: 0, ms: performance.now() - t0, t: Date.now() });
+        }
+      }
+    }
+    await Promise.all(Array.from({length: concurrency}, () => worker()));
+  }
+
+  function render(results) {
+    const card = document.getElementById('results');
+    card.style.display = '';
+    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    // Sort by time
+    results.sort((a, b) => a.t - b.t);
+
+    // Summary stats
+    const total = results.length;
+    const ok = results.filter(r => r.code === 200).length;
+    const lim = results.filter(r => r.code === 429).length;
+    const err = total - ok - lim;
+    const avgMs = total ? Math.round(results.reduce((a, r) => a + r.ms, 0) / total) : 0;
+    document.getElementById('summary').innerHTML = `
+      <div class="stat"><div class="label">Total</div><div class="value">${total}</div></div>
+      <div class="stat"><div class="label">200 OK</div><div class="value success">${ok}</div></div>
+      <div class="stat"><div class="label">429 Limited</div><div class="value danger">${lim}</div></div>
+      <div class="stat"><div class="label">Outros</div><div class="value">${err}</div></div>
+      <div class="stat"><div class="label">Average latency</div><div class="value">${avgMs}ms</div></div>
+    `;
+
+    // Timeline
+    document.getElementById('timeline').innerHTML = results.map(r => {
+      const cls = r.code === 200 ? 'ok' : r.code === 429 ? 'lim' : 'err';
+      const label = r.code === 200 ? '✓' : r.code === 429 ? '⊘' : '!';
+      return `<div class="tick ${cls}" title="${r.bucket} → ${r.code} (${Math.round(r.ms)}ms)">${label}</div>`;
+    }).join('');
+
+    // Distribution by bucket
+    const buckets = {};
+    for (const r of results) {
+      const b = buckets[r.bucket] = buckets[r.bucket] || { ok: 0, lim: 0, err: 0 };
+      if (r.code === 200) b.ok++;
+      else if (r.code === 429) b.lim++;
+      else b.err++;
+    }
+    document.querySelector('#dist tbody').innerHTML = Object.entries(buckets).map(([name, b]) =>
+      `<tr><td class="mono">${name}</td><td>${b.ok}</td><td>${b.lim}</td><td>${b.err}</td></tr>`
+    ).join('');
+  }
+
+  // Scenario 1 — Single bucket
+  document.getElementById('run-single').addEventListener('click', async (ev) => {
+    const btn = ev.target;
+    btn.disabled = true; btn.textContent = 'Running…';
+    try {
+      const target = url(document.getElementById('path').value);
+      const count = +document.getElementById('count').value;
+      const results = [];
+      await burst(target, count, {}, 'global', results);
+      render(results);
+    } catch (e) { alert(e.message); }
+    btn.disabled = false; btn.textContent = 'Run burst';
+  });
+
+  // Scenario 2a — Header buckets
+  document.getElementById('run-header').addEventListener('click', async (ev) => {
+    const btn = ev.target;
+    btn.disabled = true; btn.textContent = 'Running…';
+    try {
+      const target = url(document.getElementById('path').value);
+      const count = +document.getElementById('count').value;
+      const headerName = document.getElementById('header-name').value.trim();
+      const values = document.getElementById('header-values').value.split(',').map(s => s.trim()).filter(Boolean);
+      const results = [];
+      await Promise.all(values.map(v => burst(target, count, { [headerName]: v }, v, results)));
+      render(results);
+    } catch (e) { alert(e.message); }
+    btn.disabled = false; btn.textContent = 'Run';
+  });
+
+  // Scenario 2b — APIKey buckets
+  document.getElementById('run-apikey').addEventListener('click', async (ev) => {
+    const btn = ev.target;
+    btn.disabled = true; btn.textContent = 'Running…';
+    try {
+      const target = url(document.getElementById('auth-path').value);
+      const count = +document.getElementById('count').value;
+      const keys = document.getElementById('apikeys').value.split(',').map(s => s.trim()).filter(Boolean);
+      const results = [];
+      await Promise.all(keys.map(k => {
+        const label = k.split('-')[0]; // alice/bob/carol
+        return burst(target, count, { 'api-key': k }, label, results);
+      }));
+      render(results);
+    } catch (e) { alert(e.message); }
+    btn.disabled = false; btn.textContent = 'Run';
+  });
+</script>
+
+</body>
+</html>

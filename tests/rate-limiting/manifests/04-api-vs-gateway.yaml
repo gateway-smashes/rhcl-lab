@@ -1,0 +1,71 @@
+# Rate limit at the API and/or Gateway level, simultaneously.
+#
+# Scenario: the platform operator wants an ABSOLUTE CEILING at the Gateway
+# (anti-DDoS, infra protection) AND the API team wants fine per-route
+# limits. Both policies coexist; the composed granularity is:
+#
+#                      ┌──────────────┐
+#                      │   Gateway    │  RLP (overrides) — teto
+#                      │              │  Ex: 200/min global
+#                      └──────┬───────┘
+#                             │
+#                  ┌──────────┼──────────┐
+#                  │                     │
+#            ┌─────▼────┐          ┌─────▼────┐
+#            │ HTTPRoute│          │ HTTPRoute│
+#            │  bank-api│          │  outra   │   RLP (defaults)
+#            │ /api/v1  │          │ /api/x   │   Ex: 50/min por API
+#            └──────────┘          └──────────┘
+#
+# Gateway API semantics for same-class policies:
+#   - `defaults`  on the Gateway policy: applied to routes that do NOT have
+#                  their own policy. API-level overrides it.
+#   - `overrides` no policy do Gateway: NÃO pode ser sobrescrito por
+#                  API-level. Implementa "teto absoluto".
+#
+# When both exist, Kuadrant composes them: the request must pass
+# em AMBOS os limites (o mais restritivo prevalece naturalmente).
+#
+# How to apply (gateway-level only — the API-level already applied in
+# 01-global-same-site.yaml):
+#   oc apply -f tests/rate-limiting/manifests/04-api-vs-gateway.yaml
+#   # Also apply 01 or 03 to have the API-level coexisting.
+#
+# Validar:
+#   HOST=$(oc get httproute banking-api-connectivity -n rhcl-apps \
+#          -o jsonpath='{.spec.hostnames[0]}')
+#   for i in $(seq 1 60); do
+#     curl -sk -o /dev/null -w "%{http_code}\n" "https://$HOST/api/echo"
+#   done | sort | uniq -c
+#   # Esperado: 50 → 200 (limite api-level se for 01-global=50/window),
+#   # then 429 until the gateway window resets.
+apiVersion: kuadrant.io/v1
+kind: RateLimitPolicy
+metadata:
+  name: req064-gateway-ceiling
+  namespace: openshift-ingress
+  labels:
+    app.kubernetes.io/part-of: rhcl-req61-65-ratelimit
+    rhcl.poc/item: "64"
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: rhcl-apps-gateway
+  # `defaults` — pode ser sobrescrito pela RLP do HTTPRoute. Útil pra
+  # propose a "default" limit each API can adjust up or down.
+  defaults:
+    limits:
+      gateway-default:
+        rates:
+          - limit: 100
+            window: 1m
+  # For an absolute ceiling that NOBODY at the API level can
+  # sobrescrever, troque `defaults:` por `overrides:`:
+  #
+  # overrides:
+  #   limits:
+  #     gateway-ceiling:
+  #       rates:
+  #         - limit: 200
+  #           window: 1m

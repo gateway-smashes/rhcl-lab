@@ -2,7 +2,7 @@
 # Getting started — remove tudo que o apply.sh criou.
 #
 # Ordem inversa do apply, com --ignore-not-found pra ser idempotente.
-# Não toca no banking-api-v1 (é infra compartilhada).
+# Does not touch banking-api-v1 (it is shared infra).
 set -euo pipefail
 
 oc whoami >/dev/null 2>&1 || { echo "ERROR: oc not logged in" >&2; exit 1; }

@@ -1,0 +1,41 @@
+# Kuadrant CR — enables RHCL metrics and tracing
+#
+# Este arquivo NÃO deve ser usado com "oc apply -f". Use "oc patch" para
+# adicionar apenas o campo observability sem sobrescrever outros campos
+# do CR Kuadrant existente:
+#
+#   oc -n kuadrant-system patch kuadrant kuadrant --type=merge \
+#     -p "$(yq -o=json '.spec | {"spec": .}' tests/opentelemetry-traces-metrics/manifests/07-kuadrant-observability.yaml)"
+#
+# Ou diretamente:
+#
+#   oc -n kuadrant-system patch kuadrant kuadrant --type=merge -p '{
+#     "spec": {
+#       "observability": {
+#         "enable": true,
+#         "dataPlane": {
+#           "defaultLevels": [{"debug": "true"}],
+#           "httpHeaderIdentifier": "x-request-id"
+#         },
+#         "tracing": {
+#           "defaultEndpoint": "rpc://otel-rhcl-collector.observability.svc.cluster.local:4317",
+#           "insecure": true
+#         }
+#       }
+#     }
+#   }'
+#
+# Validation:
+#   oc -n kuadrant-system get kuadrant kuadrant -o jsonpath='{.spec.observability}' | python3 -m json.tool
+#   oc get servicemonitor,podmonitor -A -l kuadrant.io/observability=true
+---
+spec:
+  observability:
+    enable: true
+    dataPlane:
+      defaultLevels:
+        - debug: "true"
+      httpHeaderIdentifier: x-request-id
+    tracing:
+      defaultEndpoint: rpc://otel-rhcl-collector.observability.svc.cluster.local:4317
+      insecure: true

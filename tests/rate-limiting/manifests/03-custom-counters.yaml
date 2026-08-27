@@ -1,0 +1,81 @@
+# Rate-limit customization from custom fields.
+#
+# Demonstra dois tipos de counter customizado coexistindo numa mesma RLP:
+#
+#   1. per-customer-id   — chave = header `x-customer-id`
+#   2. per-source-ip     — chave = IP de origem
+#
+# NOTA importante (descoberto na PoC):
+#   Having 3+ entries in `limits` in a single RLP, especially mixing
+#   counters que dependem de `auth.identity` com counters que dependem
+#   only `request.*`, triggers a bug where the wasm-shim cannot
+#   evaluate all the actions correctly and nothing is limited. The fix
+#   is to keep at most 2 entries in `limits` per RLP, or split into
+#   multiple RLPs (each can only target the same resource once,
+#   so use separate `RateLimitPolicy` objects with distinct targetRefs —
+#   ex. uma na rota e outra no Gateway).
+#
+# Para o counter `per-user` (auth.identity.userid), use a `RateLimitPolicy`
+# gerada pelo `PlanPolicy banking-api-plans` ou crie uma RLP dedicada com
+# targetRef diferente (ex. com sectionName).
+#
+# Em CEL, qualquer atributo da request ou da identidade vira chave de
+# counter. Importante: usar aspas SIMPLES dentro do CEL — o Kuadrant
+# serializes the expression source as the descriptor key in Limitador,
+# e aspas duplas aninhadas quebram o parser CEL do Limitador.
+#
+#   request.headers['x-customer-id']   # ✓ funciona
+#   request.headers["x-customer-id"]   # ✗ quebra o Limitador (parse error)
+#   request.method
+#   request.path
+#   request.remote_address
+#   auth.identity.userid               # ver nota acima
+#
+# Como aplicar:
+#   oc apply -f tests/rate-limiting/manifests/03-custom-counters.yaml
+#
+# Validate (in PARALLEL — sequential does not exceed a short window):
+#   HOST=$(oc get httproute banking-api-connectivity -n rhcl-apps \
+#          -o jsonpath='{.spec.hostnames[0]}')
+#   { for i in $(seq 1 10); do
+#       curl -sk -o /dev/null -w "%{http_code}\n" \
+#         -H "x-customer-id: alpha" "https://$HOST/api/echo" &
+#     done; wait; } | sort | uniq -c
+#   # Esperado: 5 OK + 5 limited (limite 5/min em alpha)
+#
+#   { for i in $(seq 1 10); do
+#       curl -sk -o /dev/null -w "%{http_code}\n" \
+#         -H "x-customer-id: beta" "https://$HOST/api/echo" &
+#     done; wait; } | sort | uniq -c
+#   # Esperado: 5 OK + 5 limited (counter beta INDEPENDENTE de alpha)
+apiVersion: kuadrant.io/v1
+kind: RateLimitPolicy
+metadata:
+  name: req063-custom-counters
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-req61-65-ratelimit
+    rhcl.poc/item: "63"
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: banking-api-connectivity
+  limits:
+    # Counter por header customizado (multi-tenant ID injetado pelo cliente).
+    per-customer-id:
+      rates:
+        - limit: 5
+          window: 1m
+      counters:
+        - expression: "request.headers['x-customer-id']"
+      when:
+        - predicate: "request.headers['x-customer-id'] != ''"
+
+    # Counter by source IP (anti-abuse, does not depend on auth)
+    per-source-ip:
+      rates:
+        - limit: 30
+          window: 1m
+      counters:
+        - expression: request.remote_address

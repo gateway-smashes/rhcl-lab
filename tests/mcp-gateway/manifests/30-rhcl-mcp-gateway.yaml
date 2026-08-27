@@ -1,0 +1,33 @@
+# Dedicated Gateway for MCP (GatewayClass `openshift-default` — OpenShift lab / AWS).
+# For Sail/OSSM3 clusters (GatewayClass `istio`), use 30-rhcl-mcp-gateway-istio.yaml
+# and scripts/apply-istio.sh instead.
+#
+#   export RHCL_ZONE_ROOT_DOMAIN=example.com
+#   envsubst < tests/mcp-gateway/manifests/30-rhcl-mcp-gateway.yaml | oc apply -f -
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: rhcl-mcp-gateway
+  namespace: mcp-gateway
+  labels:
+    rhcl-lab/requirement: req059-mcp-operator
+    istio.io/rev: openshift-gateway
+  annotations:
+    networking.istio.io/service-type: LoadBalancer
+spec:
+  gatewayClassName: openshift-default
+  listeners:
+    - name: mcp
+      hostname: mcp-gateway.${RHCL_ZONE_ROOT_DOMAIN}
+      port: 8080
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: mcps
+      hostname: banking-api-mcp-server.${RHCL_ZONE_ROOT_DOMAIN}
+      port: 8080
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: All

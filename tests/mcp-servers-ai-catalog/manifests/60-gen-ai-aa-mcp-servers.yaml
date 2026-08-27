@@ -1,0 +1,33 @@
+# Registers deployed MCP servers for the Gen AI Playground (tool picker).
+#
+# Use in-cluster HTTP URLs — the gen-ai-ui backend validates MCP status from
+# inside the cluster and rejects Route TLS certs (self-signed edge termination).
+# External Routes remain available for curl/browser tests outside the dashboard.
+#
+#   oc apply -f tests/mcp-servers-ai-catalog/manifests/60-gen-ai-aa-mcp-servers.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gen-ai-aa-mcp-servers
+  namespace: redhat-ods-applications
+  labels:
+    rhcl-lab/requirement: req017-mcp-catalog
+data:
+  RHCL-Lab-Info: |
+    {
+      "url": "http://rhcl-lab-info-mcp.rhcl-mcp-lab.svc.cluster.local:8080/mcp",
+      "type": "streamable-http",
+      "description": "RHCL lab metadata tools: get_lab_name, list_target_zones, ping."
+    }
+  RHCL-Text-Tools: |
+    {
+      "url": "http://rhcl-text-tools-mcp.rhcl-mcp-lab.svc.cluster.local:8080/mcp",
+      "type": "streamable-http",
+      "description": "String helpers for tool-calling demos: uppercase, word_count, reverse_text."
+    }
+  RHCL-Time-Tools: |
+    {
+      "url": "http://rhcl-time-tools-mcp.rhcl-mcp-lab.svc.cluster.local:8080/mcp",
+      "type": "streamable-http",
+      "description": "UTC time helpers: now_utc, format_timestamp, add_minutes."
+    }

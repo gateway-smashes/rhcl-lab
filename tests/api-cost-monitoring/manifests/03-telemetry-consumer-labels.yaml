@@ -1,0 +1,62 @@
+# req018 — Telemetry CR: adiciona os labels custom no istio_requests_total
+# of the RHCL gateway. Without this, the Cost page and the "RHCL API Costs" dashboard
+# collapse into a single "no consumer" bucket.
+#
+# GOTCHA CRÍTICA:
+#   A Telemetry CR with an empty selector (default) only applies to workloads
+#   with an injected sidecar. OpenShift Gateway API gateways are standalone
+#   Envoy (no injection webhook), so istiod silently ignores it
+#   e os tagOverrides nunca chegam no wasm filter istio.stats. Resultado:
+#   istio_requests_total sai sem os 3 labels custom → dashboards vazios.
+#
+#   Fix: `spec.targetRefs` pointing at the Gateway explicitly.
+#   Discovered the hard way (see Kuadrant#2049).
+#
+# Labels adicionados:
+#   - request_url_path              → path do request (ex: /api/v1/summary)
+#   - request_headers_x_consumer_id → header injected by Authorino after auth
+#                                     (vira "<nil>" se anônimo — dashboard
+#                                     re-label pra "anonymous" no PromQL)
+#   - route_name                    → nome do HTTPRoute que matched
+#
+# CARDINALIDADE:
+#   request_url_path adiciona 1 valor de label por path distinto. Se as
+#   APIs have paths with unbounded segments (UUIDs, numeric IDs),
+#   normalize via an EnvoyFilter BEFORE enabling in production.
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata:
+  name: rhcl-api-metrics
+  namespace: openshift-ingress
+  labels:
+    app.kubernetes.io/part-of: rhcl-poc
+    rhcl.poc/req: req018
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: rhcl-apps-gateway
+  metrics:
+    - providers:
+        - name: prometheus
+      overrides:
+        - match:
+            metric: REQUEST_COUNT
+            mode: CLIENT_AND_SERVER
+          tagOverrides:
+            request_url_path:
+              value: "request.url_path"
+            request_headers_x_consumer_id:
+              value: "request.headers['x-consumer-id']"
+            route_name:
+              value: "xds.route_name"
+        - match:
+            metric: REQUEST_DURATION
+            mode: CLIENT_AND_SERVER
+          tagOverrides:
+            request_url_path:
+              value: "request.url_path"
+            request_headers_x_consumer_id:
+              value: "request.headers['x-consumer-id']"
+            route_name:
+              value: "xds.route_name"

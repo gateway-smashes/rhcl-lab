@@ -1,0 +1,133 @@
+# Integrated AuthPolicy: anonymous + apikey (existing) + JWT/OIDC on /api/whoami (item 71).
+# Gateway (Authorino) validates the JWT against the Keycloak issuer, enforces a
+# realm role, and forwards verified claims to the backend as x-jwt-* headers.
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: banking-api-connectivity-apikey
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-banking-poc
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: banking-api-connectivity
+  rules:
+    authentication:
+      cors-preflight:
+        when:
+          - predicate: "request.method == 'OPTIONS'"
+        anonymous: {}
+      public-echo:
+        when:
+          - predicate: "request.path.startsWith('/api/echo') || request.path.startsWith('/api/lb-test')"
+        anonymous: {}
+      public-ws:
+        when:
+          - predicate: "request.path.startsWith('/ws')"
+        anonymous: {}
+      ai-mock:
+        when:
+          - predicate: "request.path.startsWith('/api/v1/chat/completions') || request.path.startsWith('/api/ai')"
+        anonymous: {}
+      # Item 71 — OIDC/JWT validated AT THE GATEWAY. Authorino fetches the realm
+      # JWKS from issuerUrl and verifies signature, iss, aud, exp on every request.
+      jwt-keycloak:
+        when:
+          - predicate: "request.path.startsWith('/api/whoami')"
+        jwt:
+          issuerUrl: https://keycloak.example.com/realms/rhcl
+      api-key-header:
+        when:
+          - predicate: "request.method != 'OPTIONS'"
+          - predicate: "!request.path.startsWith('/api/echo') && !request.path.startsWith('/api/lb-test') && !request.path.startsWith('/ws') && !request.path.startsWith('/api/v1/chat/completions') && !request.path.startsWith('/api/ai') && !request.path.startsWith('/api/whoami')"
+        apiKey:
+          allNamespaces: true
+          selector:
+            matchLabels:
+              authorino.kuadrant.io/managed-by: authorino
+              app: banking-api-apikey
+        credentials:
+          customHeader:
+            name: api-key
+      api-key-query:
+        when:
+          - predicate: "request.method != 'OPTIONS'"
+          - predicate: "!request.path.startsWith('/api/echo') && !request.path.startsWith('/api/lb-test') && !request.path.startsWith('/ws') && !request.path.startsWith('/api/v1/chat/completions') && !request.path.startsWith('/api/ai') && !request.path.startsWith('/api/whoami')"
+        apiKey:
+          allNamespaces: true
+          selector:
+            matchLabels:
+              authorino.kuadrant.io/managed-by: authorino
+              app: banking-api-apikey
+        credentials:
+          queryString:
+            name: api-key
+    authorization:
+      cel-transfer-idempotency:
+        when:
+          - predicate: "request.method == 'POST' && request.path.startsWith('/api/v1/transfers')"
+          - predicate: "request.headers['x-cel-strict'] == 'true'"
+        opa:
+          rego: |
+            allow {
+              key := input.context.request.http.headers["x-idempotency-key"]
+              key != ""
+            }
+      cel-bot-blocking:
+        when:
+          - predicate: "request.headers['user-agent'].contains('bot')"
+          - predicate: "request.method != 'OPTIONS'"
+          - predicate: "!request.path.startsWith('/api/echo') && !request.path.startsWith('/api/lb-test')"
+        opa:
+          rego: |
+            allow = false
+      # Item 71 — authZ at the gateway: require realm role banking-customer.
+      jwt-require-role:
+        when:
+          - predicate: "request.path.startsWith('/api/whoami')"
+        patternMatching:
+          patterns:
+            - selector: auth.identity.realm_access.roles
+              operator: incl
+              value: banking-customer
+    response:
+      success:
+        filters:
+          identity:
+            json:
+              properties:
+                userid:
+                  selector: auth.identity.metadata.annotations.secret\.kuadrant\.io/user-id
+                plan-id:
+                  selector: auth.identity.metadata.annotations.secret\.kuadrant\.io/plan-id
+        headers:
+          # Item 71 — forward gateway-verified claims to the backend. These are
+          # only populated for JWT identities (null selectors are omitted), so
+          # apikey/anonymous requests are unaffected.
+          x-jwt-sub:
+            plain:
+              selector: auth.identity.sub
+          x-jwt-preferred-username:
+            plain:
+              selector: auth.identity.preferred_username
+          x-jwt-email:
+            plain:
+              selector: auth.identity.email
+          x-jwt-roles:
+            plain:
+              selector: auth.identity.realm_access.roles
+          x-jwt-scope:
+            plain:
+              selector: auth.identity.scope
+          x-jwt-aud:
+            plain:
+              selector: auth.identity.aud
+          x-jwt-iss:
+            plain:
+              selector: auth.identity.iss
+      unauthorized:
+        code: 403
+        message:
+          value: "Forbidden: gateway authorization denied this request"

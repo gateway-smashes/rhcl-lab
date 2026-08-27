@@ -2,10 +2,10 @@
 # Getting started — aplica todos os 7 manifests em ordem.
 #
 # Uso:
-#   HOSTNAME=banking-lite.apps.example.com ./scripts/apply.sh
+#   HOSTNAME=banking-lite.pocrhcl.redhat.lab.example.com ./scripts/apply.sh
 #
-# HOSTNAME é obrigatório — sem ele o HTTPRoute fica com placeholder
-# literal e o gateway não roteia. Se você não sabe qual hostname usar,
+# HOSTNAME is required — without it the HTTPRoute keeps a literal
+# placeholder and the gateway does not route. If you don't know which hostname to use,
 # derive do banking-api existente:
 #   BASE=$(oc get httproutes.gateway.networking.k8s.io banking-api-connectivity \
 #     -n rhcl-apps -o jsonpath='{.spec.hostnames[0]}' | cut -d. -f2-)
@@ -23,15 +23,15 @@ echo "── Getting started: aplicando banking-lite ─────────
 echo "   hostname: ${HOSTNAME}"
 echo ""
 
-# Pré-flight: o banking-api-v1 tem que existir. Se não, o HTTPRoute
-# fica com backendRef inválido e nenhum request passa.
+# Preflight: banking-api-v1 must exist. If not, the HTTPRoute
+# has an invalid backendRef and no request passes.
 if ! oc -n rhcl-apps get svc banking-api-v1 >/dev/null 2>&1; then
-  echo "ERROR: Service banking-api-v1 não encontrado em rhcl-apps." >&2
+  echo "ERROR: Service banking-api-v1 not found in rhcl-apps." >&2
   echo "       Instalar o PoC apps primeiro (playbook apps-install ou role apps)." >&2
   exit 1
 fi
 
-echo "[1/7] HTTPRoute banking-lite (com hostname substituída)"
+echo "[1/7] HTTPRoute banking-lite (with the hostname substituted)"
 sed "s|\${HOSTNAME}|${HOSTNAME}|g" "${MANIFESTS}/01-httproute.yaml" | oc apply -f -
 
 echo "[2/7] APIProduct banking-lite"
@@ -52,7 +52,7 @@ oc apply -f "${MANIFESTS}/06-apikey-secret.yaml"
 echo "[7/7] APIKey CR banking-lite-onboarding (aparece no dev portal)"
 oc apply -f "${MANIFESTS}/07-apikey-cr.yaml"
 
-# Aguarda o Authorino pegar a nova AuthPolicy — ~5s é suficiente na
+# Waits for Authorino to pick up the new AuthPolicy — ~5s is enough in
 # maioria dos clusters. Sem essa espera, o 1º curl pode dar 401 falso.
 echo ""
 echo "→ Aguardando Authorino sincronizar (5s)..."
@@ -62,13 +62,13 @@ KEY=$(oc -n rhcl-apps get secret banking-lite-onboarding-key -o jsonpath='{.data
 
 echo ""
 echo "════════════════════════════════════════════════════════════════"
-echo " ✓ Pronto. Banking Lite disponível em:"
+echo " ✓ Done. Banking Lite available at:"
 echo "   https://${HOSTNAME}/api/v1/accounts/summary"
 echo ""
 echo " Chave (getting-started demo):"
 echo "   ${KEY}"
 echo ""
-echo " Testar rapidão:"
+echo " Quick test:"
 echo "   curl -sk -H 'api-key: ${KEY}' \\"
 echo "     https://${HOSTNAME}/api/v1/accounts/summary | jq '.[0:2]'"
 echo ""

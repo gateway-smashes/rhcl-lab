@@ -1,0 +1,26 @@
+# HTTPRoute attached to the Gateway. Adjust the hostname to match the Gateway
+# listener (must be inside *.apps.<cluster>) and the backendRef to point at
+# any Service in the cluster — banking-api-v1 in the rhcl-apps namespace is
+# the default lab backend.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: req55-banking-route
+  namespace: req55-api
+  labels:
+    app.kubernetes.io/part-of: rhcl-req55-tls
+spec:
+  parentRefs:
+    - name: req55-gateway
+      namespace: req55-gateway
+  hostnames:
+    - "req55-banking.apps.example.com"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      backendRefs:
+        - name: banking-api-v1
+          namespace: rhcl-apps
+          port: 8080

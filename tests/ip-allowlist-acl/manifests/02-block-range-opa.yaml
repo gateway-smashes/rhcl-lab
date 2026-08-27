@@ -1,0 +1,70 @@
+# Item 72 — IP-based ACL — Block a source CIDR range (OPA/Rego).
+#
+# Deny-list mode, range variant. Same topology as 01, but matches a whole CIDR
+# block instead of a single literal IP. Authorino evaluates the inline Rego on
+# every request:
+#   • Read the raw `x-forwarded-for` header (empty string if absent).
+#   • Split it into the list of IPs in the chain and trim whitespace.
+#   • `blocked` is true when ANY IP in the chain falls inside a blocked CIDR
+#     (net.cidr_contains_matches).
+#   • `allow` is true only when nothing is blocked; otherwise it stays
+#     undefined -> Authorino denies (HTTP 403).
+#
+# This is the exact engine validated in the lab. Edit `blocked_ranges` to set
+# the abusive feeds you want to drop.
+#
+# Naming / coexistence:
+#   metadata.name = ipfilter-block-xff (same name as 01 — applying one replaces
+#   the other; only one AuthPolicy is Enforced per target). It is a SEPARATE
+#   policy from the playbook default `ipfilter-ip-acl`; delete or disable that
+#   one first to avoid a two-policies-one-target conflict:
+#     oc -n rhcl-apps delete authpolicy ipfilter-ip-acl --ignore-not-found
+#
+# Apply:
+#   oc apply -f tests/ip-allowlist-acl/manifests/02-block-range-opa.yaml
+#   oc -n rhcl-apps wait authpolicy/ipfilter-block-xff \
+#     --for=condition=Enforced=True --timeout=120s
+#
+# Validate (curl — the proven path):
+#   # IP inside 203.0.113.0/24 -> expect 403
+#   curl -k -i -H "X-Forwarded-For: 203.0.113.10" \
+#     https://ipfilter.example.com/
+#   # IP outside the range -> expect 200
+#   curl -k -i -H "X-Forwarded-For: 8.8.8.8" \
+#     https://ipfilter.example.com/
+apiVersion: kuadrant.io/v1
+kind: AuthPolicy
+metadata:
+  name: ipfilter-block-xff
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-ipfilter-poc
+    rhcl.poc/item: "72"
+    rhcl.poc/mode: deny-list
+    rhcl.poc/engine: opa
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: ipfilter
+  rules:
+    authorization:
+      block-xff-range:
+        opa:
+          rego: |
+            blocked_ranges := [
+              "203.0.113.0/24",
+            ]
+
+            xff := object.get(input.context.request.http.headers, "x-forwarded-for", "")
+
+            xff_ips := [trim(ip, " ") | ip := split(xff, ",")[_]]
+
+            blocked {
+              ip := xff_ips[_]
+              count(net.cidr_contains_matches(blocked_ranges, [ip])) > 0
+            }
+
+            allow {
+              not blocked
+            }

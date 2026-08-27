@@ -1,0 +1,74 @@
+# HTTPRoute demonstrating a per-route request timeout.
+#
+# How to apply (substitutes ${RHCL_ZONE_ROOT_DOMAIN} with the exported value):
+#   export RHCL_ZONE_ROOT_DOMAIN=apps.example.com   # your lab domain
+#   envsubst < tests/per-route-timeouts/manifests/httproute-timeout.yaml | oc apply -f -
+#
+# The route attaches to the wildcard `*.${RHCL_ZONE_ROOT_DOMAIN}` Gateway
+# created by the playbook (rhcl-apps-gateway in openshift-ingress) and exposes
+# three rules pointing at the SAME backend endpoint (/api/v1/timeout, which
+# sleeps 3s) with different timeouts — proving the limit is per route:
+#
+#   /api/v1/timeout         timeouts.request: 2s   -> 504 (cuts before the backend)
+#   /api/v1/timeout-longer  timeouts.request: 30s  -> 200 (rewrite to /api/v1/timeout)
+#   /api/v1                 timeouts.request: 30s  -> 200 (v1 catch-all)
+#
+# Point the page tests/per-route-timeouts/index.html at
+# https://timeout.${RHCL_ZONE_ROOT_DOMAIN} to see both behaviors side by side
+# against the same final endpoint.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: banking-api-timeout
+  namespace: rhcl-apps
+  labels:
+    app.kubernetes.io/part-of: rhcl-per-route-timeouts
+spec:
+  parentRefs:
+    - name: rhcl-apps-gateway
+      namespace: openshift-ingress
+  hostnames:
+    - timeout.${RHCL_ZONE_ROOT_DOMAIN}
+  rules:
+    # Specific endpoint with a short timeout: the gateway cuts at 2s even
+    # though the backend takes 3s to respond.
+    - matches:
+        - path:
+            type: Exact
+            value: /api/v1/timeout
+      timeouts:
+        request: 2s
+      backendRefs:
+        - name: banking-api-v1
+          port: 8080
+
+    # Same final backend endpoint, but a different external path and a long
+    # timeout. URLRewrite swaps the path to /api/v1/timeout before forwarding
+    # to the backend — proving the timeout is tied to the route, not to the
+    # upstream endpoint.
+    - matches:
+        - path:
+            type: Exact
+            value: /api/v1/timeout-longer
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplaceFullPath
+              replaceFullPath: /api/v1/timeout
+      timeouts:
+        request: 30s
+      backendRefs:
+        - name: banking-api-v1
+          port: 8080
+
+    # v1 catch-all with a long timeout, so other calls keep working normally.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/v1
+      timeouts:
+        request: 30s
+      backendRefs:
+        - name: banking-api-v1
+          port: 8080
