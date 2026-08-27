@@ -1,25 +1,25 @@
 # GRPCRoute for req048 — idiomatic gRPC routing via the RHCL gateway.
 #
-# Exemplo COMPLEMENTAR ao 04-httproute.yaml. Diferente do HTTPRoute, que
+# COMPLEMENTARY example to 04-httproute.yaml. Unlike the HTTPRoute, which
 # routes gRPC as generic HTTP (PathPrefix /), GRPCRoute matches
 # by gRPC service/method (rules.matches.method) and guarantees HTTP/2
-# HTTP/2 fim-a-fim por contrato da Gateway API (trailers com grpc-status,
-# semantics (no upgrade from HTTP/1.1).
+# semantics end-to-end by Gateway API contract (trailers with grpc-status,
+# no upgrade from HTTP/1.1).
 #
 # Coexistence: uses its own hostname/listener (req048-grpcroute) because the
-# spec da Gateway API aceita apenas UMA rota (a mais antiga) quando um
-# HTTPRoute e um GRPCRoute com hostnames intersectantes compartilham o
-# mesmo listener.
+# Gateway API spec accepts only ONE route (the oldest) when an
+# HTTPRoute and a GRPCRoute with intersecting hostnames share the
+# same listener.
 #
 # RHCL 1.3.5 limitation: AuthPolicy/RateLimitPolicy cannot target a
-# GRPCRoute (targetRef aceita apenas Gateway e HTTPRoute) e o wasm-shim
-# Kuadrant's enforcement is only generated from HTTPRoutes — this GRPCRoute's
+# GRPCRoute (targetRef accepts only Gateway and HTTPRoute), and the Kuadrant
+# wasm-shim enforcement is only generated from HTTPRoutes — this GRPCRoute's
 # traffic does NOT go through Kuadrant policies (not even the gateway
 # deny-all). For gRPC with Kuadrant governance, use the HTTPRoute.
 #
 # Placeholders substituted by the apply-grpcroute.sh script via sed:
 #   {{ namespace }}         → req048-grpc
-#   {{ gateway_name }}      → nome do gateway detectado
+#   {{ gateway_name }}      → detected gateway name
 #   {{ gateway_namespace }} → openshift-ingress
 #   {{ hostname }}          → req048-grpcroute.<CLUSTER_DOMAIN>
 apiVersion: gateway.networking.k8s.io/v1
@@ -50,7 +50,7 @@ spec:
   # Infrastructure services: reflection (grpcurl list) and health.
   # GRPCRoute matching is explicit per service — calls to services
   # that match no rule are rejected by the gateway (the client
-  # gRPC recebe UNIMPLEMENTED).
+  # gRPC receives UNIMPLEMENTED).
   - matches:
     - method:
         service: grpc.reflection.v1.ServerReflection

@@ -4,8 +4,8 @@
 # managed by the GatewayClass controller and does not accept patches
 # persistentes em extensionProviders/meshConfig.
 #
-# O EnvoyFilter injeta o tracer OpenTelemetry diretamente na config do
-# Envoy proxy do gateway, enviando spans para o OpenTelemetryCollector.
+# The EnvoyFilter injects the OpenTelemetry tracer directly into the config of
+# the gateway's Envoy proxy, sending spans to the OpenTelemetryCollector.
 ---
 apiVersion: networking.istio.io/v1alpha3
 kind: EnvoyFilter

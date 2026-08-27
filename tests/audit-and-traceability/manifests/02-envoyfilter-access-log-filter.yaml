@@ -1,9 +1,9 @@
-# EnvoyFilter — access log JSON com filtro de health checks
+# EnvoyFilter — JSON access log with a health-check filter
 #
-# OPCIONAL: Aplique este EnvoyFilter NO LUGAR do 01-envoyfilter-access-log-json.yaml
-# se quiser reduzir o volume de logs excluindo health checks.
+# OPTIONAL: Apply this EnvoyFilter INSTEAD OF 01-envoyfilter-access-log-json.yaml
+# if you want to reduce log volume by excluding health checks.
 #
-# Usa not_health_check_filter para excluir requests marcadas como health
+# Uses not_health_check_filter to exclude requests marked as health
 # checks by Envoy, which are not relevant to API-call auditing.
 ---
 apiVersion: networking.istio.io/v1alpha3

@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# req038 — Remove todos os recursos criados para o teste de OpenTelemetry
+# req038 — Remove all resources created for the OpenTelemetry test
 # NOTE: the Istio CR (openshift-gateway) is pre-existing infrastructure
 # and is NOT modified or deleted by this script.
 set -euo pipefail
 
 echo "======================================================================"
-echo " REQ 038 — Limpeza dos recursos OpenTelemetry"
+echo " REQ 038 — Cleanup of OpenTelemetry resources"
 echo "======================================================================"
 
 echo ""
-echo "--- Kuadrant observability (restaurando sem tracing) ---"
+echo "--- Kuadrant observability (restoring without tracing) ---"
 oc -n kuadrant-system patch kuadrant kuadrant --type=json -p='[
   {"op": "remove", "path": "/spec/observability"}
-]' 2>/dev/null && echo "  ✓ Removido spec.observability do Kuadrant" || echo "  - Nada a remover"
+]' 2>/dev/null && echo "  ✓ Removed spec.observability from Kuadrant" || echo "  - Nothing to remove"
 
 echo ""
 echo "--- EnvoyFilter (tracing no gateway) ---"
@@ -56,5 +56,5 @@ echo "    oc delete namespace minio tempo observability"
 
 echo ""
 echo "======================================================================"
-echo " LIMPEZA CONCLUÍDA"
+echo " CLEANUP COMPLETE"
 echo "======================================================================"

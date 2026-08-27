@@ -1,8 +1,0 @@
-apiVersion: psc.example.com/v1
-kind: DnsIngress
-metadata:
-  name: req056-mtls
-  namespace: req051-gateway
-spec:
-  hostname: req056-mtls.${RHCL_ZONE_ROOT_DOMAIN}
-  ingressClass: nginx

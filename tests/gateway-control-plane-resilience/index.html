@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -381,7 +381,7 @@ oc scale deploy/dns-operator-controller-manager        -n kuadrant-system --repl
         <tr><td><code>Authorino</code> (service)</td><td><strong>Data plane</strong></td><td>ext_authz gRPC server</td><td>Per-request allow/deny decision</td></tr>
         <tr><td><code>Limitador</code> (service)</td><td><strong>Data plane</strong></td><td>ratelimit gRPC server</td><td>Counters and the 429 decision</td></tr>
         <tr><td>Gateway Envoy</td><td><strong>Data plane</strong></td><td>Reverse proxy</td><td>Serving the traffic itself</td></tr>
-        <tr><td><code>kube-apiserver</code></td><td>OCP CP</td><td>API do K8s</td><td>Tudo que envolve criar/alterar recursos</td></tr>
+        <tr><td><code>kube-apiserver</code></td><td>OCP CP</td><td>K8s API</td><td>Anything that involves creating/changing resources</td></tr>
         <tr><td><code>cert-manager</code></td><td>OCP CP</td><td>Issues/renews TLS</td><td>Automatic renewal before <code>notAfter</code></td></tr>
       </tbody>
     </table>
@@ -522,7 +522,7 @@ oc scale deploy/dns-operator-controller-manager        -n kuadrant-system --repl
         "CP healthy" proxy.</li>
       <li><strong>Policies via GitOps</strong> (Argo CD) — if etcd comes back
         empty, restore is minutes, not hours.</li>
-      <li><strong>Pre-staged config</strong>: data plane com
+      <li><strong>Pre-staged config</strong>: data plane with
         <code>imagePullPolicy: IfNotPresent</code> and
         locally cached images.</li>
       <li><strong>Failure mode per API</strong>: critical

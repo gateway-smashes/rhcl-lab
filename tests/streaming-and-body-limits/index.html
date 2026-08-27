@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -38,10 +38,10 @@
 <body>
 <div class="wrap">
 
-  <h1>req026 — Streaming de arquivos (RHCL body cap)</h1>
+  <h1>req026 — File streaming (RHCL body cap)</h1>
   <p class="sub">
     Generates random bytes locally and sends them to <code>/api/files/upload</code>. The
-    gateway RHCL aplica um cap de <strong>32 MiB</strong> via Envoy Lua streaming
+    RHCL gateway applies a <strong>32 MiB</strong> cap via an Envoy Lua streaming
     filter (chunk-by-chunk counting, <strong>does not</strong> buffer the request) +
     timeout of <strong>60 s</strong> via HTTPRoute. Uploads above the cap come back
     with <code>HTTP 413</code> and the <code>x-rhcl-streaming-cap</code> headers +
@@ -82,8 +82,8 @@
   </div>
 
   <p class="small">
-    Arquivo aberto: <code>tests/streaming-and-body-limits/index.html</code> · backend untouched ·
-    config Ansible: <code>apps_streaming_*</code>
+    Source file: <code>tests/streaming-and-body-limits/index.html</code> · backend untouched ·
+    Ansible config: <code>apps_streaming_*</code>
   </p>
 
 </div>
@@ -123,13 +123,13 @@
   $("upload").addEventListener("click", () => {
     const host = $("host").value.trim();
     const key = $("key").value.trim();
-    if (!host || !key) return show("Preencha gateway host e API key.", "err");
+    if (!host || !key) return show("Fill in the gateway host and API key.", "err");
     const url = "https://" + host + "/api/files/upload";
 
     setBar(0);
     show("Generating " + chosenMiB + " MiB of random bytes…", "warn");
     const payload = makePayload(chosenMiB);
-    show("Enviando " + chosenMiB + " MiB…", "warn");
+    show("Sending " + chosenMiB + " MiB…", "warn");
 
     const xhr = new XMLHttpRequest();
     xhr.open("POST", url, true);
@@ -154,7 +154,7 @@
         try {
           const j = JSON.parse(xhr.responseText);
           show(
-            "✓ HTTP 200 (RHCL deixou passar)\n" +
+            "✓ HTTP 200 (RHCL let it through)\n" +
             "bytesReceived: " + j.bytesReceived + "\n" +
             "sha256:        " + j.sha256 + "\n" +
             "durationMs:    " + j.durationMs,
@@ -165,9 +165,9 @@
         }
       } else if (xhr.status === 413) {
         show(
-          "✕ HTTP 413 — RHCL bloqueou o upload (streaming Lua filter)\n" +
+          "✕ HTTP 413 — RHCL blocked the upload (streaming Lua filter)\n" +
           (cap      ? "x-rhcl-streaming-cap:   " + cap      + " bytes\n" : "") +
-          (observed ? "x-rhcl-observed-bytes:  " + observed + " bytes (chunk que estourou o cap)\n" : "") +
+          (observed ? "x-rhcl-observed-bytes:  " + observed + " bytes (chunk that overflowed the cap)\n" : "") +
           "\nbody: " + xhr.responseText.slice(0, 200),
           "err"
         );
@@ -184,11 +184,11 @@
   $("download").addEventListener("click", () => {
     const host = $("host").value.trim();
     const key = $("key").value.trim();
-    if (!host || !key) return show("Preencha gateway host e API key.", "err");
+    if (!host || !key) return show("Fill in the gateway host and API key.", "err");
     const url = "https://" + host + "/api/files/download?size=10485760&chunkSize=262144";
 
     setBar(0);
-    show("Baixando 10 MiB em chunks de 256 KiB…", "warn");
+    show("Downloading 10 MiB in 256 KiB chunks…", "warn");
 
     const xhr = new XMLHttpRequest();
     xhr.open("GET", url, true);
@@ -201,7 +201,7 @@
       if (xhr.status === 200) {
         show("✓ HTTP 200 — Content-Length=" + cl + " bytes, blob.size=" + xhr.response.size, "ok");
       } else {
-        show("HTTP " + xhr.status + " — esperava 200", "err");
+        show("HTTP " + xhr.status + " — expected 200", "err");
       }
     };
     xhr.onerror = () => show("Network failure on download.", "err");

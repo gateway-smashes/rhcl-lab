@@ -1,20 +1,20 @@
-# EnvoyFilter para o req048 — desabilita o buffer de request nos vhosts gRPC.
+# EnvoyFilter for req048 — disables the request buffer on the gRPC vhosts.
 #
-# Contexto: o req026 (upload de arquivos) instala o EnvoyFilter
-# files-upload-max-body, que insere envoy.filters.http.buffer em TODOS os
-# listeners do gateway compartilhado. O buffer aguarda o corpo completo da
+# Context: req026 (file uploads) installs the EnvoyFilter
+# files-upload-max-body, which inserts envoy.filters.http.buffer on ALL
+# listeners of the shared gateway. The buffer waits for the full body of the
 # request before forwarding it — which breaks gRPC RPCs with a streaming
 # request (e.g. grpcurl reflection, bidirectional RPCs like EchoStream),
 # whose body never "completes". Unary calls are not affected.
 #
-# Este filtro desabilita o buffer apenas nos virtual hosts do req048
-# (HTTPRoute e GRPCRoute), usando o mesmo mecanismo BufferPerRoute que o
+# This filter disables the buffer only on the req048 virtual hosts
+# (HTTPRoute and GRPCRoute), using the same BufferPerRoute mechanism that
 # the streaming-and-body-limits item uses to exclude its own route. The other gateway hosts
-# continuam com o comportamento do req026. Sem o req026 aplicado, este
+# keep the req026 behavior. Without req026 applied, this
 # filter is harmless.
 #
 # Placeholders substituted by the apply*.sh scripts via sed:
-#   {{ gateway_name }}       → nome do gateway detectado
+#   {{ gateway_name }}       → detected gateway name
 #   {{ hostname }}           → req048-grpc.<CLUSTER_DOMAIN>
 #   {{ hostname_grpcroute }} → req048-grpcroute.<CLUSTER_DOMAIN>
 apiVersion: networking.istio.io/v1alpha3

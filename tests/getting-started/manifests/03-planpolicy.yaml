@@ -1,15 +1,15 @@
-# Getting started — Passo 3/6: PlanPolicy
+# Getting started — Step 3/6: PlanPolicy
 #
-# Define os "tiers" (planos) que a API oferece — a estrutura comercial
-# que o dev portal apresenta na hora de subscribe. Cada tier tem seu
+# Defines the "tiers" (plans) the API offers — the commercial structure
+# the dev portal presents at subscribe time. Each tier has its
 # own rate limit, and Kuadrant picks which to apply by looking at the
 # `secret.kuadrant.io/plan-id` annotation on the request's key.
 #
 # For getting-started we declare ONE tier only (`demo`) at 60 req/min.
 # In production you usually have gold/silver/bronze with different
-# escalonados.
+# staggered limits.
 #
-# targetRef → mesma HTTPRoute do passo 1. É por isso que precisou vir
+# targetRef → same HTTPRoute as step 1. That is why it had to come
 # later: Kuadrant only validates the policy if the HTTPRoute exists.
 apiVersion: extensions.kuadrant.io/v1alpha1
 kind: PlanPolicy

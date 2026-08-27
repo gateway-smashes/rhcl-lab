@@ -71,7 +71,7 @@ KEY=$(oc get secret banking-api-key-alice -n rhcl-apps -o jsonpath='{.data.api_k
 for i in $(seq 1 12); do
   curl -sk -o /dev/null -w "%{http_code} " -X POST "https://$H/api/v1/chat/completions" \
     -H "api-key: $KEY" -H 'content-type: application/json' \
-    -d '{"model":"banking-mock-gpt","messages":[{"role":"user","content":"conte ate 20"}]}'
+    -d '{"model":"banking-mock-gpt","messages":[{"role":"user","content":"count to 20"}]}'
 done; echo
 ```
 

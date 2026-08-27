@@ -1,14 +1,14 @@
-# Getting started — Passo 5/6: RateLimitPolicy (global)
+# Getting started — Step 5/6: RateLimitPolicy (global)
 #
-# Rate limit GLOBAL da API — soma de TODAS as requests, independente
-# do consumer. Funciona como um "guarda-chuva" acima da PlanPolicy:
-# mesmo que 10 consumers do tier `demo` estejam dentro dos 60/min
+# GLOBAL rate limit for the API — sum of ALL requests, regardless
+# of the consumer. Acts as an "umbrella" above the PlanPolicy:
+# even if 10 consumers on the `demo` tier are within their 60/min
 # individual ones, if the API TOTAL exceeds 500/min nobody
-# passa. Protege o backend de picos agregados.
+# gets through. Protects the backend from aggregate spikes.
 #
 # Difference from the step-3 PlanPolicy:
-#   - PlanPolicy: 60/min POR consumer com plan-id=demo
-#   - RateLimitPolicy: 500/min TOTAL na API
+#   - PlanPolicy: 60/min PER consumer with plan-id=demo
+#   - RateLimitPolicy: 500/min TOTAL for the API
 #
 # If you don't want this aggregate ceiling, you can skip this step — the
 # PlanPolicy alone already protects the backend per consumer.

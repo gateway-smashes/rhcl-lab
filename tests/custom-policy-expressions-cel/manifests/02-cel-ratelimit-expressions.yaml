@@ -7,8 +7,8 @@
 # Regras implementadas:
 #
 #   1. financial-writes    — Restrictive limit (5 req/min) for write operations
-#                            de escrita financeira (POST em /api/v*/transfers).
-#                            Counter por x-idempotency-key: mesma chave de
+#                            of financial writes (POST to /api/v*/transfers).
+#                            Counter by x-idempotency-key: the same
 #                            idempotency key shares the same bucket.
 #
 #   2. reads-per-consumer  — Limite por consumer (60 req/min) para GETs na
@@ -16,23 +16,23 @@
 #                            each consumer has its own bucket.
 #
 # CEL expressions demonstrated:
-#   • when.predicate com && e || combinando method + path
+#   • when.predicate with && and || combining method + path
 #   • counters.expression extraindo valores de headers customizados
 #   • startsWith() para match de prefixo
 #
 # IMPORTANTE — aspas simples:
 #   Always use SINGLE quotes inside CEL expressions to reference
 #   headers (request.headers['x-foo']). Aspas duplas quebram o parser do
-#   Limitador (ver nota em tests/rate-limiting/manifests/03).
+#   Limitador (see the note in tests/rate-limiting/manifests/03).
 #
 # NOTE — max 2 limits per RLP:
-#   O wasm-shim do Kuadrant pode falhar com 3+ entries em `limits` numa
+#   Kuadrant's wasm-shim can fail with 3+ entries in `limits` in a
 #   single RLP (known bug — see the rate-limiting item). We keep 2 limits here.
 #
 # Como aplicar:
 #   oc apply -f tests/custom-policy-expressions-cel/manifests/02-cel-ratelimit-expressions.yaml
 #
-# Validar:
+# Validate:
 #   HOST=$(oc get httproute banking-api-connectivity -n rhcl-apps \
 #          -o jsonpath='{.spec.hostnames[0]}')
 #

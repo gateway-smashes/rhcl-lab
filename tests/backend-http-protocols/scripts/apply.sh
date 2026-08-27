@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# req054 — Consumir backends em HTTP/1.1, HTTP/2 e HTTP/3
-# Aplica os Services com appProtocol diferente e o HTTPRoute no gateway RHCL.
+# req054 — Consume backends over HTTP/1.1, HTTP/2 and HTTP/3
+# Applies the Services with different appProtocol and the HTTPRoute on the RHCL gateway.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MANIFESTS="$SCRIPT_DIR/../manifests"
 
 echo "======================================================================"
-echo " REQ 054 — Consumir backends em HTTP/1.1 e HTTP/2"
+echo " REQ 054 — Consume backends over HTTP/1.1 and HTTP/2"
 echo "======================================================================"
 
 # --- Detectar hostname ---
@@ -29,9 +29,9 @@ echo " Hostname req054:    $HOST"
 echo ""
 echo "[prereq] Checking RHCL / Kuadrant..."
 if oc get kuadrant -n kuadrant-system &>/dev/null; then
-  echo " ✓ Kuadrant instalado"
+  echo " ✓ Kuadrant installed"
 else
-  echo " ✗ Kuadrant NÃO encontrado em kuadrant-system."
+  echo " ✗ Kuadrant NOT found in kuadrant-system."
   exit 1
 fi
 
@@ -51,7 +51,7 @@ APPS_NS="rhcl-apps"
 echo ""
 echo "[prereq] Checking namespace $APPS_NS..."
 if oc get namespace "$APPS_NS" &>/dev/null; then
-  echo " ✓ Namespace $APPS_NS existe"
+  echo " ✓ Namespace $APPS_NS exists"
 else
   echo " ✗ Namespace $APPS_NS not found. Run the apps-install automation first."
   exit 1
@@ -67,19 +67,19 @@ else
   echo "   The req054 Services will point at banking-api-v1 pods."
 fi
 
-# --- Passo 1: Aplicar Services ---
+# --- Step 1: Apply Services ---
 echo ""
-echo "=== Passo 1/4: Services com appProtocol diferente ==="
+echo "=== Step 1/4: Services with different appProtocol ==="
 
 sed "s/{{ apps_namespace }}/$APPS_NS/g" "$MANIFESTS/service-http11.yaml" | oc apply -f -
-echo " ✓ Service req054-backend-http11 (sem appProtocol → HTTP/1.1 upstream)"
+echo " ✓ Service req054-backend-http11 (no appProtocol → HTTP/1.1 upstream)"
 
 sed "s/{{ apps_namespace }}/$APPS_NS/g" "$MANIFESTS/service-http2.yaml" | oc apply -f -
 echo " ✓ Service req054-backend-h2c (appProtocol: kubernetes.io/h2c → HTTP/2 upstream)"
 
-# --- Passo 2: Adicionar listener ao gateway ---
+# --- Step 2: Add listener to the gateway ---
 echo ""
-echo "=== Passo 2/4: Listener no gateway ==="
+echo "=== Step 2/4: Listener on the gateway ==="
 
 EXISTING_LISTENER=$(oc -n "$GW_NS" get gateway "$GW_NAME" -o jsonpath='{.spec.listeners[*].name}' 2>/dev/null | tr ' ' '\n' | grep -c "^req054-http$" || echo "0")
 
@@ -95,10 +95,10 @@ else
       "allowedRoutes":{"namespaces":{"from":"All"}}
     }}
   ]'
-  echo " ✓ Listener req054-http adicionado (hostname: $HOST)"
+  echo " ✓ Listener req054-http added (hostname: $HOST)"
 fi
 
-# --- Passo 3: Aplicar AuthPolicy (allow) ---
+# --- Step 3: Apply AuthPolicy (allow) ---
 echo ""
 echo "=== Step 3/4: AuthPolicy (allow public) ==="
 
@@ -125,27 +125,27 @@ spec:
             rego: |
               allow = true
 EOF
-echo " ✓ AuthPolicy req054-allow-public aplicado"
+echo " ✓ AuthPolicy req054-allow-public applied"
 
-# --- Passo 4: Aplicar HTTPRoute ---
+# --- Step 4: Apply HTTPRoute ---
 echo ""
-echo "=== Passo 4/4: HTTPRoute ==="
+echo "=== Step 4/4: HTTPRoute ==="
 
 sed -e "s/{{ apps_namespace }}/$APPS_NS/g" \
     -e "s/{{ gateway_name }}/$GW_NAME/g" \
     -e "s/{{ gateway_namespace }}/$GW_NS/g" \
     -e "s/{{ hostname }}/$HOST/g" \
     "$MANIFESTS/httproute.yaml" | oc apply -f -
-echo " ✓ HTTPRoute req054-http-versions aplicado"
+echo " ✓ HTTPRoute req054-http-versions applied"
 
 # --- Wait for acceptance ---
 echo ""
-echo " Aguardando HTTPRoute ser aceito..."
+echo " Waiting for the HTTPRoute to be accepted..."
 sleep 5
 
 ACCEPTED=$(oc -n "$APPS_NS" get httproute req054-http-versions -o jsonpath='{.status.parents[?(@.parentRef.sectionName=="req054-http")].conditions[?(@.type=="Accepted")].status}' 2>/dev/null || echo "")
 if [ "$ACCEPTED" = "True" ]; then
-  echo " ✓ HTTPRoute aceito pelo gateway"
+  echo " ✓ HTTPRoute accepted by the gateway"
 else
   echo " ⚠ HTTPRoute may not be accepted yet. Check:"
   echo "   oc -n $APPS_NS get httproute req054-http-versions -o yaml"
@@ -153,12 +153,12 @@ fi
 
 echo ""
 echo "======================================================================"
-echo " APLICAÇÃO CONCLUÍDA"
+echo " APPLY COMPLETE"
 echo "======================================================================"
 echo ""
-echo "O que foi criado:"
+echo "What was created:"
 echo "  Services:"
-echo "    - req054-backend-http11 (namespace: $APPS_NS) — sem appProtocol"
+echo "    - req054-backend-http11 (namespace: $APPS_NS) — no appProtocol"
 echo "    - req054-backend-h2c    (namespace: $APPS_NS) — appProtocol: kubernetes.io/h2c"
 echo "  Listener: req054-http (gateway: $GW_NAME)"
 echo "  HTTPRoute: req054-http-versions (namespace: $APPS_NS)"
@@ -167,7 +167,7 @@ echo ""
 echo "Hostname: $HOST"
 echo ""
 echo "Next steps:"
-echo "  1. Validar: bash $SCRIPT_DIR/validate.sh"
+echo "  1. Validate: bash $SCRIPT_DIR/validate.sh"
 echo "  2. Testar HTTP/1.1:"
 echo "     curl -sv http://$HOST/http11/api/v1/accounts/summary 2>&1 | head -20"
 echo "  3. Testar HTTP/2 (h2c upstream):"

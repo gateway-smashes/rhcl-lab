@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -341,13 +341,13 @@
     |                                       |  weight: v1=90 / v2=10          |
     |                                       |                                 |
     |                                  ┌────┴────┐                            |
-    |                                  │ ~90%    │ injeta x-route-version: v1 |
+    |                                  │ ~90%    │ injects x-route-version: v1 |
     |                                  │         │------------------------->  |
     |                                  │         │                  banking-api-v1
     |                                  │         │ <-------------------------|
     |                                  │         │ instance=banking-api-v1    |
     |                                  ├─────────┤ allHeaders[x-route-version]=v1
-    |                                  │ ~10%    │ injeta x-route-version: v2 |
+    |                                  │ ~10%    │ injects x-route-version: v2 |
     |                                  │         │------------------------->  |
     |                                  │         │                  banking-api-v2
     |                                  │         │ <-------------------------|
@@ -372,7 +372,7 @@
       <code>HTTPRouteRule.filters</code>, not in
       <code>HTTPBackendRef.filters</code>. Applying it per backendRef makes the
       resource go <code>ResolvedRefs=False, reason=InvalidFilter,
-      message="unsupported filter type URLRewrite"</code>. Por isso o demo
+      message="unsupported filter type URLRewrite"</code>. That is why the demo
       uses a path that exists on both pods and the signal comes from
       <code>RequestHeaderModifier</code> (core support in Istio) +
       the response <code>instance</code>.
@@ -432,10 +432,10 @@
         Via gateway — weighted.apps.cluster1.poc
       </button>
       <button class="preset" data-url="https://banking-api-v1-rhcl-apps.apps.example.com">
-        Backend v1 direto (cluster1.poc)
+        Backend v1 direct (cluster1.poc)
       </button>
       <button class="preset" data-url="https://banking-api-v2-rhcl-apps.apps.example.com">
-        Backend v2 direto (cluster1.poc)
+        Backend v2 direct (cluster1.poc)
       </button>
     </div>
   </div>
@@ -456,7 +456,7 @@
         <div class="legend">
           <span><span class="sw v1"></span>banking-api-v1</span>
           <span><span class="sw v2"></span>banking-api-v2</span>
-          <span><span class="sw other"></span>outro / erro</span>
+          <span><span class="sw other"></span>other / error</span>
         </div>
       </div>
       <div style="flex:1; min-width:240px;">
@@ -491,7 +491,7 @@
           <td class="num" id="rowV2Diff">—</td>
         </tr>
         <tr>
-          <td class="mono">outro / erro</td>
+          <td class="mono">other / error</td>
           <td class="num">0</td>
           <td class="num" id="rowOtherObs">—</td>
           <td class="num" id="rowOtherHits">0</td>
@@ -553,7 +553,7 @@
       Example <code>HTTPRoute</code> where each <code>backendRef</code>
       declares its own <code>weight</code>. The
       <code>RequestHeaderModifier</code> on each entry injects
-      <code>x-route-version: v1|v2</code> antes do envio ao backend; o
+      <code>x-route-version: v1|v2</code> before it is sent to the backend;
       the <code>instance</code> field of the <code>/api/whoami</code> response
       directly identifies which Deployment served the call.
     </p>
@@ -568,8 +568,8 @@
     <p style="margin-top:0;">
       The commands below reproduce the same experiment from a terminal,
       tabulating <code>instance</code> (and the echo of
-      <code>x-route-version</code>) com <code>jq</code>. O pareto deve
-      convergir para os pesos configurados conforme N cresce.
+      <code>x-route-version</code>) with <code>jq</code>. The split should
+      converge toward the configured weights as N grows.
     </p>
 
     <div class="card-title" style="margin-top:12px;">curl — burst de N chamadas e contagem por instance</div>
@@ -590,7 +590,7 @@
       <button class="copy" data-target="ocApply">Copiar</button>
     </div>
 
-    <div class="card-title" style="margin-top:16px;">oc patch — alterar pesos sem recriar</div>
+    <div class="card-title" style="margin-top:16px;">oc patch — change weights without recreating</div>
     <div class="curl-block">
       <pre class="curl" id="ocPatch"></pre>
       <button class="copy" data-target="ocPatch">Copiar</button>
@@ -667,13 +667,13 @@
     if (presetV1) {
       const u = `https://banking-api-v1-rhcl-apps.${domain}`;
       presetV1.dataset.url = u;
-      presetV1.textContent = `Backend v1 direto (${domain})`;
+      presetV1.textContent = `Backend v1 direct (${domain})`;
     }
     const presetV2 = document.querySelector(`button.preset[data-url*="banking-api-v2"]`);
     if (presetV2) {
       const u = `https://banking-api-v2-rhcl-apps.${domain}`;
       presetV2.dataset.url = u;
-      presetV2.textContent = `Backend v2 direto (${domain})`;
+      presetV2.textContent = `Backend v2 direct (${domain})`;
     }
 
     logLine(`env.json carregado · RHCL_ZONE_ROOT_DOMAIN=${domain}`, "info");
@@ -723,7 +723,7 @@
       if (!isNaN(v2)) w2Input.value = v2;
       refreshShellCommands();
       refreshYaml();
-      logLine(`Preset de pesos: v1=${v1} / v2=${v2}`, "info");
+      logLine(`Weight preset: v1=${v1} / v2=${v2}`, "info");
     });
   });
 
@@ -775,7 +775,7 @@
 
     document.getElementById("curlBurst").textContent =
 `# Fires N calls to the neutral path and tabulates the response \`instance\` field.
-# instance vem do env APP_INSTANCE_NAME do Deployment: banking-api-v1 ou v2.
+# instance comes from the Deployment's APP_INSTANCE_NAME env: banking-api-v1 or v2.
 N=${n}
 URL="${url}"
 for i in $(seq 1 $N); do
@@ -796,7 +796,7 @@ done | sort | uniq -c | sort -nr`;
 `export RHCL_ZONE_ROOT_DOMAIN=${(window.rhclEnv && window.rhclEnv.rhclZoneRootDomain) || "apps.example.com"}
 envsubst < tests/weighted-load-balancing/manifests/httproute-weighted.yaml | oc apply -f -
 
-# Confirme que o controller aceitou os filtros e os pesos
+# Confirm the controller accepted the filters and weights
 oc -n rhcl-apps get httproute banking-api-weighted -o yaml \\
   | yq '.spec.rules[0].backendRefs[] | {name: .name, weight: .weight, filters: .filters}'
 
@@ -867,7 +867,7 @@ spec:
                   - name: x-route-version
                     value: v2
 
-    # Atalhos sem peso (catch-all v1 e v2 — sanity check).
+    # Weightless shortcuts (catch-all v1 and v2 — sanity check).
     - matches:
         - path:
             type: PathPrefix
@@ -883,7 +883,7 @@ spec:
         - name: banking-api-v2
           port: 8080
 
-# Aplicar:
+# Apply:
 #   export RHCL_ZONE_ROOT_DOMAIN=apps.example.com
 #   envsubst < tests/weighted-load-balancing/manifests/httproute-weighted.yaml | oc apply -f -`;
     document.getElementById("yamlRoute").textContent = yaml;
@@ -1154,7 +1154,7 @@ spec:
         pinStatus.innerHTML = `<span class="badge bad">${res.status} ${escapeHtml(res.statusText)} em ${ms} ms</span>`;
         pinResult.style.color = "var(--rh-red-dark)";
         pinResult.textContent = `GET ${url}\nHTTP ${res.status} ${res.statusText}\n${preview}`;
-        logLine(`Resposta de erro (${version}): ${res.status} ${res.statusText} (${ms} ms)`, "error");
+        logLine(`Error response (${version}): ${res.status} ${res.statusText} (${ms} ms)`, "error");
         return;
       }
       const data = await res.json();

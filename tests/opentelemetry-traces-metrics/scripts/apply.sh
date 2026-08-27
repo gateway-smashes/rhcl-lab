@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Expose traces and metrics in the OpenTelemetry standards
-# Aplica todos os manifests na ordem correta com waits entre passos.
+# Applies all manifests in the correct order, with waits between steps.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -17,7 +17,7 @@ for op in openshift-tempo-operator openshift-opentelemetry-operator; do
   if oc get namespace "$op" &>/dev/null; then
     echo "  ✓ Namespace $op existe"
   else
-    echo "  ✗ Namespace $op NÃO encontrado. Instale o operator correspondente."
+    echo "  ✗ Namespace $op NOT found. Install the corresponding operator."
     exit 1
   fi
 done
@@ -27,8 +27,8 @@ echo "[prereq] Checking the Sail Operator (Service Mesh 3)..."
 if oc get crd istios.sailoperator.io &>/dev/null; then
   echo "  ✓ CRD istios.sailoperator.io available"
 else
-  echo "  ✗ CRD istios.sailoperator.io NÃO encontrado."
-  echo "    Instale o OpenShift Service Mesh 3 (Sail Operator)."
+  echo "  ✗ CRD istios.sailoperator.io NOT found."
+  echo "    Install OpenShift Service Mesh 3 (Sail Operator)."
   exit 1
 fi
 
@@ -106,17 +106,17 @@ echo "  ✓ Kuadrant observability configurada"
 
 echo ""
 echo "======================================================================"
-echo " APLICAÇÃO CONCLUÍDA"
+echo " APPLY COMPLETE"
 echo "======================================================================"
 echo ""
 echo "Resumo:"
 echo "  Gateway:     $GW_NS (tracing via EnvoyFilter)"
 echo "  Collector:   otel-rhcl-collector.observability.svc.cluster.local:4317"
 echo "  Tempo:       tempo-rhcl (namespace: tempo)"
-echo "  Kuadrant:    observability habilitada"
+echo "  Kuadrant:    observability enabled"
 echo ""
 echo "Next steps:"
-echo "  1. Validar:  bash $SCRIPT_DIR/validate.sh"
+echo "  1. Validate:  bash $SCRIPT_DIR/validate.sh"
 echo "  2. Generate traffic to the API published by the Gateway/HTTPRoute"
 echo "  3. Verificar traces no Tempo/Jaeger UI"
 echo "  4. Check metrics in Prometheus/Grafana"

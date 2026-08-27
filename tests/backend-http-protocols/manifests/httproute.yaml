@@ -1,8 +1,8 @@
 # HTTPRoute for req054 — routes traffic based on path prefix:
-#   /http11/* → req054-backend-http11 (Envoy conecta via HTTP/1.1)
-#   /h2/*    → req054-backend-h2c    (Envoy conecta via HTTP/2 h2c)
+#   /http11/* → req054-backend-http11 (Envoy connects via HTTP/1.1)
+#   /h2/*    → req054-backend-h2c    (Envoy connects via HTTP/2 h2c)
 #
-# Usa URLRewrite para remover o prefixo antes de enviar ao backend,
+# Uses URLRewrite to strip the prefix before forwarding to the backend,
 # because banking-api-v1 does not recognize the /http11 or /h2 prefixes.
 #
 # The hostname is substituted by the apply.sh script via sed:

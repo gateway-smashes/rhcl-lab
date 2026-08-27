@@ -1,36 +1,36 @@
-# Item 62/65 — Rate Limit global apontando o Limitador pro Redis compartilhado.
+# Item 62/65 — global rate limit pointing Limitador at the shared Redis.
 #
 # Switches Limitador storage from in-memory to Redis. The endpoint used is
-# o Redis no namespace `shared-store` deste mesmo cluster (ver
-# 06-redis-shared-store.yaml). Os contadores passam a viver no Redis em vez
+# the Redis in the `shared-store` namespace of this same cluster (see
+# 06-redis-shared-store.yaml). The counters now live in Redis, moving them
 # out of the Limitador pod's memory — this is what makes the rate limit truly
 # "global" and enables the multi-site scenario: another cluster with its own
-# Limitador apontando pro MESMO Redis compartilha os mesmos contadores.
+# Limitador pointing at the SAME Redis shares the same counters.
 #
-# Topologia neste cluster (single-cluster, mas pronta pra multi):
+# Topology in this cluster (single-cluster, but ready for multi):
 #   Envoy(gateway) → Limitador(kuadrant-system) → Redis(shared-store)
 #
-# Multi-site: cada cluster aponta o Limitador pro mesmo Redis (precisa de
-# rota de rede entre clusters — VPC peering, ClusterIP exposto, etc).
+# Multi-site: each cluster points Limitador at the same Redis (needs a
+# network route between clusters — VPC peering, exposed ClusterIP, etc).
 #
 # Prerequisites:
 #   oc apply -f tests/rate-limiting/manifests/06-redis-shared-store.yaml
 #   oc -n shared-store rollout status deploy/redis
 #
-# Como aplicar:
+# How to apply:
 #   oc apply -f tests/rate-limiting/manifests/02-limitador-redis.yaml
 #   oc -n kuadrant-system rollout status deploy/limitador-limitador
 #   oc apply -f tests/rate-limiting/manifests/01-global-same-site.yaml
 #
-# Validar (contadores agora vivem no Redis):
+# Validate (counters now live in Redis):
 #   HOST=$(oc get httproute banking-api-connectivity -n rhcl-apps -o jsonpath='{.spec.hostnames[0]}')
 #   { for i in $(seq 1 60); do curl -sk -o /dev/null -w "%{http_code}\n" "https://$HOST/api/echo" & done; wait; } | sort | uniq -c
-#   # Esperado com 01 (20/10s): 20x 200 + 40x 429 — igual ao in-memory, mas
+#   # Expected with 01 (20/10s): 20x 200 + 40x 429 — same as in-memory, but
 #   # the state is now in Redis. Prove it by inspecting the keys:
 #   POD=$(oc -n shared-store get pod -l app=redis -o jsonpath='{.items[0].metadata.name}')
 #   oc -n shared-store exec $POD -- sh -c 'redis-cli -a "$REDIS_PASSWORD" --scan' | head
 #
-# Rollback (volta pra in-memory):
+# Rollback (back to in-memory):
 #   oc -n kuadrant-system patch limitador limitador --type=merge -p '{"spec":{"storage":null}}'
 #   oc -n kuadrant-system delete secret limitador-redis --ignore-not-found
 apiVersion: limitador.kuadrant.io/v1alpha1
@@ -44,9 +44,9 @@ spec:
   #
   # `redis-cached` (below) keeps a LOCAL counter cache per site and
   # syncs to Redis in batches (flush-period). Great for latency, BUT it is
-  # eventualmente consistente: em multi-site, um site com cache frio over-admite
-  # antes de enxergar o consumo dos outros. Pra limite global ESTRITO entre
-  # clusters, troque o bloco abaixo por `redis` puro (toda checagem bate no
+  # eventually consistent: in multi-site, a site with a cold cache over-admits
+  # before seeing the others' usage. For a STRICT global limit across
+  # clusters, swap the block below for pure `redis` (every check hits
   # Redis) — see the README, "redis vs redis-cached" section:
   #   storage:
   #     redis:
@@ -61,9 +61,9 @@ spec:
         batch-size: 100
         flush-period: 1000      # ms — how often the local cache syncs to Redis
         max-cached: 5000
-        response-timeout: 350   # ms — timeout do call ao Redis antes de fallback ao cache local
+        response-timeout: 350   # ms — timeout of the call to Redis before falling back to the local cache
 ---
-# URL aponta pro Redis no namespace shared-store (06-redis-shared-store.yaml).
+# URL points at the Redis in the shared-store namespace (06-redis-shared-store.yaml).
 # No TLS (redis://) because traffic is intra-cluster. Password = redis-auth.
 apiVersion: v1
 kind: Secret

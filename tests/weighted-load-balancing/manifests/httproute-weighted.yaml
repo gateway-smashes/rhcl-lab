@@ -1,40 +1,40 @@
-# HTTPRoute para demonstrar balanceamento de carga por peso entre as duas
+# HTTPRoute to demonstrate weighted load balancing between the two
 # versions of banking-api.
 #
-# Como aplicar (substitui ${RHCL_ZONE_ROOT_DOMAIN} pelo valor exportado):
-#   export RHCL_ZONE_ROOT_DOMAIN=apps.example.com   # ajuste para seu lab
+# How to apply (substitutes ${RHCL_ZONE_ROOT_DOMAIN} with the exported value):
+#   export RHCL_ZONE_ROOT_DOMAIN=apps.example.com   # adjust for your lab
 #   envsubst < tests/weighted-load-balancing/manifests/httproute-weighted.yaml | oc apply -f -
 #
-# A rota fica anexada ao Gateway wildcard `*.${RHCL_ZONE_ROOT_DOMAIN}` criado
-# by the playbook (rhcl-apps-gateway in openshift-ingress) and exposes a path
-# neutro (/api/whoami) que o gateway distribui entre os Services
-# `banking-api-v1` e `banking-api-v2` segundo o `weight` declarado em cada
+# The route attaches to the wildcard `*.${RHCL_ZONE_ROOT_DOMAIN}` Gateway created
+# by the playbook (rhcl-apps-gateway in openshift-ingress) and exposes a neutral
+# path (/api/whoami) that the gateway splits between the Services
+# `banking-api-v1` and `banking-api-v2` according to the `weight` declared on each
 # backendRef.
 #
-# Por que /api/whoami como path neutro
-# ------------------------------------
-# Os Deployments banking-api-v1 e banking-api-v2 rodam a MESMA imagem
+# Why /api/whoami as the neutral path
+# -----------------------------------
+# The banking-api-v1 and banking-api-v2 Deployments run the SAME image
 # (apps_backend_image_name:latest); what differs between them is the env
 # APP_INSTANCE_NAME, which Quarkus exposes in the `instance` field of responses.
 # /api/whoami exists on both pods, is light, and returns `instance` (banking-
-# api-v1 ou banking-api-v2) — fonte da verdade sobre qual Service o gateway
-# escolheu para cada chamada.
+# api-v1 or banking-api-v2) — the source of truth for which Service the gateway
+# chose for each call.
 #
-# Por que NÃO usar URLRewrite por backendRef aqui
-# -----------------------------------------------
-# O controller do OpenShift Gateway API (openshift.io/gateway-controller/v1,
-# baseado em Istio) declara `URLRewrite` apenas em `HTTPRouteRule.filters`,
+# Why NOT use URLRewrite per backendRef here
+# ------------------------------------------
+# The OpenShift Gateway API controller (openshift.io/gateway-controller/v1,
+# Istio-based) declares `URLRewrite` only in `HTTPRouteRule.filters`,
 # not in `HTTPBackendRef.filters`. Applying URLRewrite per backendRef makes the
-# recurso virar com `ResolvedRefs=False, reason=InvalidFilter,
-# message="unsupported filter type URLRewrite"`. To identify the version
-# escolhida usamos `RequestHeaderModifier` por backendRef (suporte core no
-# Istio): o gateway injeta `x-route-version: v1|v2` antes de encaminhar e o
-# backend ecoa esse header no campo `allHeaders` da resposta de /api/whoami.
+# resource go `ResolvedRefs=False, reason=InvalidFilter,
+# message="unsupported filter type URLRewrite"`. To identify the chosen
+# version we use `RequestHeaderModifier` per backendRef (core support in
+# Istio): the gateway injects `x-route-version: v1|v2` before forwarding and the
+# backend echoes that header in the `allHeaders` field of the /api/whoami response.
 #
-# Pesos default: 90 / 10 (canary). Edite os campos `weight` para variar a
+# Default weights: 90 / 10 (canary). Edit the `weight` fields to vary the
 # proportion (e.g. 50/50, 0/100). The gateway recalculates the split without restarting.
 #
-# Caminhos auxiliares (sanity check, sem peso):
+# Auxiliary paths (sanity check, unweighted):
 #   /api/v1/accounts/summary -> 100% banking-api-v1
 #   /api/v2/accounts/summary -> 100% banking-api-v2
 apiVersion: gateway.networking.k8s.io/v1
@@ -51,9 +51,9 @@ spec:
   hostnames:
     - weighted.${RHCL_ZONE_ROOT_DOMAIN}
   rules:
-    # Path neutro com weighted load balancing entre v1 e v2.
-    # O filtro RequestHeaderModifier em cada backendRef marca a chamada com
-    # x-route-version=v1|v2 — refletido em allHeaders na resposta do whoami.
+    # Neutral path with weighted load balancing between v1 and v2.
+    # The RequestHeaderModifier filter on each backendRef tags the call with
+    # x-route-version=v1|v2 — reflected in allHeaders in the whoami response.
     - matches:
         - path:
             type: Exact

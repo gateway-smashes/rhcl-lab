@@ -1,6 +1,6 @@
-# Deployment do banking-api com gRPC habilitado no namespace req048-grpc.
+# Deployment of the banking-api with gRPC enabled in the req048-grpc namespace.
 # The image is pulled from the ImageStream in rhcl-apps (requires the image-puller RoleBinding).
-# O Quarkus serve gRPC e gRPC-Web na mesma porta 8080 (use-separate-server=false).
+# Quarkus serves gRPC and gRPC-Web on the same port 8080 (use-separate-server=false).
 apiVersion: apps/v1
 kind: Deployment
 metadata:

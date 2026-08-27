@@ -1,7 +1,7 @@
-# Manifest demo standalone — DNSPolicy com load balancing por peso.
-# Aplique este manifest em CADA cluster que compartilha o mesmo hostname,
-# variando apenas o weight para refletir a fatia que aquele cluster deve
-# receber via DNS.
+# Standalone demo manifest — DNSPolicy with weighted load balancing.
+# Apply this manifest to EACH cluster that shares the same hostname,
+# varying only the weight to reflect the share that cluster should
+# receive via DNS.
 #
 # Cluster A → weight: 80
 # Cluster B → weight: 20

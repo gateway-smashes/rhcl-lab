@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -51,9 +51,9 @@
       <div><label>Gateway host (banking-api)</label><input id="host" value="https://banking-api-connectivity.example.com"></div>
       <div><label>Client ID</label><input id="cid" value="banking-api"></div>
       <div><label>Client secret</label><input id="csecret" value="banking-api-secret"></div>
-      <div><label>Endpoint protegido</label><input id="path" value="/api/whoami"></div>
+      <div><label>Protected endpoint</label><input id="path" value="/api/whoami"></div>
       <div><label>User</label><input id="user" value="alice"></div>
-      <div><label>Senha</label><input id="pass" value="alice123"></div>
+      <div><label>Password</label><input id="pass" value="alice123"></div>
     </div>
     <p class="muted">alice = <b>banking-customer</b> · bob/bob123 = <b>banking-customer + banking-admin</b></p>
   </div>
@@ -62,7 +62,7 @@
     <h2>2. Get a token (Keycloak) — password grant</h2>
     <button onclick="getToken()">Get token</button>
     <button class="ghost" onclick="clearToken()">Clear token</button>
-    <span id="tokstatus" class="muted">sem token</span>
+    <span id="tokstatus" class="muted">no token</span>
     <div id="claimsbox" style="display:none">
       <p class="muted">Claims from the access token (decoded from the JWT — read-only in the browser):</p>
       <table><tbody id="claims"></tbody></table>
@@ -70,18 +70,18 @@
   </div>
 
   <div class="card">
-    <h2>3. Chamar o gateway — <code id="p2">/api/whoami</code></h2>
+    <h2>3. Call the gateway — <code id="p2">/api/whoami</code></h2>
     <p class="muted">The gateway validates signature/iss/aud/exp and the role; only then does it forward the request with the verified claims (<code>x-jwt-*</code>).</p>
     <button onclick="call('valid')">With a valid token</button>
-    <button class="ghost" onclick="call('none')">Sem token (espera 401)</button>
-    <button class="ghost" onclick="call('garbage')">Token forjado (espera 401)</button>
-    <p>Resultado: <span id="result" class="pill warn">—</span></p>
+    <button class="ghost" onclick="call('none')">No token (expects 401)</button>
+    <button class="ghost" onclick="call('garbage')">Forged token (expects 401)</button>
+    <p>Result: <span id="result" class="pill warn">—</span></p>
     <p class="muted">Claims <b>verified by the gateway</b> and echoed by the backend (the <code>jwt</code> object):</p>
     <pre id="out">—</pre>
   </div>
 
   <!-- ============================================================
-       4 · O QUE FOI CONFIGURADO NO CLUSTER PRA JWT FUNCIONAR
+       4 · WHAT WAS CONFIGURED ON THE CLUSTER FOR JWT TO WORK
        =========================================================== -->
   <div class="card">
     <h2>4. What was configured on the cluster for JWT to work</h2>
@@ -92,7 +92,7 @@
       code</b>: the gateway delivers the request with the claims already trusted.
     </p>
 
-    <h3>① AuthPolicy — regra <span class="pill info">jwt-keycloak</span></h3>
+    <h3>① AuthPolicy — rule <span class="pill info">jwt-keycloak</span></h3>
     <p class="muted">
       Adds a <i>new identity</i> to the banking-api AuthPolicy, alongside
       the <code>api-key-header</code>, <code>api-key-query</code> identities,
@@ -115,17 +115,17 @@ spec:
       # ─── new identity: JWT issued by RHBK ─────────────
       jwt-keycloak:
         jwt:
-          # Issuer URL = base do Keycloak + /realms/&lt;realm&gt;.
-          # Authorino busca o JWKS em &lt;issuer&gt;/protocol/openid-connect/certs,
+          # Issuer URL = Keycloak base + /realms/&lt;realm&gt;.
+          # Authorino fetches the JWKS at &lt;issuer&gt;/protocol/openid-connect/certs,
           # validates sig (RS256), iss, aud, exp. Automatic cache.
           issuerUrl: https://keycloak.&lt;apps-domain&gt;/realms/rhcl
         # CEL predicates — control WHERE this identity is required.
-        # Outras paths continuam usando api-key.
+        # Other paths keep using api-key.
         when:
           - predicate: "request.path.startsWith('/api/whoami')"
-          - predicate: "request.method != 'OPTIONS'"  # libera CORS preflight</pre>
+          - predicate: "request.method != 'OPTIONS'"  # allows CORS preflight</pre>
 
-    <h3>② AuthPolicy — bloco <span class="pill info">response.success</span> (claims injetadas)</h3>
+    <h3>② AuthPolicy — <span class="pill info">response.success</span> block (injected claims)</h3>
     <p class="muted">
       Authorino reads the validated JWT claims and injects them as headers
       <code>x-jwt-*</code> on the upstream request. The backend receives everything
@@ -145,10 +145,10 @@ spec:
           # Unified header for audit/log — same key for api-key and JWT.
           x-consumer-id:            { plain: { selector: "auth.identity.metadata.name" } }</pre>
 
-    <h3>③ Keycloak — Client <code>banking-api</code> no realm <code>rhcl</code></h3>
+    <h3>③ Keycloak — Client <code>banking-api</code> in realm <code>rhcl</code></h3>
     <p class="muted">
-      Importado via <code>KeycloakRealmImport</code> (CR do RHBK Operator).
-      Trecho relevante do client:
+      Imported via <code>KeycloakRealmImport</code> (RHBK Operator CR).
+      Relevant snippet of the client:
     </p>
     <pre>apiVersion: k8s.keycloak.org/v2alpha1
 kind: KeycloakRealmImport
@@ -165,14 +165,14 @@ spec:
         - { name: banking-admin }
     clients:
       - clientId: banking-api
-        publicClient: false               # confidential client (tem secret)
+        publicClient: false               # confidential client (has secret)
         secret: banking-api-secret        # demo only — use External Secrets in production
         # Enables the password grant — used by this page's browser flow and by scripts.
         # In production use the OIDC redirect flow (PKCE) instead.
         directAccessGrantsEnabled: true
         standardFlowEnabled: true
         # webOrigins controls who Keycloak allows to make CORS against
-        # /protocol/openid-connect/token. "*" libera qualquer origem;
+        # /protocol/openid-connect/token. "*" allows any origin;
         # adjust to the real host of your SPAs in production.
         webOrigins: ["*"]
         redirectUris: ["*"]
@@ -183,9 +183,9 @@ spec:
           realmRoles: [banking-customer, banking-admin] }</pre>
 
     <details>
-      <summary>Como o gateway descobre o JWKS (RFC 8414)</summary>
+      <summary>How the gateway discovers the JWKS (RFC 8414)</summary>
       <p class="muted" style="margin-top:8px">
-        Authorino faz <code>GET &lt;issuerUrl&gt;/.well-known/openid-configuration</code>
+        Authorino does <code>GET &lt;issuerUrl&gt;/.well-known/openid-configuration</code>
         at startup and on periodic refresh (configurable cache TTL). From there it gets the
         <code>jwks_uri</code>, fetches the public keys and uses them to validate the
         signature. There is no shared secret between gateway and Keycloak — trust
@@ -195,7 +195,7 @@ spec:
   </div>
 
   <!-- ============================================================
-       5 · CUSTOMIZAÇÃO
+       5 · CUSTOMIZATION
        =========================================================== -->
   <div class="card">
     <h2>5. Customization — flexibility for internal rules</h2>
@@ -219,8 +219,8 @@ spec:
           </td>
           <td>
             Internal employees use a <b>JWT from federated AD/LDAP</b> in Keycloak;
-            sistemas legados usam <b>api-key</b>; partners externos usam
-            <b>mTLS</b>. Mesma AuthPolicy.
+            legacy systems use <b>api-key</b>; external partners use
+            <b>mTLS</b>. Same AuthPolicy.
           </td>
         </tr>
 
@@ -247,9 +247,9 @@ spec:
             any JWT claim.
           </td>
           <td>
-            <code>POST /api/v1/transfers/&gt;5000</code> exige
-            <code>banking-admin</code> nas roles + claim <code>device_attested</code>;
-            <code>POST /api/v1/cards/block</code> exige
+            <code>POST /api/v1/transfers/&gt;5000</code> requires
+            <code>banking-admin</code> in roles + claim <code>device_attested</code>;
+            <code>POST /api/v1/cards/block</code> requires
             <code>auth.identity.acr == "urn:example:mfa:hardware"</code>.
           </td>
         </tr>
@@ -257,9 +257,9 @@ spec:
         <tr>
           <td><b>OPA Rego for complex rules</b></td>
           <td>
-            <code>authorization.&lt;nome&gt;.opa.rego</code> aceita policy Rego
-            inline (ou via ConfigMap). Acesso a metadata, identidade,
-            request inteiro e atributos enriched (geo-IP, fraud score, etc.).
+            <code>authorization.&lt;name&gt;.opa.rego</code> accepts inline Rego
+            policy (or via ConfigMap). Access to metadata, identity,
+            the whole request and enriched attributes (geo-IP, fraud score, etc.).
           </td>
           <td>
             Block transfers when the 24h sum exceeds the plan
@@ -284,22 +284,22 @@ spec:
         <tr>
           <td><b>Step-up authentication</b></td>
           <td>
-            Resposta condicional com <code>WWW-Authenticate: Bearer error="insufficient_user_authentication"</code>
+            Conditional response with <code>WWW-Authenticate: Bearer error="insufficient_user_authentication"</code>
             when the token's <code>acr</code> is insufficient.
           </td>
           <td>
-            Login normal pode ler saldo (<code>acr=urn:example:auth:password</code>),
+            A normal login can read the balance (<code>acr=urn:example:auth:password</code>),
             but <code>POST /transfers</code> returns 401 with a hint to re-authenticate
-            com biometria (<code>acr=urn:example:auth:biometric</code>) — frontend
-            redireciona pro fluxo MFA do Keycloak.
+            with biometrics (<code>acr=urn:example:auth:biometric</code>) — the frontend
+            redirects to the Keycloak MFA flow.
           </td>
         </tr>
 
         <tr>
-          <td><b>Headers injetados no upstream</b></td>
+          <td><b>Headers injected on the upstream</b></td>
           <td>
-            <code>response.success.headers</code> permite qualquer header
-            customizado, com selector em <code>auth.identity.*</code>,
+            <code>response.success.headers</code> allows any custom
+            header, with a selector on <code>auth.identity.*</code>,
             <code>auth.metadata.*</code>, <code>context.*</code>.
           </td>
           <td>
@@ -310,7 +310,7 @@ spec:
         </tr>
 
         <tr>
-          <td><b>Bloco <code>response.success.filters.identity</code></b></td>
+          <td><b><code>response.success.filters.identity</code> block</b></td>
           <td>
             Transforms the identity <i>before</i> it is used by RateLimit or
             audit — useful to mask PII or collapse equivalent IDs.
@@ -325,23 +325,23 @@ spec:
         <tr>
           <td><b>Rate-limit by JWT claim</b></td>
           <td>
-            <code>RateLimitPolicy</code> com <code>counters</code> usando
-            <code>auth.identity.preferred_username</code> ou qualquer claim
-            como discriminator.
+            <code>RateLimitPolicy</code> with <code>counters</code> using
+            <code>auth.identity.preferred_username</code> or any claim
+            as the discriminator.
           </td>
           <td>
             <code>50 req/min per user</code> (claim <code>sub</code>),
             <code>10 req/min</code> on <code>/api/v1/transfers</code> per user,
-            <code>1000 req/min</code> por <code>aud</code> (app cliente).
+            <code>1000 req/min</code> per <code>aud</code> (client app).
           </td>
         </tr>
 
         <tr>
-          <td><b>Logs de auditoria estruturados</b></td>
+          <td><b>Structured audit logs</b></td>
           <td>
             gateway-error-logging: an EnvoyFilter + OTel Collector already capture every
-            <code>4xx/5xx</code> com claims + correlation_id + path. Custom-headers
-            via <code>response.success.headers</code> entram automaticamente no
+            <code>4xx/5xx</code> with claims + correlation_id + path. Custom headers
+            via <code>response.success.headers</code> automatically enter the
             audit log.
           </td>
           <td>
@@ -355,23 +355,23 @@ spec:
         <tr>
           <td><b>Federation with corporate AD/LDAP</b></td>
           <td>
-            No Keycloak: <code>User Federation → LDAP / Active Directory</code>.
+            In Keycloak: <code>User Federation → LDAP / Active Directory</code>.
             Bank users log in with the corporate credential; AD roles become
-            roles do realm; tudo isso aparece nos claims do JWT.
+            realm roles; all of this appears in the JWT claims.
           </td>
           <td>
             A corporate employee authenticates with their employee ID, claim
-            <code>realm_access.roles</code> chega com
-            <code>["banking-customer","cib-trader"]</code> — Rego decide acesso.
+            <code>realm_access.roles</code> arrives with
+            <code>["banking-customer","cib-trader"]</code> — Rego decides access.
           </td>
         </tr>
 
         <tr>
           <td><b>Allow-list policy by <code>aud</code></b></td>
           <td>
-            <code>jwt.audiences:</code> lista de audiences aceitas. Tokens com
-            <code>aud</code> outside the list are rejected before validating the
-            qualquer claim.
+            <code>jwt.audiences:</code> list of accepted audiences. Tokens with
+            <code>aud</code> outside the list are rejected before validating
+            any claim.
           </td>
           <td>
             The same Keycloak realm serves <i>mobile</i> and <i>internet banking</i>;
@@ -449,18 +449,18 @@ const b64url = s => { s = s.replace(/-/g,'+').replace(/_/g,'/'); s += '='.repeat
   } catch (_) { /* keep hardcoded defaults */ }
 })();
 
-function clearToken(){ TOKEN=null; $('tokstatus').textContent='sem token'; $('claimsbox').style.display='none'; }
+function clearToken(){ TOKEN=null; $('tokstatus').textContent='no token'; $('claimsbox').style.display='none'; }
 
 async function getToken(){
   const kc=$('kc').value.replace(/\/$/,''), realm=$('realm').value;
   const body=new URLSearchParams({grant_type:'password',client_id:$('cid').value,client_secret:$('csecret').value,username:$('user').value,password:$('pass').value});
-  $('tokstatus').textContent='solicitando…';
+  $('tokstatus').textContent='requesting…';
   try{
     const r=await fetch(`${kc}/realms/${realm}/protocol/openid-connect/token`,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
     const j=await r.json();
-    if(!r.ok || !j.access_token){ $('tokstatus').innerHTML='<span class="pill bad">ERRO</span> '+(j.error_description||j.error||r.status); return; }
+    if(!r.ok || !j.access_token){ $('tokstatus').innerHTML='<span class="pill bad">ERROR</span> '+(j.error_description||j.error||r.status); return; }
     TOKEN=j.access_token;
-    $('tokstatus').innerHTML='<span class="pill ok">TOKEN OK</span> expira em '+j.expires_in+'s';
+    $('tokstatus').innerHTML='<span class="pill ok">TOKEN OK</span> expires in '+j.expires_in+'s';
     const c=JSON.parse(b64url(TOKEN.split('.')[1]));
     const rows=['preferred_username','email','iss','aud','scope'].map(k=>`<tr><td>${k}</td><td>${JSON.stringify(c[k])}</td></tr>`);
     rows.push(`<tr><td>realm_access.roles</td><td>${JSON.stringify((c.realm_access||{}).roles)}</td></tr>`);
@@ -472,15 +472,15 @@ async function getToken(){
 async function call(mode){
   const host=$('host').value.replace(/\/$/,''), path=$('path').value; $('p2').textContent=path;
   const headers={};
-  if(mode==='valid'){ if(!TOKEN){ alert('Pegue um token primeiro.'); return; } headers['Authorization']='Bearer '+TOKEN; }
+  if(mode==='valid'){ if(!TOKEN){ alert('Get a token first.'); return; } headers['Authorization']='Bearer '+TOKEN; }
   if(mode==='garbage'){ headers['Authorization']='Bearer not.a.valid.jwt'; }
   $('result').className='pill warn'; $('result').textContent='…'; $('out').textContent='…';
   try{
     const r=await fetch(`${host}${path}`,{headers});
     $('result').className='pill '+(r.ok?'ok':'bad'); $('result').textContent='HTTP '+r.status;
     let txt; try{ const j=await r.json(); txt=JSON.stringify(j.jwt!==undefined?j.jwt:j,null,2);}catch(_){ txt=await r.text(); }
-    $('out').textContent=txt||'(vazio)';
-  }catch(e){ $('result').className='pill bad'; $('result').textContent='erro'; $('out').textContent=e.message; }
+    $('out').textContent=txt||'(empty)';
+  }catch(e){ $('result').className='pill bad'; $('result').textContent='error'; $('out').textContent=e.message; }
 }
 </script>
 </body>

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -315,7 +315,7 @@
   <div class="panel" id="controls">
     <div class="row">
       <div style="flex:2; min-width:280px;">
-        <label for="backendUrl">Base URL (gateway com CORS ou backend direto)</label>
+        <label for="backendUrl">Base URL (gateway with CORS, or backend direct)</label>
         <input id="backendUrl" type="url"
                value="https://banking-api-v1-rhcl-apps.apps.example.com" />
       </div>
@@ -339,10 +339,10 @@
     <div class="row" style="margin-top:16px;">
       <label style="margin:0; align-self:center;">Presets de URL:</label>
       <button class="preset" data-url="https://cors.apps.example.com">
-        Via gateway — cors.apps.cluster1.poc (com CORS)
+        Via gateway — cors.apps.cluster1.poc (with CORS)
       </button>
       <button class="preset" data-url="https://banking-api-v1-rhcl-apps.apps.example.com">
-        Backend direto (cluster1.poc) — sem CORS
+        Backend direct (cluster1.poc) — without CORS
       </button>
       <button class="preset" data-url="https://banking-api-v1-rhcl-apps.apps.example.com">
         Direct backend (lab) — no CORS
@@ -424,7 +424,7 @@
     </div>
   </div>
 
-  <h2>HTTPRoute com CORS por rota</h2>
+  <h2>HTTPRoute with per-route CORS</h2>
   <div class="panel">
     <p style="margin-top:0;">
       Apply the YAML below (or
@@ -447,13 +447,13 @@
       <code>Access-Control-Allow-*</code>.
     </p>
 
-    <div class="card-title" style="margin-top:12px;">curl — backend direto (sem CORS)</div>
+    <div class="card-title" style="margin-top:12px;">curl — backend direct (without CORS)</div>
     <div class="curl-block">
       <pre class="curl" id="curlDirect"></pre>
       <button class="copy" data-target="curlDirect">Copiar</button>
     </div>
 
-    <div class="card-title" style="margin-top:16px;">curl — via gateway (com CORS)</div>
+    <div class="card-title" style="margin-top:16px;">curl — via gateway (with CORS)</div>
     <div class="curl-block">
       <pre class="curl" id="curlGateway"></pre>
       <button class="copy" data-target="curlGateway">Copiar</button>
@@ -540,13 +540,13 @@
 
     const corsPreset = document.querySelector(`button.preset[data-url="${gatewayUrl}"]`);
     if (corsPreset) {
-      corsPreset.textContent = `Via gateway — cors.${domain} (com CORS)`;
+      corsPreset.textContent = `Via gateway — cors.${domain} (with CORS)`;
     } else {
       // Adjust the first gateway preset (index 0 of URL presets) to match the env.
       const firstUrlPreset = document.querySelectorAll("button.preset[data-url]")[0];
       if (firstUrlPreset && firstUrlPreset.dataset.url.startsWith("https://cors.")) {
         firstUrlPreset.dataset.url = gatewayUrl;
-        firstUrlPreset.textContent = `Via gateway — cors.${domain} (com CORS)`;
+        firstUrlPreset.textContent = `Via gateway — cors.${domain} (with CORS)`;
       }
     }
 
@@ -637,7 +637,7 @@
     const path = getPath();
 
     document.getElementById("curlDirect").textContent =
-`# Backend direto: 200 OK, mas SEM Access-Control-Allow-*
+`# Backend direct: 200 OK, but WITHOUT Access-Control-Allow-*
 curl -i "${directBase}${path}" \\
   -H "Origin: http://localhost:8080" \\
   | grep -iE 'HTTP/|access-control|content-type'`;
@@ -657,7 +657,7 @@ curl -i -X OPTIONS "${gatewayBase}${path}" \\
   | grep -iE 'HTTP/|access-control'`;
 
     document.getElementById("ocLogs").textContent =
-`# O backend registra o Origin recebido (mesmo sem emitir CORS)
+`# The backend logs the received Origin (even without emitting CORS)
 oc -n rhcl-apps logs deploy/banking-api-v1 --tail=50 \\
   | grep 'cors demo'`;
   }
@@ -679,7 +679,7 @@ spec:
   hostnames:
     - ${hostname}
   rules:
-    # /api/v1/cors -> backend SEM CORS; o gateway injeta os headers
+    # /api/v1/cors -> backend WITHOUT CORS; the gateway injects the headers
     - matches:
         - path:
             type: Exact
@@ -704,7 +704,7 @@ spec:
         - name: banking-api-v1
           port: 8080
 
-# Aplicar:
+# Apply:
 #   export RHCL_ZONE_ROOT_DOMAIN=apps.example.com
 #   envsubst < tests/cors-policy/manifests/httproute-cors.yaml | oc apply -f -`;
     document.getElementById("yamlRoute").textContent = yaml;
@@ -749,15 +749,15 @@ spec:
 
     if (err) {
       logLine(`fetch failed after ${ms} ms: ${err.name}: ${err.message}`, "error");
-      logLine("↑ Em CORS, o navegador imprime o motivo real (No 'Access-Control-Allow-Origin') no Console e na aba Network. Confira o DevTools.", "warn");
+      logLine("↑ In CORS, the browser prints the real reason (No 'Access-Control-Allow-Origin') in the Console and the Network tab. Check DevTools.", "warn");
       lastFetchEl.innerHTML = `
         <div><b>URL:</b> ${escapeHtml(url)}</div>
         <div><b>Origin:</b> ${escapeHtml(window.location.origin)}</div>
-        <div><b>Erro:</b> ${escapeHtml(err.name + ": " + err.message)}</div>
+        <div><b>Error:</b> ${escapeHtml(err.name + ": " + err.message)}</div>
         <div><b>Duration:</b> ${ms} ms</div>
       `;
       verdictEl.innerHTML = viaGateway
-        ? `<div><span class="badge bad">erro de rede via gateway</span></div>
+        ? `<div><span class="badge bad">network error via gateway</span></div>
            <div style="margin-top:8px;">The call via <code>cors.&lt;domain&gt;</code> failed. Check that the HTTPRoute is applied and DNS resolves to the gateway.</div>`
         : `<div><span class="badge bad">blocked by CORS (likely)</span></div>
            <div style="margin-top:8px;">Without CORS headers on the backend, the browser blocks it. Try the "via gateway" preset to see the same endpoint work.</div>`;
@@ -774,10 +774,10 @@ spec:
     const text = await res.text();
     const preview = text.length > 500 ? text.slice(0, 500) + "…(truncado)" : text;
 
-    logLine(`Resposta: ${httpStatus} ${res.statusText} (${ms} ms)`, res.ok ? "success" : "warn");
+    logLine(`Response: ${httpStatus} ${res.statusText} (${ms} ms)`, res.ok ? "success" : "warn");
     logLine(`CORS headers:\n  ${corsHeaders.join("\n  ") || "(none)"}`, corsHeaders.length ? "success" : "warn");
     logLine(`Headers visible to JS:\n  ${visibleHeaders.join("\n  ") || "(none)"}`, "info");
-    logLine(`Corpo: ${preview || "(vazio)"}`, "info");
+    logLine(`Body: ${preview || "(empty)"}`, "info");
 
     let badgeClass = "warn";
     let verdictText = "—";
@@ -791,7 +791,7 @@ spec:
         : `The server returned CORS headers (${corsHeaders.length}). Cross-origin allowed.`;
     } else if (res.ok && corsHeaders.length === 0) {
       badgeClass = "warn";
-      verdictText = `${httpStatus} OK · sem CORS`;
+      verdictText = `${httpStatus} OK · without CORS`;
       detail = `Response arrived (${ms} ms) but with no Access-Control-Allow-*. This fetch is probably same-origin or was made by curl. From a browser on another origin, this path would be blocked.`;
     } else {
       badgeClass = "bad";

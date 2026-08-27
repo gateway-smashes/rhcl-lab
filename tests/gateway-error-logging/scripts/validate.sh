@@ -14,14 +14,14 @@ echo "======================================================================"
 echo " Gateway error-logging validation"
 echo "======================================================================"
 
-# --- Recursos presentes ---
+# --- Resources present ---
 echo ""
-echo "[recursos]"
-check "EnvoyFilter otel-access-logs-rhcl-apps-gateway presente" \
+echo "[resources]"
+check "EnvoyFilter otel-access-logs-rhcl-apps-gateway present" \
   oc get envoyfilter -n openshift-ingress otel-access-logs-rhcl-apps-gateway
-check "Pipeline 'logs' configurada no Collector" \
+check "Pipeline 'logs' configured on the Collector" \
   bash -c "oc get opentelemetrycollector -n observability otel-rhcl -o jsonpath='{.spec.config.service.pipelines.logs}' | grep -q exporters"
-check "Exporter 'file/audit' configurado" \
+check "Exporter 'file/audit' configured" \
   bash -c "oc get opentelemetrycollector -n observability otel-rhcl -o jsonpath='{.spec.config.exporters}' | grep -q file/audit"
 
 # --- Controlled traffic ---
@@ -35,7 +35,7 @@ ALICE=$(oc get secret -n rhcl-apps banking-api-key-alice -o jsonpath='{.data.api
 for _ in 1 2 3 4 5; do
   curl -sk --max-time 5 -o /dev/null -H "api-key: $ALICE" "$URL/api/v1/accounts/summary" || true
 done
-# 5 × 401 (sem api-key) — devem aparecer
+# 5 × 401 (no api-key) — should appear
 for _ in 1 2 3 4 5; do
   curl -sk --max-time 5 -o /dev/null "$URL/api/v1/accounts/summary" || true
 done
@@ -43,32 +43,32 @@ done
 for _ in 1 2 3; do
   curl -sk --max-time 5 -o /dev/null -H "api-key: $ALICE" "$URL/api/v9/no-route-here" || true
 done
-echo "  → traffic enviado; aguardando OTel batch flush (8s)..."
+echo "  → traffic sent; waiting for the OTel batch flush (8s)..."
 sleep 8
 
 # --- Audit-file check ---
 echo ""
 echo "[audit file]"
 COL=$(oc get pods -n observability -l app.kubernetes.io/name=otel-rhcl-collector -o jsonpath='{.items[0].metadata.name}')
-check "Audit file existe no pod do Collector" \
+check "Audit file exists on the Collector pod" \
   oc exec -n observability "$COL" -- test -f /var/log/rhcl-errors.json
 
-# Conta entries por status code
+# Count entries per status code
 COUNT_401=$(oc exec -n observability "$COL" -- sh -c 'grep -o "\"response_code\".*\"401\"" /var/log/rhcl-errors.json | wc -l' 2>/dev/null || echo "0")
 COUNT_404=$(oc exec -n observability "$COL" -- sh -c 'grep -o "\"response_code\".*\"404\"" /var/log/rhcl-errors.json | wc -l' 2>/dev/null || echo "0")
 COUNT_200=$(oc exec -n observability "$COL" -- sh -c 'grep -o "\"response_code\".*\"200\"" /var/log/rhcl-errors.json | wc -l' 2>/dev/null || echo "0")
 
-echo "  • 401s no audit: $COUNT_401 (esperado ≥5)"
-echo "  • 404s no audit: $COUNT_404 (esperado ≥3)"
-echo "  • 200s no audit: $COUNT_200 (esperado 0 — filtro Envoy)"
+echo "  • 401s in the audit: $COUNT_401 (expected ≥5)"
+echo "  • 404s in the audit: $COUNT_404 (expected ≥3)"
+echo "  • 200s in the audit: $COUNT_200 (expected 0 — Envoy filter)"
 
-[ "$COUNT_401" -ge 5 ] && OK=$((OK+1)) && echo "  ✓ 401s capturados" || { FAIL=$((FAIL+1)); echo "  ✗ 401s capturados"; }
-[ "$COUNT_404" -ge 3 ] && OK=$((OK+1)) && echo "  ✓ 404s capturados" || { FAIL=$((FAIL+1)); echo "  ✗ 404s capturados"; }
-[ "$COUNT_200" -eq 0 ] && OK=$((OK+1)) && echo "  ✓ 200s NÃO capturados (filtro Envoy efetivo)" || { FAIL=$((FAIL+1)); echo "  ✗ 200s vazaram para o audit"; }
+[ "$COUNT_401" -ge 5 ] && OK=$((OK+1)) && echo "  ✓ 401s captured" || { FAIL=$((FAIL+1)); echo "  ✗ 401s captured"; }
+[ "$COUNT_404" -ge 3 ] && OK=$((OK+1)) && echo "  ✓ 404s captured" || { FAIL=$((FAIL+1)); echo "  ✗ 404s captured"; }
+[ "$COUNT_200" -eq 0 ] && OK=$((OK+1)) && echo "  ✓ 200s NOT captured (Envoy filter effective)" || { FAIL=$((FAIL+1)); echo "  ✗ 200s leaked into the audit"; }
 
 # --- Mostrar 1 entry de exemplo ---
 echo ""
-echo "[exemplo]"
+echo "[example]"
 oc exec -n observability "$COL" -- sh -c 'tail -1 /var/log/rhcl-errors.json' 2>/dev/null \
   | python3 -c "
 import sys,json
@@ -83,10 +83,10 @@ try:
         if k in attrs: print(f'  {k:14s} = {attrs[k]}')
 except Exception as e:
     print(f'  (parse error: {e})')
-" 2>/dev/null || echo "  (audit file vazio ou parse falhou)"
+" 2>/dev/null || echo "  (audit file empty or parse failed)"
 
 echo ""
 echo "======================================================================"
-echo " Resultado: $OK ok, $FAIL fail"
+echo " Result: $OK ok, $FAIL fail"
 echo "======================================================================"
 [ "$FAIL" -eq 0 ]

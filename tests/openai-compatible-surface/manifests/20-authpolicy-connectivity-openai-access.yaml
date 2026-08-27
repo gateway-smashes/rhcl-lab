@@ -3,7 +3,8 @@
 #
 # No extra HTTPRoute is required: banking-api-connectivity already matches
 # PathPrefix /api/v1.
-#Auto
+#
+# Apply:
 #   oc apply -f tests/openai-compatible-surface/manifests/20-authpolicy-connectivity-openai-access.yaml
 #
 # Identical copy for req 60: tests/token-rate-limiting/manifests/10-authpolicy-connectivity-openai-access.yaml

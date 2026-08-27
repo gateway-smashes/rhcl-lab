@@ -11,8 +11,8 @@ spec:
   storageSize: 1Gi
   # `total` is split by the operator across ALL components (compactor,
   # distributor, gateway, ingester, querier, query-frontend × several containers).
-  # 2Gi era pequeno demais: o container `tempo` do query-frontend ficava com
-  # ~41Mi → exit 137 / readiness timeout → o gateway respondia 502 em
+  # 2Gi was too small: the query-frontend's `tempo` container kept getting
+  # ~41Mi → exit 137 / readiness timeout → the gateway returned 502 on
   # Observe → Traces. 10Gi gives ~205Mi per query-frontend container (roomy
   # for the lab). Cluster nodes have tens of GiB free.
   resources:

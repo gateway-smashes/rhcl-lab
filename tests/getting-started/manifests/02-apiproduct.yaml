@@ -1,18 +1,18 @@
-# Getting started — Passo 2/6: APIProduct
+# Getting started — Step 2/6: APIProduct
 #
 # Declares "banking-lite" as a product in the RHCL/DevPortal catalog.
 # Points at the step-1 HTTPRoute via targetRef — this is how the portal
-# + o plugin do console descobrem quais rotas pertencem a este produto.
+# + the console plugin discover which routes belong to this product.
 #
 # Without an APIProduct: the HTTPRoute works, but the dev portal does not show
 # it, and the console plugin cannot group metrics by product.
 #
 # spec.approvalMode:
 #   - auto     — the user clicks "subscribe" and the key is generated immediately
-#   - manual   — pedido de subscription entra numa fila e requer
+#   - manual   — a subscription request goes into a queue and requires
 #                owner/admin approval in the portal
 # We use `auto` for getting-started because the goal is to feel
-# o fluxo completo sem depender de outra pessoa.
+# the full flow without depending on anyone else.
 apiVersion: devportal.kuadrant.io/v1alpha1
 kind: APIProduct
 metadata:
@@ -27,9 +27,9 @@ spec:
     name: banking-lite
   displayName: "Banking Lite (Getting Started)"
   description: >-
-    API de onboarding criada pelo tutorial getting-started. Reaproveita
+    Onboarding API created by the getting-started tutorial. Reuses
     the banking-api-v1 backend in its own RHCL perimeter (new HTTPRoute
-    + AuthPolicy + RateLimitPolicy + PlanPolicy) pra demonstrar o fluxo
+    + AuthPolicy + RateLimitPolicy + PlanPolicy) to demonstrate the
     full flow of declaring an API.
   version: "1.0.0"
   approvalMode: auto

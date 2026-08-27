@@ -58,13 +58,13 @@ curl -sk -o /dev/null -w '%{http_code}\n' "https://$H/v1/models"                
 # 2) Real model, governed by RHCL — real answer + real token usage
 curl -sk "https://$H/v1/chat/completions" -H "api-key: $KEY" \
   -H 'content-type: application/json' \
-  -d '{"model":"llama3.2:1b","messages":[{"role":"user","content":"O que e um API gateway? Uma frase."}]}'
+  -d '{"model":"llama3.2:1b","messages":[{"role":"user","content":"What is an API gateway? One sentence."}]}'
 
 # 3) Keep firing → the token budget (500/min) trips → 429
 for i in $(seq 1 10); do
   curl -sk -o /dev/null -w "%{http_code} " "https://$H/v1/chat/completions" -H "api-key: $KEY" \
     -H 'content-type: application/json' \
-    -d '{"model":"llama3.2:1b","messages":[{"role":"user","content":"conte uma curiosidade"}]}'
+    -d '{"model":"llama3.2:1b","messages":[{"role":"user","content":"tell me a fun fact"}]}'
 done; echo
 ```
 

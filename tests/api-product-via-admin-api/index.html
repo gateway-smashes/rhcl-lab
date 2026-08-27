@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -77,11 +77,11 @@
     <table>
       <thead><tr><th>CR</th><th>Group / Version</th><th>Role</th></tr></thead>
       <tbody>
-        <tr><td><code>HTTPRoute</code></td><td><code>gateway.networking.k8s.io/v1</code></td><td>Roteamento, matches, filtros (URLRewrite, headers)</td></tr>
-        <tr><td><code>APIProduct</code></td><td><code>devportal.kuadrant.io/v1alpha1</code></td><td>Metadados (displayName, version, publishStatus, tags, contact)</td></tr>
-        <tr><td><code>PlanPolicy</code></td><td><code>extensions.kuadrant.io/v1alpha1</code></td><td>Tiers e rate limit por plano (predicate CEL)</td></tr>
+        <tr><td><code>HTTPRoute</code></td><td><code>gateway.networking.k8s.io/v1</code></td><td>Routing, matches, filters (URLRewrite, headers)</td></tr>
+        <tr><td><code>APIProduct</code></td><td><code>devportal.kuadrant.io/v1alpha1</code></td><td>Metadata (displayName, version, publishStatus, tags, contact)</td></tr>
+        <tr><td><code>PlanPolicy</code></td><td><code>extensions.kuadrant.io/v1alpha1</code></td><td>Tiers and per-plan rate limit (CEL predicate)</td></tr>
         <tr><td><code>AuthPolicy</code></td><td><code>kuadrant.io/v1</code></td><td>Auth (api-key/jwt/anonymous) + response headers</td></tr>
-        <tr><td><code>Secret</code> (api-key)</td><td><code>v1</code> (core)</td><td>Valor da chave + annotations da identidade</td></tr>
+        <tr><td><code>Secret</code> (api-key)</td><td><code>v1</code> (core)</td><td>The key value + identity annotations</td></tr>
         <tr><td><code>APIKey</code></td><td><code>devportal.kuadrant.io/v1alpha1</code></td><td>Key request/approval (governance)</td></tr>
         <tr><td><code>Role</code> + <code>RoleBinding</code></td><td><code>rbac.authorization.k8s.io/v1</code></td><td>Permissions for whoever operates via the API</td></tr>
       </tbody>
@@ -89,42 +89,42 @@
   </section>
 
   <section>
-    <h2>Demo: criar o produto <code class="inline">pix-api</code></h2>
+    <h2>Demo: create the <code class="inline">pix-api</code> product</h2>
     <div class="tabs">
-      <button class="tab active" data-tab="oc">A) Declarativo (oc apply)</button>
-      <button class="tab" data-tab="api">B) REST cru (curl + token SA)</button>
-      <button class="tab" data-tab="manual">C) Validar manualmente</button>
+      <button class="tab active" data-tab="oc">A) Declarative (oc apply)</button>
+      <button class="tab" data-tab="api">B) Raw REST (curl + SA token)</button>
+      <button class="tab" data-tab="manual">C) Validate manually</button>
     </div>
 
     <div class="panel active" id="panel-oc">
       <p>The most idiomatic path: <code class="inline">oc apply</code> for each manifest, plus a smoke test.</p>
-<pre><button class="copy" onclick="cp(this)">copiar</button>cd tests/req031
+<pre><button class="copy" onclick="cp(this)">copy</button>cd tests/req031
 ./scripts/create-via-oc.sh</pre>
-      <p>O script descobre o host do <code class="inline">banking-api-connectivity</code>, aplica os 6 manifests, aguarda <code class="inline">AuthPolicy.Enforced=True</code>, e faz o smoke test:</p>
+      <p>The script discovers the host from <code class="inline">banking-api-connectivity</code>, applies the 6 manifests, waits for <code class="inline">AuthPolicy.Enforced=True</code>, and runs the smoke test:</p>
       <table>
-        <thead><tr><th>Teste</th><th>Esperado</th></tr></thead>
+        <thead><tr><th>Test</th><th>Expected</th></tr></thead>
         <tbody>
-          <tr><td><code>curl /pix/v1</code> sem api-key</td><td><span class="badge warn">401</span></td></tr>
-          <tr><td><code>curl /pix/v1</code> com api-key</td><td><span class="badge ok">200</span></td></tr>
-          <tr><td>Burst 7x (plano bronze = 5/min)</td><td>5× <span class="badge ok">200</span> + 2× <span class="badge warn">429</span></td></tr>
+          <tr><td><code>curl /pix/v1</code> without api-key</td><td><span class="badge warn">401</span></td></tr>
+          <tr><td><code>curl /pix/v1</code> with api-key</td><td><span class="badge ok">200</span></td></tr>
+          <tr><td>Burst 7x (bronze plan = 5/min)</td><td>5× <span class="badge ok">200</span> + 2× <span class="badge warn">429</span></td></tr>
         </tbody>
       </table>
     </div>
 
     <div class="panel" id="panel-api">
       <p>The point: <strong>no proprietary tooling</strong> — just HTTP + Bearer.</p>
-<pre><button class="copy" onclick="cp(this)">copiar</button>cd tests/req031
+<pre><button class="copy" onclick="cp(this)">copy</button>cd tests/req031
 ./scripts/create-via-k8s-api.sh</pre>
-      <p>O script:</p>
+      <p>The script:</p>
       <ol>
         <li>Applies <code class="inline">06-rbac.yaml</code> via <code class="inline">oc</code> (the only cluster-admin step — creates the SA <code class="inline">req031-product-admin</code>).</li>
         <li>Mints an ephemeral (1h) SA token via <code class="inline">oc create token</code>.</li>
         <li>Creates <strong>each CR</strong> via <code class="inline">curl POST $APISERVER/apis/...</code> authenticated <em>by the Bearer token only</em>.</li>
-        <li>Lista os APIProducts via <code class="inline">curl GET</code> pra confirmar.</li>
+        <li>Lists the APIProducts via <code class="inline">curl GET</code> to confirm.</li>
         <li>Smoke test 401/200.</li>
       </ol>
       <p>Example raw POST to create the APIProduct (extracted from the script):</p>
-<pre><button class="copy" onclick="cp(this)">copiar</button>APISERVER=$(oc whoami --show-server)
+<pre><button class="copy" onclick="cp(this)">copy</button>APISERVER=$(oc whoami --show-server)
 TOKEN=$(oc -n rhcl-apps create token req031-product-admin --duration=1h)
 curl -sk -X POST \
   "$APISERVER/apis/devportal.kuadrant.io/v1alpha1/namespaces/rhcl-apps/apiproducts" \
@@ -136,23 +136,23 @@ curl -sk -X POST \
 
     <div class="panel" id="panel-manual">
       <p>To explore by hand, without running the scripts:</p>
-<pre><button class="copy" onclick="cp(this)">copiar</button>HOST=$(oc -n rhcl-apps get httproute banking-api-connectivity \
+<pre><button class="copy" onclick="cp(this)">copy</button>HOST=$(oc -n rhcl-apps get httproute banking-api-connectivity \
        -o jsonpath='{.spec.hostnames[0]}')
 KEY=$(oc -n rhcl-apps get secret pix-api-key-tester \
       -o jsonpath='{.data.api_key}' | base64 -d)
 
-# sem auth -> 401
+# no auth -> 401
 curl -sk -o /dev/null -w "%{http_code}\n" "https://$HOST/pix/v1"
 
-# com auth -> 200
+# with auth -> 200
 curl -sk -o /dev/null -w "%{http_code}\n" -H "api-key: $KEY" "https://$HOST/pix/v1"
 
-# burst -> 5x 200 + 2x 429 (plano bronze, 5/min)
+# burst -> 5x 200 + 2x 429 (bronze plan, 5/min)
 for i in $(seq 1 7); do
   curl -sk -o /dev/null -w "%{http_code} " -H "api-key: $KEY" "https://$HOST/pix/v1"
 done; echo</pre>
-      <p>Listar o produto via REST puro com SA token:</p>
-<pre><button class="copy" onclick="cp(this)">copiar</button>APISERVER=$(oc whoami --show-server)
+      <p>List the product via raw REST with the SA token:</p>
+<pre><button class="copy" onclick="cp(this)">copy</button>APISERVER=$(oc whoami --show-server)
 TOKEN=$(oc -n rhcl-apps create token req031-product-admin --duration=10m)
 curl -sk -H "Authorization: Bearer $TOKEN" \
   "$APISERVER/apis/devportal.kuadrant.io/v1alpha1/namespaces/rhcl-apps/apiproducts/pix-api" \
@@ -161,30 +161,30 @@ curl -sk -H "Authorization: Bearer $TOKEN" \
   </section>
 
   <section>
-    <h2>O que esperar</h2>
+    <h2>What to expect</h2>
     <table>
       <thead><tr><th>Resource / call</th><th>Expected</th></tr></thead>
       <tbody>
         <tr><td><code>oc get apiproduct pix-api</code></td><td><code>publishStatus=Published</code></td></tr>
         <tr><td><code>oc get authpolicy pix-api-apikey</code></td><td><code>Accepted=True / Enforced=True</code></td></tr>
         <tr><td><code>oc get planpolicy pix-api-plans</code></td><td><code>Accepted=True / Enforced=True</code></td></tr>
-        <tr><td>Dev portal / custom console</td><td>"pix-api" listado como produto Published</td></tr>
+        <tr><td>Dev portal / custom console</td><td>"pix-api" listed as a Published product</td></tr>
       </tbody>
     </table>
   </section>
 
   <section>
     <h2>Cleanup</h2>
-<pre><button class="copy" onclick="cp(this)">copiar</button>cd tests/req031
+<pre><button class="copy" onclick="cp(this)">copy</button>cd tests/req031
 ./scripts/cleanup.sh</pre>
   </section>
 
   <section>
-    <h2>Caveats / pegadinhas</h2>
+    <h2>Caveats / gotchas</h2>
     <ul>
       <li><strong>Dev portal enabled</strong>: the APIProduct only reconciles if <code class="inline">Kuadrant.spec.components.developerPortal.enabled=true</code>. Without it the CR is created but not reconciled — auth + rate limit still work (straight from AuthPolicy/PlanPolicy).</li>
       <li><strong>1 AuthPolicy + 1 RateLimitPolicy per HTTPRoute</strong>: PlanPolicy replaces RateLimitPolicy (don't use both on the same route).</li>
-      <li><strong>Path-based</strong>: este produto reusa o host do <code class="inline">banking-api</code>. Pra um produto em host separado, adicionar um listener no Gateway (fora do escopo do item 31).</li>
+      <li><strong>Path-based</strong>: this product reuses the <code class="inline">banking-api</code> host. For a product on a separate host, add a listener to the Gateway (out of scope for item 31).</li>
       <li><strong>Secret vs APIKey CR</strong>: real auth is via the Secret (label-selected by the AuthPolicy). The APIKey CR is a governance object (request/approve); on approval the developer-portal-controller materializes its own Secret. This demo uses a fixed-value Secret for reproducibility.</li>
     </ul>
   </section>
@@ -203,10 +203,10 @@ curl -sk -H "Authorization: Bearer $TOKEN" \
   });
   // copy
   function cp(btn) {
-    const code = btn.parentNode.innerText.replace(/^copiar/, '').trim();
+    const code = btn.parentNode.innerText.replace(/^copy/, '').trim();
     navigator.clipboard.writeText(code).then(() => {
       const orig = btn.innerText;
-      btn.innerText = 'copiado'; btn.classList.add('done');
+      btn.innerText = 'copied'; btn.classList.add('done');
       setTimeout(() => { btn.innerText = orig; btn.classList.remove('done'); }, 1500);
     });
   }

@@ -1,8 +1,0 @@
-apiVersion: psc.example.com/v1
-kind: DnsIngress
-metadata:
-  name: req030-mirror
-  namespace: req030-gateway
-spec:
-  hostname: req030-mirror.${RHCL_ZONE_ROOT_DOMAIN}
-  ingressClass: nginx

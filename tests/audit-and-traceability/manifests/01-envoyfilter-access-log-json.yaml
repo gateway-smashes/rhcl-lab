@@ -1,12 +1,12 @@
-# EnvoyFilter — access log estruturado (JSON) para auditoria no gateway
+# EnvoyFilter — structured (JSON) access log for gateway auditing
 #
-# Injeta um access log em formato JSON no Envoy proxy do gateway RHCL.
+# Injects a JSON-format access log into the Envoy proxy of the RHCL gateway.
 # The structured log contains fields essential for auditing and
-# rastreabilidade de chamadas:
+# call traceability:
 #
 #   - Identification: request_id, consumer_id, flow_trace_id
 #   - Correlation with the trace: traceparent (W3C Trace Context)
-#   - Auditoria: method, path, response_code, client_ip, TLS version
+#   - Auditing: method, path, response_code, client_ip, TLS version
 #   - Security: auth_reason (Authorino denial reason)
 #
 # Note: uses EnvoyFilter because the Istio CR (openshift-gateway) is managed

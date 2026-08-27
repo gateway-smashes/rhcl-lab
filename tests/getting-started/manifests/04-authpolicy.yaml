@@ -1,19 +1,19 @@
-# Getting started — Passo 4/6: AuthPolicy
+# Getting started — Step 4/6: AuthPolicy
 #
 # Applies API-key authentication to the banking-lite HTTPRoute. Without this
-# policy, a API fica ABERTA — qualquer request no path chega no
-# backend. Depois de aplicar, o Authorino intercepta cada request e
-# exige o header `api-key: <valor>`; sem o header (ou com valor
-# desconhecido) → 401.
+# policy, the API is OPEN — any request on the path reaches the
+# backend. Once applied, Authorino intercepts each request and
+# requires the `api-key: <value>` header; without the header (or with an
+# unknown value) → 401.
 #
 # selector.matchLabels: Authorino discovers the valid keys
-# procurando Secrets com esse par de labels em qualquer namespace
-# (`allNamespaces: true` mais abaixo). Isso desacopla "quem cria a
+# by looking for Secrets with this pair of labels in any namespace
+# (`allNamespaces: true` further below). This decouples "who creates the
 # key" (product owner, dev portal) from "where the policy is
-# declarada".
+# declared".
 #
-# response.success.filters.plan-id: propaga o tier do consumer pro
-# request como o header `x-consumer-plan`. É como a PlanPolicy do
+# response.success.filters.plan-id: propagates the consumer's tier to the
+# request as the `x-consumer-plan` header. It is how the PlanPolicy in
 # step 3 knows which limit to apply (matches the CEL predicate).
 apiVersion: kuadrant.io/v1
 kind: AuthPolicy
@@ -30,12 +30,12 @@ spec:
   rules:
     authentication:
       # OPTIONS (CORS preflight) must pass anonymously — otherwise the
-      # browser da mobile-bank nem consegue mandar a request real.
+      # mobile-bank browser cannot even send the real request.
       cors-preflight:
         when:
           - predicate: "request.method == 'OPTIONS'"
         anonymous: {}
-      # A regra principal: aceita chave via header `api-key`.
+      # The main rule: accepts the key via the `api-key` header.
       api-key-header:
         when:
           - predicate: "request.method != 'OPTIONS'"
@@ -48,9 +48,9 @@ spec:
         credentials:
           customHeader:
             name: api-key
-    # Propaga metadados pra fluxo do request — o consumer-id vira
+    # Propagates metadata to the request flow — the consumer-id becomes a
     # header for Prometheus to label metrics per consumer, and the plan-id
-    # vira o "gatilho" que a PlanPolicy usa pra escolher rate limit.
+    # becomes the "trigger" the PlanPolicy uses to pick the rate limit.
     response:
       success:
         filters:

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Item 31 — criar um produto de API completo via oc (caminho declarativo).
-# Aplica manifests + aguarda APIProduct/AuthPolicy reconciliarem + faz smoke test.
+# Item 31 — create a complete API product via oc (declarative path).
+# Applies manifests + waits for APIProduct/AuthPolicy to reconcile + runs a smoke test.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NS="${NS:-rhcl-apps}"
 
-# Descobre o host do banking-api pra reusar como parent (path-based product).
+# Discover the banking-api host to reuse as parent (path-based product).
 HOST="${HOST:-}"
 if [[ -z "$HOST" ]]; then
   HOST=$(oc -n "$NS" get httproute banking-api-connectivity \
@@ -17,9 +17,9 @@ if [[ -z "$HOST" ]]; then
   exit 1
 fi
 export HOST
-echo "==> Produto: pix-api  |  host=$HOST  |  ns=$NS"
+echo "==> Product: pix-api  |  host=$HOST  |  ns=$NS"
 
-echo "==> Aplicando manifests (envsubst no HTTPRoute pra ${HOST})..."
+echo "==> Applying manifests (envsubst on the HTTPRoute for ${HOST})..."
 envsubst < "$ROOT/manifests/00-httproute.yaml" | oc apply -f -
 oc apply -f "$ROOT/manifests/01-apiproduct.yaml"
 oc apply -f "$ROOT/manifests/02-planpolicy.yaml"
@@ -47,15 +47,15 @@ echo
 KEY=$(oc -n "$NS" get secret pix-api-key-tester -o jsonpath='{.data.api_key}' | base64 -d)
 
 echo "==> Smoke test:"
-echo "    sem key   (esperado 401):"
+echo "    no key    (expected 401):"
 curl -sk -o /dev/null -w "      %{http_code}\n" "https://$HOST/pix/v1"
-echo "    com key   (esperado 200):"
+echo "    with key  (expected 200):"
 curl -sk -o /dev/null -w "      %{http_code}\n" -H "api-key: $KEY" "https://$HOST/pix/v1"
-echo "    burst 7x  (esperado 5x200 + 2x429 — bronze=5/min):"
+echo "    burst 7x  (expected 5x200 + 2x429 — bronze=5/min):"
 for i in 1 2 3 4 5 6 7; do
   printf "      req%d -> " "$i"
   curl -sk -o /dev/null -w "%{http_code}\n" -H "api-key: $KEY" "https://$HOST/pix/v1"
 done
 
 echo
-echo "==> OK. Produto 'pix-api' criado via oc. Pra limpar: scripts/cleanup.sh"
+echo "==> OK. Product 'pix-api' created via oc. To clean up: scripts/cleanup.sh"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# req048 — Exemplo complementar: roteamento gRPC via GRPCRoute (Gateway API v1)
+# req048 — Complementary example: gRPC routing via GRPCRoute (Gateway API v1)
 # Requires the req048 base already applied (apply.sh): namespace, Deployment and Service.
-# Adiciona listener dedicado req048-grpcroute ao gateway e aplica o GRPCRoute.
+# Adds a dedicated req048-grpcroute listener to the gateway and applies the GRPCRoute.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -11,7 +11,7 @@ echo "======================================================================"
 echo " Complementary example: GRPCRoute (idiomatic gRPC routing)"
 echo "======================================================================"
 
-# --- Detectar hostname ---
+# --- Detect hostname ---
 CLUSTER_DOMAIN="${CLUSTER_DOMAIN:-$(oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}' 2>/dev/null || echo "")}"
 
 if [ -z "$CLUSTER_DOMAIN" ]; then
@@ -35,19 +35,19 @@ echo ""
 echo "[prereq] Checking GRPCRoute availability (Gateway API)..."
 GRPC_CRD_VERSIONS=$(oc get crd grpcroutes.gateway.networking.k8s.io -o jsonpath='{.spec.versions[?(@.served==true)].name}' 2>/dev/null || echo "")
 if echo "$GRPC_CRD_VERSIONS" | grep -qw "v1"; then
-  echo " ✓ CRD grpcroutes.gateway.networking.k8s.io servido em v1 (GA)"
+  echo " ✓ CRD grpcroutes.gateway.networking.k8s.io served at v1 (GA)"
 else
   echo " ✗ GRPCRoute v1 is NOT available on this cluster (served versions: '${GRPC_CRD_VERSIONS:-none}')."
-  echo "   Use o exemplo com HTTPRoute (apply.sh), que atende o requisito 48."
+  echo "   Use the HTTPRoute example (apply.sh), which satisfies requirement 48."
   exit 1
 fi
 
 echo ""
 echo "[prereq] Checking RHCL / Kuadrant..."
 if oc get kuadrant -n kuadrant-system &>/dev/null; then
-  echo " ✓ Kuadrant instalado"
+  echo " ✓ Kuadrant installed"
 else
-  echo " ✗ Kuadrant NÃO encontrado em kuadrant-system."
+  echo " ✗ Kuadrant NOT found in kuadrant-system."
   exit 1
 fi
 
@@ -65,7 +65,7 @@ echo ""
 echo "[prereq] Checking the req048 base (gRPC backend)..."
 if ! oc get namespace "$REQ_NS" &>/dev/null || ! oc -n "$REQ_NS" get svc req048-grpc-backend &>/dev/null; then
   echo " ✗ req048 base not found (namespace/Service missing)."
-  echo "   Execute primeiro: bash tests/grpc-backends/scripts/apply.sh"
+  echo "   Run first: bash tests/grpc-backends/scripts/apply.sh"
   exit 1
 fi
 READY=$(oc -n "$REQ_NS" get deployment req048-banking-api -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
@@ -73,13 +73,13 @@ if [ "${READY:-0}" -gt 0 ]; then
   echo " ✓ req048 base applied (backend with $READY Ready replica(s))"
 else
   echo " ✗ Deployment req048-banking-api has no Ready replicas."
-  echo "   Execute/aguarde: bash tests/grpc-backends/scripts/apply.sh"
+  echo "   Run/wait: bash tests/grpc-backends/scripts/apply.sh"
   exit 1
 fi
 
-# --- Passo 1: Listener dedicado no gateway ---
+# --- Step 1: Dedicated listener on the gateway ---
 echo ""
-echo "=== Passo 1/3: Listener req048-grpcroute no gateway ==="
+echo "=== Step 1/3: Listener req048-grpcroute on the gateway ==="
 
 EXISTING_LISTENER=$(oc -n "$GW_NS" get gateway "$GW_NAME" -o jsonpath='{.spec.listeners[*].name}' 2>/dev/null | tr ' ' '\n' | grep -c "^req048-grpcroute$" || true)
 
@@ -95,42 +95,42 @@ else
       "allowedRoutes":{"namespaces":{"from":"All"}}
     }}
   ]'
-  echo " ✓ Listener req048-grpcroute adicionado (hostname: $HOST)"
+  echo " ✓ Listener req048-grpcroute added (hostname: $HOST)"
 fi
 
-# --- Passo 2: GRPCRoute ---
+# --- Step 2: GRPCRoute ---
 echo ""
-echo "=== Passo 2/3: GRPCRoute req048-grpcroute ==="
+echo "=== Step 2/3: GRPCRoute req048-grpcroute ==="
 echo " Note: no AuthPolicy — in RHCL 1.3.5 Kuadrant policies cannot"
-echo " targetear GRPCRoute e o enforcement (wasm-shim) deriva de HTTPRoutes."
+echo " target a GRPCRoute and enforcement (wasm-shim) is derived from HTTPRoutes."
 
 sed -e "s/{{ namespace }}/$REQ_NS/g" \
     -e "s/{{ gateway_name }}/$GW_NAME/g" \
     -e "s/{{ gateway_namespace }}/$GW_NS/g" \
     -e "s/{{ hostname }}/$HOST/g" \
     "$MANIFESTS/05-grpcroute.yaml" | oc apply -f -
-echo " ✓ GRPCRoute req048-grpcroute aplicado"
+echo " ✓ GRPCRoute req048-grpcroute applied"
 
-# --- Passo 3: EnvoyFilter para streaming gRPC (idempotente com apply.sh) ---
-# O req026 instala um filtro de buffer de request em todo o gateway, o que
+# --- Step 3: EnvoyFilter for gRPC streaming (idempotent with apply.sh) ---
+# req026 installs a request-buffer filter across the whole gateway, which
 # breaks gRPC reflection and streaming RPCs. Re-applies the EnvoyFilter that
 # disables the buffer on the req048 vhosts (also covers this hostname).
 echo ""
-echo "=== Passo 3/3: EnvoyFilter req048-grpc-streaming-no-buffer ==="
+echo "=== Step 3/3: EnvoyFilter req048-grpc-streaming-no-buffer ==="
 sed -e "s/{{ gateway_name }}/$GW_NAME/g" \
     -e "s/{{ hostname }}/req048-grpc.${CLUSTER_DOMAIN}/g" \
     -e "s/{{ hostname_grpcroute }}/$HOST/g" \
     "$MANIFESTS/06-envoyfilter-grpc-streaming.yaml" | oc apply -f -
-echo " ✓ EnvoyFilter aplicado (buffer desabilitado nos vhosts do req048)"
+echo " ✓ EnvoyFilter applied (buffer disabled on the req048 vhosts)"
 
 # --- Wait for acceptance ---
 echo ""
-echo " Aguardando GRPCRoute ser aceito..."
+echo " Waiting for the GRPCRoute to be accepted..."
 sleep 5
 
 ACCEPTED=$(oc -n "$REQ_NS" get grpcroute req048-grpcroute -o jsonpath='{.status.parents[?(@.parentRef.sectionName=="req048-grpcroute")].conditions[?(@.type=="Accepted")].status}' 2>/dev/null || echo "")
 if [ "$ACCEPTED" = "True" ]; then
-  echo " ✓ GRPCRoute aceito pelo gateway"
+  echo " ✓ GRPCRoute accepted by the gateway"
 else
   echo " ⚠ GRPCRoute may not be accepted yet. Check:"
   echo "   oc -n $REQ_NS get grpcroute req048-grpcroute -o yaml"
@@ -138,7 +138,7 @@ fi
 
 echo ""
 echo "======================================================================"
-echo " APLICAÇÃO CONCLUÍDA"
+echo " DEPLOYMENT COMPLETE"
 echo "======================================================================"
 echo ""
 echo "What was created (beyond the req048 base):"
@@ -146,14 +146,14 @@ echo "  Listener:  req048-grpcroute (gateway: $GW_NAME)"
 echo "  GRPCRoute: req048-grpcroute (matching by gRPC service)"
 echo ""
 echo "Hostname GRPCRoute: $HOST"
-echo "Hostname HTTPRoute: req048-grpc.${CLUSTER_DOMAIN} (continua ativo)"
+echo "Hostname HTTPRoute: req048-grpc.${CLUSTER_DOMAIN} (still active)"
 echo ""
 echo "Next steps:"
-echo "  1. Validar: bash $SCRIPT_DIR/validate-grpcroute.sh"
-echo "  2. Testar gRPC nativo (unary) via GRPCRoute:"
+echo "  1. Validate: bash $SCRIPT_DIR/validate-grpcroute.sh"
+echo "  2. Test native gRPC (unary) via GRPCRoute:"
 echo "     grpcurl -plaintext -d '{\"api_version\":\"v1\"}' \\"
 echo "       $HOST:80 io.gatewaysmashes.rhcl.grpc.BankingService/GetSummary"
-echo "  3. Testar server-streaming via GRPCRoute:"
+echo "  3. Test server-streaming via GRPCRoute:"
 echo "     grpcurl -plaintext -d '{\"interval_ms\":500,\"max_events\":3}' \\"
 echo "       $HOST:80 io.gatewaysmashes.rhcl.grpc.BankingService/StreamHealth"
 echo ""

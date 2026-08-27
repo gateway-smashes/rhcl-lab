@@ -1,6 +1,6 @@
-# req018 — ServiceMonitor: raspa /q/metrics do banking-api pro UWM.
+# req018 — ServiceMonitor: scrapes banking-api's /q/metrics for UWM.
 #
-# Sem esse manifest, `bank_ai_tokens_total` fica preso no pod — o
+# Without this manifest, `bank_ai_tokens_total` stays trapped in the pod — the
 # User Workload Monitoring's Prometheus does not discover targets in
 # the `rhcl-apps` namespace by default.
 #
@@ -8,7 +8,7 @@
 #   oc -n openshift-monitoring get cm cluster-monitoring-config -o yaml \
 #     | grep enableUserWorkload
 # Should return `enableUserWorkload: true`. If not, edit the ConfigMap
-# `cluster-monitoring-config` no namespace `openshift-monitoring` e
+# `cluster-monitoring-config` in the `openshift-monitoring` namespace
 # to add (this is cluster-wide config — may need cluster admin):
 #
 #   data:
@@ -27,7 +27,7 @@ metadata:
     rhcl.poc/req: req018
 spec:
   # Selector covers backend v1 and v2 — both Services expose /q/metrics
-  # no port `http`.
+  # on port `http`.
   selector:
     matchExpressions:
       - key: app

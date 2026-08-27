@@ -1,5 +1,5 @@
-# RoleBinding que permite ao ServiceAccount "default" do namespace req048-grpc
-# puxar imagens do ImageStream "banking-api" no namespace rhcl-apps.
+# RoleBinding that lets the "default" ServiceAccount of the req048-grpc namespace
+# pull images from the "banking-api" ImageStream in the rhcl-apps namespace.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:

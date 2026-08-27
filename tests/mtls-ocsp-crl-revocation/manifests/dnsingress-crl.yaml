@@ -1,8 +1,0 @@
-apiVersion: psc.example.com/v1
-kind: DnsIngress
-metadata:
-  name: req050-crl-mtls
-  namespace: req050-gateway
-spec:
-  hostname: req050-crl.${RHCL_ZONE_ROOT_DOMAIN}
-  ingressClass: nginx

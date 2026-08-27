@@ -1,15 +1,15 @@
 # Getting started — Step 6b/6: APIKey CR (request/approval in the dev portal)
 #
-# ISTO NÃO É a chave que autentica o request. A chave real vive no
-# Secret do arquivo anterior (06-apikey-secret.yaml).
+# THIS IS NOT the key that authenticates the request. The real key lives in the
+# Secret from the previous file (06-apikey-secret.yaml).
 #
 # The APIKey CR is the "access request" object that appears in the dev
-# portal. Ele:
+# portal. It:
 #   1. Appears in the user's "My API keys" list in the portal
-#   2. Aparece no card de subscribers do APIProduct pro owner
-#   3. Vincula o consumer (via requestedBy.userId) ao APIProduct
+#   2. Appears in the APIProduct's subscribers card for the owner
+#   3. Links the consumer (via requestedBy.userId) to the APIProduct
 #   4. In production it has status={pending, approved, rejected} controlled
-#      pelo owner ou auto-approved (approvalMode do APIProduct)
+#      by the owner or auto-approved (the APIProduct's approvalMode)
 #
 # Runtime authentication ignores this CR — Authorino only looks at the
 # Secrets matching the AuthPolicy selector. The CR is UI + governance.

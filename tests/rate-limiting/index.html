@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -274,13 +274,13 @@ oc rollout status deploy/$GW_DEPLOY -n openshift-ingress
     <p>
       An RLP with counters separated by <strong>header</strong>
       (<code>x-customer-id</code>) and by <strong>authenticated user</strong>
-      (via PlanPolicy e <code>auth.identity.userid</code>).
+      (via PlanPolicy and <code>auth.identity.userid</code>).
     </p>
 
     <h3>Apply the policy</h3>
     <pre>oc apply -f manifests/03-custom-counters.yaml</pre>
 
-    <h3>2a — Counter por header <code>x-customer-id</code> (CLI)</h3>
+    <h3>2a — Counter by header <code>x-customer-id</code> (CLI)</h3>
     <pre>HOST=$(oc get httproute banking-api-connectivity -n rhcl-apps -o jsonpath='{.spec.hostnames[0]}')
 
 # Client "alpha" — 10 parallel reqs (limit 5/min)
@@ -375,7 +375,7 @@ oc get ratelimitpolicy -A -l app.kubernetes.io/part-of=rhcl-req61-65-ratelimit</
     <h3>Force a non-negotiable ceiling (<code>overrides</code>)</h3>
     <p>
       To make the Gateway-level limit <strong>non-negotiable</strong>, edit
-      <code>manifests/04-api-vs-gateway.yaml</code> trocando
+      <code>manifests/04-api-vs-gateway.yaml</code> changing
       <code>defaults:</code> to <code>overrides:</code>. After that, even an
       API team setting <code>100000/s</code> in its policy cannot
       exceed the ceiling set at the Gateway.
@@ -415,7 +415,7 @@ oc delete -f manifests/01-global-same-site.yaml \
           -f manifests/04-api-vs-gateway.yaml --ignore-not-found</pre>
     <div class="callout danger">
       <strong>Note</strong> — do not use <code>oc delete -f manifests/</code>
-      sem listar os arquivos. O glob inclui o
+      without listing the files. The glob includes
       <code>05-external-architecture.md</code> (not a manifest) and errors.
     </div>
   </div>
@@ -435,7 +435,7 @@ oc delete -f manifests/01-global-same-site.yaml \
           <td>
             Sequential <code>curl</code> adds ~200ms between reqs due
             to the TLS handshake. The 10s window may not be exceeded. Use
-            <strong>paralelo</strong>:
+            <strong>parallel</strong>:
             <code>{ for i in ...; do curl … &amp; done; wait; }</code>
           </td>
         </tr>
@@ -460,7 +460,7 @@ oc delete -f manifests/01-global-same-site.yaml \
           <td>
             Observed when one entry uses <code>auth.identity</code>
             and another uses only <code>request.*</code>. Limit to
-            <strong>2 entradas</strong> em <code>limits</code> por RLP, ou
+            <strong>2 entries</strong> in <code>limits</code> per RLP, or
             compose separate RLPs with distinct <code>sectionName</code>.
           </td>
         </tr>
@@ -469,7 +469,7 @@ oc delete -f manifests/01-global-same-site.yaml \
           <td>
             When both (Gateway-level <code>defaults</code> and API-level)
             coexist, API-level wins. For an absolute ceiling use
-            <code>overrides:</code> no Gateway-level.
+            <code>overrides:</code> at the Gateway level.
           </td>
         </tr>
         <tr>
@@ -523,7 +523,7 @@ oc -n shared-store exec $POD -- sh -c 'redis-cli -a "$REDIS_PASSWORD" ping'
     <pre>oc apply -f manifests/02-limitador-redis.yaml
 oc -n kuadrant-system rollout status deploy/limitador-limitador
 
-# Confirma o storage
+# Confirm the storage
 oc -n kuadrant-system get limitador limitador -o jsonpath='{.spec.storage}'; echo</pre>
 
     <h3>Step 3 — Validate (counters now live in Redis)</h3>
@@ -602,7 +602,7 @@ REDIS_LB=$(oc -n shared-store get svc redis-lb \
     <h3>Where the limit comes from — the RateLimitPolicy</h3>
     <p>
       The <code>20/10s</code> is not infra config: it is declared in a
-      <strong>RateLimitPolicy</strong> anexada à HTTPRoute. É a MESMA policy
+      <strong>RateLimitPolicy</strong> attached to the HTTPRoute. It is the SAME policy
       (<code>manifests/01-global-same-site.yaml</code>) from the earlier scenarios
       — and it must exist <strong>identically on both
       clusters</strong>:

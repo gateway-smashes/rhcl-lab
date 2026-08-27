@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# api-cost-monitoring/scripts/validate.sh — verifica cada pilar do stack de custo.
+# api-cost-monitoring/scripts/validate.sh — checks each pillar of the cost stack.
 #
-# 5 checks. Cada um imprime PASS/FAIL/WARN e um one-liner explicativo.
-# Sai com 0 se todos passarem, 1 se algum FAIL.
+# 5 checks. Each one prints PASS/FAIL/WARN and an explanatory one-liner.
+# Exits with 0 if all pass, 1 if any FAIL.
 #
-# Uso:
+# Usage:
 #   ./tests/api-cost-monitoring/scripts/validate.sh
-#   ./tests/api-cost-monitoring/scripts/validate.sh --verbose  # log dos comandos
+#   ./tests/api-cost-monitoring/scripts/validate.sh --verbose  # logs the commands
 set -uo pipefail
 
 VERBOSE=false
@@ -26,10 +26,10 @@ echo "════════════════════════�
 
 # ─── 1. banking-api emite bank_ai_tokens_total ──────────────────────────
 echo ""
-echo "1. Backend emitindo counter bank_ai_tokens_total"
+echo "1. Backend emitting the bank_ai_tokens_total counter"
 POD=$(oc -n rhcl-apps get pods -l app=banking-api-v1 -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 if [ -z "$POD" ]; then
-  fail "nenhum pod banking-api-v1 em rhcl-apps"
+  fail "no banking-api-v1 pod in rhcl-apps"
 else
   # temporary port-forward
   oc -n rhcl-apps port-forward "$POD" 18080:8080 >/dev/null 2>&1 &
@@ -42,33 +42,33 @@ else
   if [ "$SERIES" -gt 0 ]; then
     pass "counter present ($SERIES series in /q/metrics)"
   else
-    fail "counter ausente — chamou algum endpoint /api/v1/chat/completions ou /embeddings?"
-    info "Testar: curl -X POST https://<gateway>/api/v1/chat/completions -H 'content-type: application/json' -d '{\"model\":\"banking-llm\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}'"
+    fail "counter missing — did you call any /api/v1/chat/completions or /embeddings endpoint?"
+    info "Try: curl -X POST https://<gateway>/api/v1/chat/completions -H 'content-type: application/json' -d '{\"model\":\"banking-llm\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}'"
   fi
 fi
 
 # ─── 2. ServiceMonitor existe ───────────────────────────────────────────
 echo ""
-echo "2. ServiceMonitor pro UWM raspar banking-api"
+echo "2. ServiceMonitor for UWM to scrape banking-api"
 if oc -n rhcl-apps get servicemonitor banking-api >/dev/null 2>&1; then
-  pass "servicemonitor/banking-api aplicado"
+  pass "servicemonitor/banking-api applied"
 else
-  fail "servicemonitor/banking-api NÃO existe — aplicar manifests/02-servicemonitor-banking-api.yaml"
+  fail "servicemonitor/banking-api does NOT exist — apply manifests/02-servicemonitor-banking-api.yaml"
 fi
 
-# ─── 3. Telemetry CR aplicada ───────────────────────────────────────────
+# ─── 3. Telemetry CR applied ────────────────────────────────────────────
 echo ""
-echo "3. Telemetry CR com labels custom"
+echo "3. Telemetry CR with custom labels"
 if oc -n openshift-ingress get telemetry rhcl-api-metrics >/dev/null 2>&1; then
-  # Confirma que tem targetRefs (a gotcha)
+  # Confirm it has targetRefs (the gotcha)
   if oc -n openshift-ingress get telemetry rhcl-api-metrics -o jsonpath='{.spec.targetRefs}' | grep -q Gateway; then
-    pass "telemetry/rhcl-api-metrics com spec.targetRefs → Gateway"
+    pass "telemetry/rhcl-api-metrics with spec.targetRefs → Gateway"
   else
     fail "telemetry/rhcl-api-metrics exists but has NO spec.targetRefs — labels will not populate"
     info "Without targetRefs the CR only applies to sidecars — Gateway API gateways are left out."
   fi
 else
-  fail "telemetry/rhcl-api-metrics NÃO existe — aplicar manifests/03-telemetry-consumer-labels.yaml"
+  fail "telemetry/rhcl-api-metrics does NOT exist — apply manifests/03-telemetry-consumer-labels.yaml"
 fi
 
 # ─── 4. Prometheus sees bank_ai_tokens_total ──────────────────────────────
@@ -88,7 +88,7 @@ else
   fi
 fi
 
-# ─── 5. istio_requests_total com consumer_id ────────────────────────────
+# ─── 5. istio_requests_total with consumer_id ───────────────────────────
 echo ""
 echo "5. istio_requests_total tem label request_headers_x_consumer_id populado"
 if [ -n "$THANOS" ]; then
@@ -103,32 +103,32 @@ if [ -n "$THANOS" ]; then
     fail "no series with consumer_id — generate traffic with an api-key: ./tests/simulate-api-traffic.sh --target=banking --duration=60"
   fi
 else
-  warn "sem Thanos exposto — pular"
+  warn "no Thanos exposed — skipping"
 fi
 
-# ─── 6. ConfigMap de pricing configurada ────────────────────────────────
+# ─── 6. pricing ConfigMap configured ────────────────────────────────────
 echo ""
-echo "6. Plugin ConfigMap com costPricing + costCurrency"
+echo "6. Plugin ConfigMap with costPricing + costCurrency"
 if oc -n custom-rhcl-console get cm custom-rhcl-console-config >/dev/null 2>&1; then
   HAS_PRICING=$(oc -n custom-rhcl-console get cm custom-rhcl-console-config -o jsonpath='{.data.costPricing}' 2>/dev/null | wc -c | tr -d ' ')
   HAS_CURRENCY=$(oc -n custom-rhcl-console get cm custom-rhcl-console-config -o jsonpath='{.data.costCurrency}' 2>/dev/null | wc -c | tr -d ' ')
   if [ "$HAS_PRICING" -gt 10 ] && [ "$HAS_CURRENCY" -gt 0 ]; then
     CUR=$(oc -n custom-rhcl-console get cm custom-rhcl-console-config -o jsonpath='{.data.costCurrency}')
-    pass "costPricing populado + costCurrency='$CUR'"
+    pass "costPricing populated + costCurrency='$CUR'"
   else
-    fail "ConfigMap existe mas costPricing/costCurrency vazio — aplicar manifests/04-plugin-config-pricing.yaml"
+    fail "ConfigMap exists but costPricing/costCurrency empty — apply manifests/04-plugin-config-pricing.yaml"
   fi
 else
   fail "ConfigMap custom-rhcl-console-config does not exist in custom-rhcl-console — install the plugin first"
 fi
 
-# ─── Resumo ─────────────────────────────────────────────────────────────
+# ─── Summary ────────────────────────────────────────────────────────────
 echo ""
 echo "══════════════════════════════════════════════════════════════════"
 if [ "$FAIL_COUNT" -eq 0 ]; then
-  echo " Tudo verde. Abrir Console → Custom Connectivity Link → Cost."
+  echo " All green. Open Console → Custom Connectivity Link → Cost."
   exit 0
 else
-  echo " $FAIL_COUNT check(s) falharam. Ver mensagens acima."
+  echo " $FAIL_COUNT check(s) failed. See messages above."
   exit 1
 fi

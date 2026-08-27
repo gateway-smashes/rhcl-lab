@@ -2,29 +2,29 @@
 #
 # This manifest is ONLY an example/patch of the costCurrency + costPricing fields.
 # If the plugin was already installed by the RHCL playbook (role `custom_console`),
-# esta ConfigMap JÁ EXISTE — este manifest sobrescreve APENAS os dois campos
-# via apply (server-side merge). O resto dos campos da ConfigMap
+# this ConfigMap ALREADY EXISTS — this manifest overwrites ONLY the two fields
+# via apply (server-side merge). The rest of the ConfigMap fields
 # (defaultNamespace, prometheusUrl, hostname, etc.) is NOT touched.
 #
 # NOTE — the values below are DEMO values. Adjust before applying for a customer.
 #
-# CHAVES (tiers): devem bater com o `spec.plan` da APIProduct/APIKey.
+# KEYS (tiers): must match the `spec.plan` of the APIProduct/APIKey.
 #   The plugin reads `secret.kuadrant.io/plan-id` from the Secret annotation
-#   pra decidir qual tier aplicar em cada consumer.
-#   `anonymous` = fallback pra requests sem consumer_id (endpoints com
-#   `anonymous: {}` no AuthPolicy — no PoC, os endpoints de IA).
+#   to decide which tier to apply to each consumer.
+#   `anonymous` = fallback for requests without consumer_id (endpoints with
+#   `anonymous: {}` in the AuthPolicy — in the PoC, the AI endpoints).
 #
-# VALORES:
+# VALUES:
 #   - calls_per_1k  = price in `costCurrency` per 1,000 HTTP calls
 #   - tokens_per_1k = price in `costCurrency` per 1,000 AI tokens
-#                     (prompt + completion somados)
+#                     (prompt + completion summed)
 #
-# FÓRMULA (o plugin aplica):
+# FORMULA (the plugin applies):
 #   cost = calls × pricing[tier].calls_per_1k / 1000
 #        + tokens × pricing[tier].tokens_per_1k / 1000
 #
 # RUNTIME:
-#   Editar essa ConfigMap propaga pro plugin em <60s (useK8sWatchResource).
+#   Editing this ConfigMap propagates to the plugin in <60s (useK8sWatchResource).
 #   No need to restart the plugin or the OpenShift Console.
 #
 # CURRENCY:

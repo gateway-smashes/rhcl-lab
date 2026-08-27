@@ -1,34 +1,34 @@
 # Custom policy expressions (CEL).
 #
-# ABORDAGEM INTEGRADA: esta AuthPolicy SUBSTITUI (in-place update) a policy
-# de API Key existente (`banking-api-connectivity-apikey`), adicionando regras
+# INTEGRATED APPROACH: this AuthPolicy REPLACES (in-place update) the
+# existing API Key policy (`banking-api-connectivity-apikey`), adding
 # AUTHORIZATION rules with CEL expressions without changing the authentication rules.
 #
 # Pipeline Authorino:
-#   Request → Authentication (API Key / anônimo) → Authorization (CEL) → Response
+#   Request → Authentication (API Key / anonymous) → Authorization (CEL) → Response
 #
-# O que esta policy demonstra:
+# What this policy demonstrates:
 #
 #   AUTHENTICATION (unchanged — compatible with PlanPolicy and other tests):
-#     • cors-preflight    — OPTIONS livre
-#     • public-echo       — /api/echo e /api/lb-test livres
-#     • public-ws         — /ws livre (WebSocket)
-#     • ai-mock           — /api/v1/chat/completions e /api/v1/models livres
-#     • api-key-header    — demais paths exigem API Key via header
-#     • api-key-query     — demais paths exigem API Key via query string
+#     • cors-preflight    — OPTIONS free
+#     • public-echo       — /api/echo and /api/lb-test free
+#     • public-ws         — /ws free (WebSocket)
+#     • ai-mock           — /api/v1/chat/completions and /api/v1/models free
+#     • api-key-header    — other paths require API Key via header
+#     • api-key-query     — other paths require API Key via query string
 #
-#   AUTHORIZATION (NOVO — demonstra CEL):
-#     • cel-transfer-idempotency — POST /api/v1/transfers exige
-#                                  x-idempotency-key (apenas quando
+#   AUTHORIZATION (NEW — demonstrates CEL):
+#     • cel-transfer-idempotency — POST /api/v1/transfers requires
+#                                  x-idempotency-key (only when
 #                                  the x-cel-strict: true header is present,
 #                                  so existing tests are not affected)
-#     • cel-bot-blocking         — Bloqueia qualquer request com
-#                                  user-agent contendo 'bot' em paths
-#                                  protegidos por API Key
+#     • cel-bot-blocking         — Blocks any request whose
+#                                  user-agent contains 'bot' on paths
+#                                  protected by API Key
 #
 #   RESPONSE (unchanged + diagnostic headers):
 #     • Keeps userid and plan-id for PlanPolicy
-#     • Adiciona x-rhcl-policy-item header nas respostas de deny
+#     • Adds an x-rhcl-policy-item header on deny responses
 #
 # Funcionalidades CEL exercitadas:
 #     • Logical operators: && , || , !
@@ -36,31 +36,31 @@
 #     • Direct header comparison: request.headers['x'] == 'value'
 #     • Combining method + path + headers
 #
-# IMPACTO NOS DEMAIS TESTES:
-#   • Nenhum — authentication inalterada, PlanPolicy continua funcionando.
-#   • cel-transfer-idempotency SÓ aplica quando x-cel-strict: true presente.
+# IMPACT ON OTHER TESTS:
+#   • None — authentication unchanged, PlanPolicy keeps working.
+#   • cel-transfer-idempotency ONLY applies when x-cel-strict: true is present.
 #   • cel-bot-blocking ONLY blocks if user-agent contains 'bot' (no
-#     teste existente usa 'bot' como user-agent).
+#     existing test uses 'bot' as its user-agent).
 #
-# Como aplicar (update in-place da policy existente):
+# How to apply (in-place update of the existing policy):
 #   oc apply --server-side --force-conflicts -f tests/custom-policy-expressions-cel/manifests/01-cel-custom-expressions.yaml
 #
-# Como reverter ao estado original:
+# How to revert to the original state:
 #   cd automation
 #   ansible-playbook playbooks/apps-install.yml --tags connectivity
 #
-# Validar CEL — ver README.md para o roteiro completo.
+# Validate CEL — see README.md for the full walkthrough.
 #
 #   HOST=$(oc get httproute banking-api-connectivity -n rhcl-apps \
 #          -o jsonpath='{.spec.hostnames[0]}')
 #
-#   # Teste CEL bot-blocking: user-agent com 'bot' → 403
+#   # Test CEL bot-blocking: user-agent with 'bot' → 403
 #   curl -sk -o /dev/null -w "%{http_code}\n" \
 #     -H "api-key: <KEY>" -H "user-agent: scraperbot/1.0" \
 #     "https://$HOST/api/v1/accounts/summary"
 #   # Esperado: 403
 #
-#   # Teste CEL idempotency (modo strict): sem header → 403
+#   # Test CEL idempotency (strict mode): no header → 403
 #   curl -sk -o /dev/null -w "%{http_code}\n" \
 #     -X POST "https://$HOST/api/v1/transfers" \
 #     -H "api-key: <KEY>" -H "x-cel-strict: true" \
@@ -68,7 +68,7 @@
 #     -d '{"fromBank":"BB","toBank":"EXT","amount":100}'
 #   # Esperado: 403
 #
-#   # Teste CEL idempotency (modo strict): com header → 200
+#   # Test CEL idempotency (strict mode): with header → 200
 #   curl -sk -o /dev/null -w "%{http_code}\n" \
 #     -X POST "https://$HOST/api/v1/transfers" \
 #     -H "api-key: <KEY>" -H "x-cel-strict: true" \
@@ -77,24 +77,24 @@
 #     -d '{"fromBank":"BB","toBank":"EXT","amount":100}'
 #   # Esperado: 200
 #
-#   # Teste sem x-cel-strict (comportamento normal preservado): → 200
+#   # Test without x-cel-strict (normal behavior preserved): → 200
 #   curl -sk -o /dev/null -w "%{http_code}\n" \
 #     -X POST "https://$HOST/api/v1/transfers" \
 #     -H "api-key: <KEY>" \
 #     -H "content-type: application/json" \
 #     -d '{"fromBank":"BB","toBank":"EXT","amount":100}'
-#   # Esperado: 200 (idempotency check NÃO ativado)
+#   # Expected: 200 (idempotency check NOT triggered)
 #
-# LIMITAÇÕES IMPORTANTES — Authorino:
+# IMPORTANT LIMITATIONS — Authorino:
 #
 #   1) CEL has() — does NOT support map-index access:
 #      has(request.headers['x-foo'])  → ERRO: invalid argument to has() macro
-#      Usar acesso direto ao header (valor vazio = ausente):
+#      Use direct header access (empty value = absent):
 #        request.headers['x-foo'] == 'value'  → false if the header is absent
 #        request.headers['x-foo'].contains('x') → false if the header is absent
 #
-#   2) Rego default allow — Authorino injeta automaticamente:
-#      NÃO declare `default allow := false` nem `package`/`import` no Rego.
+#   2) Rego default allow — Authorino injects it automatically:
+#      Do NOT declare `default allow := false`, nor `package`/`import`, in the Rego.
 #      Use only the rule: `allow { conditions }`
 #      Syntax: classic Rego v0 (no `if`; `allow if {}` requires an import).
 apiVersion: kuadrant.io/v1
@@ -169,7 +169,7 @@ spec:
       #   • request.headers['x-cel-strict'] == 'true' (implicit presence)
       #
       # NOTE: has() does not support map-index access in Authorino.
-      #   Usar acesso direto ao header: valor vazio = header ausente.
+      #   Use direct header access: empty value = header absent.
       cel-transfer-idempotency:
         when:
           - predicate: "request.method == 'POST' && request.path.startsWith('/api/v1/transfers')"
@@ -181,8 +181,8 @@ spec:
               key != ""
             }
 
-      # Regra CEL 2: Bloqueia requests com user-agent contendo 'bot'.
-      # Aplica-se apenas a paths protegidos (que passaram por API Key).
+      # CEL rule 2: Block requests with a user-agent containing 'bot'.
+      # Applies only to protected paths (that passed API Key auth).
       #
       # CEL expressions demonstrated:
       #   • request.headers['user-agent'].contains('bot')

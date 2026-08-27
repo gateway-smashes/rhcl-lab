@@ -1,19 +1,19 @@
-# HTTPRoute para demonstrar CORS no gateway (REQ 14).
+# HTTPRoute to demonstrate CORS at the gateway (REQ 14).
 #
-# Como aplicar (substitui ${RHCL_ZONE_ROOT_DOMAIN} pelo valor exportado):
-#   export RHCL_ZONE_ROOT_DOMAIN=apps.example.com   # ajuste para seu lab
+# How to apply (substitutes ${RHCL_ZONE_ROOT_DOMAIN} with the exported value):
+#   export RHCL_ZONE_ROOT_DOMAIN=apps.example.com   # adjust for your lab
 #   envsubst < tests/cors-policy/manifests/httproute-cors.yaml | oc apply -f -
 #
-# A rota fica anexada ao Gateway wildcard `*.${RHCL_ZONE_ROOT_DOMAIN}` criado
+# The route attaches to the wildcard `*.${RHCL_ZONE_ROOT_DOMAIN}` Gateway created
 # by the playbook (rhcl-apps-gateway in openshift-ingress) and exposes
-# /api/v1/cors com Access-Control-Allow-* injetados via ResponseHeaderModifier.
+# /api/v1/cors with Access-Control-Allow-* injected via ResponseHeaderModifier.
 #
-# O backend rejeita Origins fora de *.${RHCL_ZONE_ROOT_DOMAIN} (CORS filter do
-# Quarkus retorna 403). Quando o teste chama o backend diretamente a partir de
+# The backend rejects Origins outside *.${RHCL_ZONE_ROOT_DOMAIN} (the Quarkus
+# CORS filter returns 403). When the test calls the backend directly from
 # another origin, the browser sees the block. When the same endpoint is
-# called via cors.${RHCL_ZONE_ROOT_DOMAIN}, this HTTPRoute sets the headers
-# `Origin` antes de fazer o proxy (assim o backend trata como same-origin e
-# (returns 200) and the gateway is what injects the Access-Control-Allow-* in the response.
+# called via cors.${RHCL_ZONE_ROOT_DOMAIN}, this HTTPRoute strips the `Origin`
+# header before proxying (so the backend treats it as same-origin and
+# returns 200) and the gateway is what injects the Access-Control-Allow-* in the response.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -28,8 +28,8 @@ spec:
   hostnames:
     - cors.${RHCL_ZONE_ROOT_DOMAIN}
   rules:
-    # /api/v1/cors -> backend retorna sem CORS; o gateway adiciona os
-    # Access-Control-Allow-* na resposta para liberar o navegador.
+    # /api/v1/cors -> the backend responds without CORS; the gateway adds the
+    # Access-Control-Allow-* headers to the response to unblock the browser.
     - matches:
         - path:
             type: Exact

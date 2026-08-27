@@ -1,6 +1,6 @@
-# PIX API — APIKey CR do dev portal (objeto de request/approval que aparece na
-# console). Cria em estado Pending; quando o admin aprova (status.phase=Approved),
-# o developer-portal-controller materializa um Secret. Pra esta demo, a auth real
+# PIX API — dev portal APIKey CR (a request/approval object that appears in the
+# console). Created in Pending state; when the admin approves (status.phase=Approved),
+# the developer-portal-controller materializes a Secret. For this demo, real auth
 # already uses the fixed-value Secret (04-apikey-secret.yaml); this CR shows the
 # "via API" governance flow — an admin can list, approve, revoke through the K8s API.
 apiVersion: devportal.kuadrant.io/v1alpha1
@@ -17,4 +17,4 @@ spec:
   requestedBy:
     email: "tester@example.com"
     userId: "tester"
-  useCase: "Demo do Item 31 — testar PIX API no plano bronze"
+  useCase: "Item 31 demo — test the PIX API on the bronze plan"

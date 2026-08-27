@@ -1,21 +1,21 @@
 # Shared Redis in the same cluster (namespace shared-store).
 #
-# Em vez de um Redis gerenciado externo (Aiven/Upstash/ElastiCache), este
-# manifest sobe um Redis dentro do cluster, num namespace dedicado
-# `shared-store`. O Limitador (em kuadrant-system) aponta pra ele via
+# Instead of an external managed Redis (Aiven/Upstash/ElastiCache), this
+# manifest brings up a Redis inside the cluster, in a dedicated namespace
+# `shared-store`. Limitador (in kuadrant-system) points at it via
 # Service DNS. Serves as the single counter backend — this is what makes the
 # rate limit "global" and enables the multi-site scenario (each cluster points
-# pro mesmo endpoint Redis).
+# at the same Redis endpoint).
 #
-# Imagem: quay.io/sclorg/redis-7-c9s — build SCL da Red Hat, roda como UID
+# Image: quay.io/sclorg/redis-7-c9s — Red Hat SCL build, runs as an
 # arbitrary UID (compatible with OpenShift's `restricted-v2` SCC), public
 # (no pull secret). Reads the password from REDIS_PASSWORD.
 #
-# Como aplicar:
+# How to apply:
 #   oc apply -f tests/rate-limiting/manifests/06-redis-shared-store.yaml
 #   oc -n shared-store rollout status deploy/redis
 #
-# Depois aponte o Limitador (ver 02-limitador-redis.yaml).
+# Then point Limitador at it (see 02-limitador-redis.yaml).
 #
 # NOTE: emptyDir = volatile data (gone on pod restart). Enough for the
 # rate-limit demo. In production: PVC + replication/Sentinel.
@@ -35,7 +35,7 @@ metadata:
     app.kubernetes.io/part-of: rhcl-req61-65-ratelimit
 type: Opaque
 stringData:
-  # Demo password — troque em qualquer uso fora de PoC.
+  # Demo password — change it for any use outside a PoC.
   password: "rhcl-redis-demo"
 ---
 apiVersion: apps/v1

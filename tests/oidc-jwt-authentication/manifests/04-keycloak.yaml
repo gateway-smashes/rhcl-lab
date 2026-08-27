@@ -1,5 +1,5 @@
-# Bootstrap admin definitivo (admin/redhat) em vez do temp-admin + senha
-# random operator one. The Secret must exist BEFORE the CR (only applies on
+# Permanent bootstrap admin (admin/redhat) instead of the temp-admin + random
+# operator-generated password. The Secret must exist BEFORE the CR (only applies on
 # the initial creation of the instance).
 apiVersion: v1
 kind: Secret

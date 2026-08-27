@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Getting started — validate end-to-end.
 #
-# 8 checks contra o cluster + gateway. Cada um imprime PASS/FAIL,
+# 8 checks against the cluster + gateway. Each prints PASS/FAIL,
 # non-zero exit on the first error.
 #
-# Uso:
+# Usage:
 #   HOSTNAME=banking-lite.pocrhcl.redhat.lab.example.com ./scripts/validate.sh
 set -uo pipefail
 
-: "${HOSTNAME:?HOSTNAME env var required — mesma que passou pro apply.sh}"
+: "${HOSTNAME:?HOSTNAME env var required — same one you passed to apply.sh}"
 
 pass() { printf '  \033[32m✓\033[0m  %s\n' "$1"; }
 fail() { printf '  \033[31m✗\033[0m  %s\n' "$1"; exit 1; }
@@ -27,24 +27,24 @@ echo "════════════════════════�
 echo ""
 
 # 1. HTTPRoute Accepted
-echo "1. HTTPRoute banking-lite Accepted pelo gateway"
+echo "1. HTTPRoute banking-lite Accepted by the gateway"
 if oc -n rhcl-apps get httproutes.gateway.networking.k8s.io banking-lite \
    -o jsonpath='{.status.parents[0].conditions[?(@.type=="Accepted")].status}' 2>/dev/null | grep -q True; then
-  pass "HTTPRoute foi aceita"
+  pass "HTTPRoute was accepted"
 else
-  fail "HTTPRoute NÃO foi aceita pelo gateway — checar parentRef e allowedRoutes"
+  fail "HTTPRoute was NOT accepted by the gateway — check parentRef and allowedRoutes"
 fi
 
 # 2. APIProduct Ready
 echo ""
-echo "2. APIProduct banking-lite existe"
+echo "2. APIProduct banking-lite exists"
 if oc -n rhcl-apps get apiproduct banking-lite >/dev/null 2>&1; then
-  pass "APIProduct existe"
+  pass "APIProduct exists"
 else
   fail "APIProduct not found"
 fi
 
-# 3. Policies Enforced (o "green tick" do Kuadrant)
+# 3. Policies Enforced (Kuadrant's "green tick")
 echo ""
 echo "3. AuthPolicy + PlanPolicy + RateLimitPolicy Enforced"
 for pol in "authpolicy/banking-lite-apikey" "planpolicy/banking-lite-plans" "ratelimitpolicy/banking-lite-global-ratelimit"; do
@@ -52,47 +52,47 @@ for pol in "authpolicy/banking-lite-apikey" "planpolicy/banking-lite-plans" "rat
   if [ "$STATUS" = "True" ]; then
     pass "$pol Enforced"
   else
-    fail "$pol NÃO Enforced (status=$STATUS)"
+    fail "$pol NOT Enforced (status=$STATUS)"
   fi
 done
 
-# 4. curl sem key → 401
+# 4. curl without key → 401
 echo ""
-echo "4. Request SEM api-key → 401"
+echo "4. Request WITHOUT api-key → 401"
 CODE=$(curl -sk -o /dev/null -w '%{http_code}' "https://${HOSTNAME}/api/v1/accounts/summary")
 if [ "$CODE" = "401" ]; then
-  pass "gateway respondeu 401 (AuthPolicy funcionando)"
+  pass "gateway responded 401 (AuthPolicy working)"
 else
   fail "expected 401, got $CODE — the AuthPolicy may not be Enforced yet"
 fi
 
-# 5. curl com key errada → 401
+# 5. curl with wrong key → 401
 echo ""
 echo "5. Request WITH an invalid api-key → 401"
 CODE=$(curl -sk -o /dev/null -w '%{http_code}' \
-  -H "api-key: chave-inexistente" \
+  -H "api-key: nonexistent-key" \
   "https://${HOSTNAME}/api/v1/accounts/summary")
 if [ "$CODE" = "401" ]; then
   pass "invalid key rejected"
 else
-  fail "esperado 401, veio $CODE"
+  fail "expected 401, got $CODE"
 fi
 
-# 6. curl com key correta → 200
+# 6. curl with correct key → 200
 echo ""
 echo "6. Request WITH a valid api-key → 200"
 RESP=$(curl -sk -H "api-key: ${KEY}" "https://${HOSTNAME}/api/v1/accounts/summary")
 CODE=$(curl -sk -o /dev/null -w '%{http_code}' -H "api-key: ${KEY}" "https://${HOSTNAME}/api/v1/accounts/summary")
 if [ "$CODE" = "200" ] && echo "$RESP" | grep -q '\['; then
-  pass "backend respondeu com JSON"
+  pass "backend responded with JSON"
   info "$(echo "$RESP" | head -c 120)..."
 else
-  fail "esperado 200 com JSON, veio $CODE"
+  fail "expected 200 with JSON, got $CODE"
 fi
 
 # 7. Rate limit — fires 60 fast requests, should start rejecting
 echo ""
-echo "7. Rate limit — 65 requests seguidas devem gerar pelo menos um 429"
+echo "7. Rate limit — 65 requests in a row should produce at least one 429"
 COUNT_2XX=0; COUNT_429=0; COUNT_OTHER=0
 for i in $(seq 1 65); do
   RC=$(curl -sk -o /dev/null -w '%{http_code}' -H "api-key: ${KEY}" \
@@ -103,22 +103,22 @@ for i in $(seq 1 65); do
     *) COUNT_OTHER=$((COUNT_OTHER+1)) ;;
   esac
 done
-info "resultado: ${COUNT_2XX} × 2xx, ${COUNT_429} × 429, ${COUNT_OTHER} × outros"
+info "result: ${COUNT_2XX} × 2xx, ${COUNT_429} × 429, ${COUNT_OTHER} × other"
 if [ "$COUNT_429" -gt 0 ]; then
-  pass "rate limit disparou (${COUNT_429} × 429)"
+  pass "rate limit fired (${COUNT_429} × 429)"
 else
   fail "no 429 appeared — the PlanPolicy may not be counting correctly"
 fi
 
-# 8. Dev portal enxerga o APIProduct
+# 8. Dev portal sees the APIProduct
 echo ""
-echo "8. Portal-backend enxerga o novo APIProduct"
+echo "8. Portal-backend sees the new APIProduct"
 if oc -n rhcl-devportal get pod -l app=portal-backend >/dev/null 2>&1; then
   BACKEND_URL=$(oc -n rhcl-devportal get route portal-backend -o jsonpath='https://{.spec.host}' 2>/dev/null || echo "")
   if [ -n "$BACKEND_URL" ]; then
     FOUND=$(curl -sk "${BACKEND_URL}/api/products" 2>/dev/null | grep -c '"name":"banking-lite"' || echo "0")
     if [ "$FOUND" -gt 0 ]; then
-      pass "banking-lite listado em ${BACKEND_URL}/api/products"
+      pass "banking-lite listed in ${BACKEND_URL}/api/products"
     else
       info "portal-backend has not returned banking-lite yet — may take ~30s to sync"
     fi
@@ -131,6 +131,6 @@ fi
 
 echo ""
 echo "══════════════════════════════════════════════════════════════"
-echo " ✓ Getting started funcionando end-to-end."
+echo " ✓ Getting started working end-to-end."
 echo "   Next steps in the guide: point mobile-bank + onboard via the portal."
 echo "══════════════════════════════════════════════════════════════"

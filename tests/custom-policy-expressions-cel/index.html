@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -323,26 +323,26 @@
 
     <div class="test-grid">
       <button class="success" id="testGetFree">
-        Teste 1: GET livre<br><small>read-operations (200)</small>
+        Test 1: GET (free)<br><small>read operations (200)</small>
       </button>
       <button class="danger" id="testPostNoKey">
-        Teste 2: POST transfer sem key<br><small>bloqueado — sem match (403)</small>
+        Test 2: POST transfer without key<br><small>blocked — no match (403)</small>
       </button>
       <button class="success" id="testPostWithKey">
-        Teste 3: POST transfer com key<br><small>transfer-with-idempotency (200)</small>
+        Test 3: POST transfer with key<br><small>transfer-with-idempotency (200)</small>
       </button>
       <button class="success" id="testPostEcho">
-        Teste 4: POST /api/echo<br><small>test-endpoints (200)</small>
+        Test 4: POST /api/echo<br><small>test-endpoints (200)</small>
       </button>
       <button class="danger" id="testPostBot">
-        Teste 5: POST com user-agent bot<br><small>bloqueado — contains('bot') (403)</small>
+        Test 5: POST with user-agent bot<br><small>blocked — contains('bot') (403)</small>
       </button>
       <button class="success" id="testPostNormal">
-        Teste 6: POST com user-agent normal<br><small>other-writes-no-bots (200)</small>
+        Test 6: POST with normal user-agent<br><small>other-writes-no-bots (200)</small>
       </button>
     </div>
 
-    <h3 style="margin: 20px 0 8px; font-size: 14px; color: var(--rh-gray-700);">RateLimitPolicy — Counter com CEL</h3>
+    <h3 style="margin: 20px 0 8px; font-size: 14px; color: var(--rh-gray-700);">RateLimitPolicy — Counter with CEL</h3>
 
     <div class="row">
       <div style="flex:1; min-width:200px;">
@@ -380,10 +380,10 @@
 <pre class="cmd"># Remover policy existente (evitar conflito)
 oc delete authpolicy banking-api-connectivity-apikey -n rhcl-apps --ignore-not-found
 
-# Aplicar AuthPolicy com CEL
+# Apply the AuthPolicy with CEL
 oc apply -f tests/custom-policy-expressions-cel/manifests/01-cel-custom-expressions.yaml
 
-# Aplicar RateLimitPolicy com CEL
+# Apply the RateLimitPolicy with CEL
 oc apply -f tests/custom-policy-expressions-cel/manifests/02-cel-ratelimit-expressions.yaml
 
 # Limpeza
@@ -498,48 +498,48 @@ oc delete -f tests/custom-policy-expressions-cel/manifests/ --ignore-not-found</
 
   // AuthPolicy tests
   document.getElementById("testGetFree").addEventListener("click", () => {
-    probe("GET", "/api/v1/accounts/summary", {}, null, "Teste 1: GET livre");
+    probe("GET", "/api/v1/accounts/summary", {}, null, "Test 1: GET (free)");
   });
 
   document.getElementById("testPostNoKey").addEventListener("click", () => {
     probe("POST", "/api/v1/transfers",
       { "content-type": "application/json" },
       { fromBank: "BB", toBank: "EXTERNAL", amount: 100 },
-      "Teste 2: POST transfer SEM x-idempotency-key");
+      "Test 2: POST transfer WITHOUT x-idempotency-key");
   });
 
   document.getElementById("testPostWithKey").addEventListener("click", () => {
     probe("POST", "/api/v1/transfers",
       { "content-type": "application/json", "x-idempotency-key": "txn-" + Date.now() },
       { fromBank: "BB", toBank: "EXTERNAL", amount: 100 },
-      "Teste 3: POST transfer COM x-idempotency-key");
+      "Test 3: POST transfer WITH x-idempotency-key");
   });
 
   document.getElementById("testPostEcho").addEventListener("click", () => {
     probe("POST", "/api/echo",
       { "content-type": "application/json" },
       { test: true },
-      "Teste 4: POST /api/echo (livre)");
+      "Test 4: POST /api/echo (free)");
   });
 
   document.getElementById("testPostBot").addEventListener("click", () => {
     probe("POST", "/api/v1/chat/completions",
       { "content-type": "application/json", "user-agent": "my-bot-scraper/1.0" },
       { model: "test", messages: [] },
-      "Teste 5: POST com user-agent 'bot'");
+      "Test 5: POST with user-agent 'bot'");
   });
 
   document.getElementById("testPostNormal").addEventListener("click", () => {
     probe("POST", "/api/v1/chat/completions",
       { "content-type": "application/json", "user-agent": "Mozilla/5.0 RedHatBankApp/2.1" },
       { model: "test", messages: [] },
-      "Teste 6: POST com user-agent normal");
+      "Test 6: POST with normal user-agent");
   });
 
   // RateLimitPolicy tests
   document.getElementById("testRateBurst").addEventListener("click", async () => {
     const key = document.getElementById("idempKey").value.trim() || "burst-key";
-    logLine(`Rate limit burst: 8 POSTs com x-idempotency-key='${key}'`, "info");
+    logLine(`Rate limit burst: 8 POSTs with x-idempotency-key='${key}'`, "info");
     for (let i = 1; i <= 8; i++) {
       await probe("POST", "/api/v1/transfers",
         { "content-type": "application/json", "x-idempotency-key": key },
@@ -551,7 +551,7 @@ oc delete -f tests/custom-policy-expressions-cel/manifests/ --ignore-not-found</
 
   document.getElementById("testRateReads").addEventListener("click", async () => {
     const cid = document.getElementById("consumerId").value.trim() || "consumer-test";
-    logLine(`Rate limit reads: 65 GETs com x-consumer-id='${cid}'`, "info");
+    logLine(`Rate limit reads: 65 GETs with x-consumer-id='${cid}'`, "info");
     for (let i = 1; i <= 65; i++) {
       await probe("GET", "/api/v1/accounts/summary",
         { "x-consumer-id": cid },

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -162,7 +162,7 @@
       <strong>The path matters</strong> — the demo <strong>must</strong> use
       the <code>rhcl-apps-gateway</code> hostname (Gateway API). If it enters
       via the default OpenShift Route <code>(*.apps.&lt;cluster&gt;)</code>, traffic
-      vai HAProxy → Service direto, <strong>bypassa o Istio</strong>, e a
+      goes HAProxy → Service directly, <strong>bypassing Istio</strong>, and
       the DestinationRule is silently ignored. The "sticky" you see
       on that path comes from HAProxy's default cookie, not from
       <code>CUSTOM_COOKIE_SESSION</code> do Envoy.
@@ -251,7 +251,7 @@ oc rollout status deploy/banking-api-v1 -n rhcl-apps</pre>
   <!-- 1. Baseline                                                          -->
   <!-- =================================================================== -->
   <div class="card">
-    <h2><span class="badge">1</span> Baseline — round-robin sem cookie</h2>
+    <h2><span class="badge">1</span> Baseline — round-robin without a cookie</h2>
     <p>
       Without a cookie, the DR has no hash key, so Envoy does round-robin
       and traffic spreads across the 2 pods. This step proves the DR
@@ -278,7 +278,7 @@ done | grep -v '^$' | sort | uniq -c</pre>
     <h2><span class="badge">2</span> Verificar caminho (browser) + Set-Cookie (CLI)</h2>
     <p>
       In the browser (cross-origin), <code>Set-Cookie</code> is a
-      "forbidden response header" da spec do Fetch — JS nunca consegue
+      "forbidden response header" per the Fetch spec — JS can never
       read it. So the button here validates what <em>is</em> visible
       from the browser: that the call reaches the backend and that the
       <code>instance</code> field of <code>/api/echo</code> holds
@@ -330,11 +330,11 @@ done</pre>
       </thead>
       <tbody>
         <tr>
-          <td>Set-Cookie vem com nome <code>&lt;md5hash&gt;</code> em vez de <code>CUSTOM_COOKIE_SESSION</code></td>
+          <td>Set-Cookie comes with the name <code>&lt;md5hash&gt;</code> instead of <code>CUSTOM_COOKIE_SESSION</code></td>
           <td>Traffic entered via the OpenShift Route, not the Gateway API. Confirm the hostname matches <code>spec.hostnames</code> of <code>HTTPRoute banking-api-connectivity</code>.</td>
         </tr>
         <tr>
-          <td>Round-robin acontece mesmo com cookie</td>
+          <td>Round-robin happens even with a cookie</td>
           <td>The DR was not applied or its <code>host</code> does not match the Service. <code>oc get destinationrule banking-api-v1-http1 -n rhcl-apps -o yaml</code>.</td>
         </tr>
         <tr>
@@ -358,12 +358,12 @@ done</pre>
   <!-- =================================================================== -->
   <div class="card">
     <h2>Rollback</h2>
-    <pre># Voltar DR para o estado original (sem sticky)
+    <pre># Revert the DR to its original state (no sticky)
 oc patch destinationrule banking-api-v1-http1 -n rhcl-apps --type=json -p '[
   {"op": "remove", "path": "/spec/trafficPolicy/loadBalancer"}
 ]'
 
-# Voltar APP_INSTANCE_NAME para valor fixo
+# Revert APP_INSTANCE_NAME to a fixed value
 oc patch deploy/banking-api-v1 -n rhcl-apps --type=json -p '[
   {"op": "remove", "path": "/spec/template/spec/containers/0/env/0"}
 ]'
@@ -486,7 +486,7 @@ oc scale deploy/banking-api-v1 -n rhcl-apps --replicas=1</pre>
       } else if (!r.ok) {
         items.push(`<div class="verdict bad">⚠ HTTP ${status}. Check that the gateway is routing, that the <code>anonymous</code> AuthPolicy applies to <code>/api/echo</code>, and that banking-api is healthy.</div>`);
       } else {
-        items.push(`<div class="verdict bad">⚠ Instance inesperada (<code>${inst}</code>). Esperava pod-name (banking-api-vN-...-...) ou <code>backend-a</code>. Pode ser outra app respondendo nesse hostname.</div>`);
+        items.push(`<div class="verdict bad">⚠ Unexpected instance (<code>${inst}</code>). Expected a pod-name (banking-api-vN-...-...) or <code>backend-a</code>. Another app may be responding on this hostname.</div>`);
       }
       out.innerHTML = items.join('');
     } catch (e) {

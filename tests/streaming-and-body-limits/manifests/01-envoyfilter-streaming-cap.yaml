@@ -3,33 +3,33 @@
 # Replaces the previous version (envoy.filters.http.buffer) that buffered the
 # whole request in memory before validating the size — behavior that
 # was flagged as not being true streaming. This manifest uses
-# `envoy.filters.http.lua` com `bodyChunks()` iterator, que:
+# `envoy.filters.http.lua` with a `bodyChunks()` iterator, which:
 #
 #   1. Processes chunks as they arrive from the client (does not buffer the whole body).
 #   2. Increments a counter on each iteration.
-#   3. Se o total ultrapassa max_bytes durante a leitura, dispara 413
+#   3. If the total exceeds max_bytes during the read, it fires 413
 #      IMMEDIATELY via `handle:respond()` — the client gets the rejection
 #      before finishing the upload; the remaining bytes are not even requested.
-#   4. Se cabe no limite, os chunks fluem pro upstream (banking-api) enquanto
-#      chegam — o backend processa em stream (SHA-256 online).
+#   4. If it fits within the limit, the chunks flow to the upstream (banking-api) as
+#      they arrive — the backend processes them as a stream (online SHA-256).
 #
 # Scope: only matches `POST /api/files/upload`. All other requests
-# (WebSocket, JSON POSTs, GETs, AI streaming responses) passam pelo filtro
+# (WebSocket, JSON POSTs, GETs, AI streaming responses) pass through the filter
 # with no overhead — the counting logic is inside the `if method == "POST"
 # and path:find(...)` and returns immediately for non-target routes.
 #
 # Trade-off vs backend-only (Quarkus max-body-size):
 #   - This approach rejects at the gateway (protected perimeter, the backend
-#     recebe os bytes de uploads gigantes).
-#   - Custo: overhead de ~microssegundos do Lua VM em cada request que
+#     never receives the bytes of oversized uploads).
+#   - Cost: ~microseconds of Lua VM overhead on each request that
 #     matches the path. Order of magnitude of route + auth, not the backend.
 #
 # Trade-off vs the buffer filter (previous version):
-#   - Lua streaming holds apenas 1 chunk (16-64 KiB Envoy socket buffer)
+#   - Lua streaming holds only 1 chunk (16-64 KiB Envoy socket buffer)
 #     in memory per request; the buffer filter held up to `max_request_bytes`
-#     (32 MiB × N concorrentes).
-#   - Assinatura no 413: `x-rhcl-streaming-cap` (Lua-emitido) em vez de
-#     `x-envoy-buffer-too-large` (filter nativo). Docs + scripts atualizados.
+#     (32 MiB × N concurrent requests).
+#   - Signature on the 413: `x-rhcl-streaming-cap` (Lua-emitted) instead of
+#     `x-envoy-buffer-too-large` (native filter). Docs + scripts updated.
 apiVersion: networking.istio.io/v1alpha3
 kind: EnvoyFilter
 metadata:

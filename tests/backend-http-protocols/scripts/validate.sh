@@ -28,43 +28,43 @@ echo ""
 # --- 1. Services existem ---
 echo "--- 1. Services req054 ---"
 if oc -n "$APPS_NS" get svc req054-backend-http11 &>/dev/null; then
-  check_pass "Service req054-backend-http11 existe"
+  check_pass "Service req054-backend-http11 exists"
 else
-  check_fail "Service req054-backend-http11 NÃO encontrado"
+  check_fail "Service req054-backend-http11 NOT found"
 fi
 
 if oc -n "$APPS_NS" get svc req054-backend-h2c &>/dev/null; then
-  check_pass "Service req054-backend-h2c existe"
+  check_pass "Service req054-backend-h2c exists"
 else
-  check_fail "Service req054-backend-h2c NÃO encontrado"
+  check_fail "Service req054-backend-h2c NOT found"
 fi
 
 # --- 2. appProtocol ---
 echo ""
-echo "--- 2. appProtocol nos Services ---"
+echo "--- 2. appProtocol on the Services ---"
 
-PROTO_HTTP11=$(oc -n "$APPS_NS" get svc req054-backend-http11 -o jsonpath='{.spec.ports[0].appProtocol}' 2>/dev/null || echo "ERRO")
+PROTO_HTTP11=$(oc -n "$APPS_NS" get svc req054-backend-http11 -o jsonpath='{.spec.ports[0].appProtocol}' 2>/dev/null || echo "ERROR")
 if [ -z "$PROTO_HTTP11" ] || [ "$PROTO_HTTP11" = "<no value>" ]; then
-  check_pass "req054-backend-http11: sem appProtocol (→ HTTP/1.1 upstream)"
+  check_pass "req054-backend-http11: no appProtocol (→ HTTP/1.1 upstream)"
 else
-  check_fail "req054-backend-http11: appProtocol inesperado: $PROTO_HTTP11"
+  check_fail "req054-backend-http11: unexpected appProtocol: $PROTO_HTTP11"
 fi
 
-PROTO_H2C=$(oc -n "$APPS_NS" get svc req054-backend-h2c -o jsonpath='{.spec.ports[0].appProtocol}' 2>/dev/null || echo "ERRO")
+PROTO_H2C=$(oc -n "$APPS_NS" get svc req054-backend-h2c -o jsonpath='{.spec.ports[0].appProtocol}' 2>/dev/null || echo "ERROR")
 if [ "$PROTO_H2C" = "kubernetes.io/h2c" ]; then
   check_pass "req054-backend-h2c: appProtocol=kubernetes.io/h2c (→ HTTP/2 upstream)"
 else
-  check_fail "req054-backend-h2c: appProtocol esperado 'kubernetes.io/h2c', obtido '$PROTO_H2C'"
+  check_fail "req054-backend-h2c: expected appProtocol 'kubernetes.io/h2c', got '$PROTO_H2C'"
 fi
 
-# --- 3. Listener no gateway ---
+# --- 3. Listener on the gateway ---
 echo ""
-echo "--- 3. Listener req054-http no gateway ---"
+echo "--- 3. Listener req054-http on the gateway ---"
 LISTENER_EXISTS=$(oc -n "$GW_NS" get gateway "$GW_NAME" -o jsonpath='{.spec.listeners[*].name}' 2>/dev/null | tr ' ' '\n' | grep -c "^req054-http$" || echo "0")
 if [ "$LISTENER_EXISTS" -gt 0 ]; then
-  check_pass "Listener req054-http presente no gateway"
+  check_pass "Listener req054-http present on the gateway"
 else
-  check_fail "Listener req054-http NÃO encontrado no gateway"
+  check_fail "Listener req054-http NOT found on the gateway"
 fi
 
 # --- 4. HTTPRoute ---
@@ -73,12 +73,12 @@ echo "--- 4. HTTPRoute req054-http-versions ---"
 if oc -n "$APPS_NS" get httproute req054-http-versions &>/dev/null; then
   ACCEPTED=$(oc -n "$APPS_NS" get httproute req054-http-versions -o jsonpath='{.status.parents[?(@.parentRef.sectionName=="req054-http")].conditions[?(@.type=="Accepted")].status}' 2>/dev/null || echo "")
   if [ "$ACCEPTED" = "True" ]; then
-    check_pass "HTTPRoute req054-http-versions aceito pelo gateway"
+    check_pass "HTTPRoute req054-http-versions accepted by the gateway"
   else
-    check_warn "HTTPRoute existe mas status Accepted=$ACCEPTED"
+    check_warn "HTTPRoute exists but status Accepted=$ACCEPTED"
   fi
 else
-  check_fail "HTTPRoute req054-http-versions NÃO encontrado"
+  check_fail "HTTPRoute req054-http-versions NOT found"
 fi
 
 # --- 5. AuthPolicy ---
@@ -89,32 +89,32 @@ if oc -n "$APPS_NS" get authpolicy req054-allow-public &>/dev/null; then
   if [ "$ENFORCED" = "True" ]; then
     check_pass "AuthPolicy req054-allow-public Enforced"
   else
-    check_warn "AuthPolicy existe mas Enforced=$ENFORCED (pode levar alguns segundos)"
+    check_warn "AuthPolicy exists but Enforced=$ENFORCED (may take a few seconds)"
   fi
 else
-  check_fail "AuthPolicy req054-allow-public NÃO encontrado"
+  check_fail "AuthPolicy req054-allow-public NOT found"
 fi
 
-# --- 6. Teste end-to-end ---
+# --- 6. End-to-end test ---
 echo ""
-echo "--- 6. Teste end-to-end via curl ---"
+echo "--- 6. End-to-end test via curl ---"
 
 HTTP11_CODE=$(curl -s --max-time 10 -o /dev/null -w "%{http_code}" "http://$HOST/http11/api/v1/accounts/summary" 2>/dev/null || echo "000")
 if [ "$HTTP11_CODE" = "200" ]; then
   check_pass "HTTP/1.1 backend: HTTP $HTTP11_CODE"
 elif [ "$HTTP11_CODE" = "000" ]; then
-  check_warn "HTTP/1.1 backend: timeout/unreachable (DNS ou rede)"
+  check_warn "HTTP/1.1 backend: timeout/unreachable (DNS or network)"
 else
-  check_warn "HTTP/1.1 backend: HTTP $HTTP11_CODE (esperado 200)"
+  check_warn "HTTP/1.1 backend: HTTP $HTTP11_CODE (expected 200)"
 fi
 
 H2_CODE=$(curl -s --max-time 10 -o /dev/null -w "%{http_code}" "http://$HOST/h2/api/v1/accounts/summary" 2>/dev/null || echo "000")
 if [ "$H2_CODE" = "200" ]; then
   check_pass "HTTP/2 (h2c) backend: HTTP $H2_CODE"
 elif [ "$H2_CODE" = "000" ]; then
-  check_warn "HTTP/2 (h2c) backend: timeout/unreachable (DNS ou rede)"
+  check_warn "HTTP/2 (h2c) backend: timeout/unreachable (DNS or network)"
 else
-  check_warn "HTTP/2 (h2c) backend: HTTP $H2_CODE (esperado 200)"
+  check_warn "HTTP/2 (h2c) backend: HTTP $H2_CODE (expected 200)"
 fi
 
 # --- 7. Envoy config dump (verificar h2c cluster) ---
@@ -136,7 +136,7 @@ try:
 except: pass
 " 2>/dev/null || echo "")
   if [ -n "$H2C_CLUSTER" ]; then
-    check_pass "Envoy cluster h2c encontrado: $H2C_CLUSTER"
+    check_pass "Envoy h2c cluster found: $H2C_CLUSTER"
   else
     check_warn "h2c cluster not found in config_dump (may take time to propagate)"
   fi
@@ -147,7 +147,7 @@ fi
 # --- Resumo ---
 echo ""
 echo "======================================================================"
-echo " RESULTADO: $PASS passed, $FAIL failed, $WARN warnings"
+echo " RESULT: $PASS passed, $FAIL failed, $WARN warnings"
 echo "======================================================================"
 
 if [ "$FAIL" -gt 0 ]; then
@@ -159,7 +159,7 @@ elif [ "$WARN" -gt 0 ]; then
   echo ""
   echo "Validation OK with warnings (network/DNS may not be reachable from this host)."
   echo ""
-  echo "Para testar de dentro do cluster:"
+  echo "To test from inside the cluster:"
   echo "  oc -n $APPS_NS run curl-req054 --rm -i --restart=Never --image=curlimages/curl:latest \\"
   echo "    -- curl -sv http://$HOST/http11/api/v1/accounts/summary"
   exit 0

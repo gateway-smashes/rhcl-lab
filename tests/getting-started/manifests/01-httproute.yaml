@@ -1,16 +1,16 @@
-# Getting started — Passo 1/6: HTTPRoute
+# Getting started — Step 1/6: HTTPRoute
 #
 # Declares ONE public path (/api) on the new hostname, pointing at the
-# Service banking-api-v1 que JÁ existe no cluster. É a mesma app do
+# Service banking-api-v1 that ALREADY exists in the cluster. It is the same app as the
 # "official" banking-api serving on another hostname — what changes is the
 # RHCL perimeter (auth + rate limit + APIProduct) that will attach
-# neste HTTPRoute via targetRef.
+# to this HTTPRoute via targetRef.
 #
-# parentRefs: aponta pro gateway RHCL existente (rhcl-apps-gateway em
-# openshift-ingress). Como o gateway tem listener wildcard, qualquer
+# parentRefs: points at the existing RHCL gateway (rhcl-apps-gateway in
+# openshift-ingress). Since the gateway has a wildcard listener, any
 # subdomain of the zone (banking-lite.<zone>) resolves with no new DNS.
 #
-# Placeholder ${HOSTNAME}: deploy.sh substitui pela hostname que vc
+# Placeholder ${HOSTNAME}: deploy.sh substitutes the hostname you want
 # to choose. By convention use the same parent domain as the existing
 # banking-api — banking-lite.<your-domain>.
 apiVersion: gateway.networking.k8s.io/v1

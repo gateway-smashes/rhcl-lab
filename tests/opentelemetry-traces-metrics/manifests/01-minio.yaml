@@ -171,10 +171,10 @@ spec:
                 sleep 5
               done
 
-              echo "Criando bucket tempo..."
+              echo "Creating tempo bucket..."
               mc mb -p local/tempo || true
 
-              echo "Removendo acesso anônimo ao bucket..."
+              echo "Removing anonymous access from the bucket..."
               mc anonymous set none local/tempo || true
 
               echo "Bucket tempo pronto."

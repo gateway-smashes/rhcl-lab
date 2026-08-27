@@ -9,7 +9,7 @@
 #
 # Requer:
 #   - RHCL_ZONE_ROOT_DOMAIN definido
-#   - Pasta certs/ com os certificados gerados (via generate-certs.sh)
+#   - certs/ folder with the generated certificates (via generate-certs.sh)
 # =============================================================================
 set -uo pipefail
 
@@ -44,37 +44,37 @@ T_GROUP[1]="CRL"; T_KIND[1]="curl"
 T_TITLE[1]="PASS: valid client (not revoked)"
 T_DESC[1]="Client with a certificate signed by the Intermediate CA and absent from the CRL.
 The gateway validates the mTLS chain and confirms in the CRL that the serial is not revoked.
-Handshake aceito, backend responde HTTP 200."
+Handshake accepted, backend returns HTTP 200."
 T_EXPECTED[1]="PASS"; T_HOST[1]="$HOST_CRL"
 T_CERT[1]="$CERTS_DIR/client-valid.crt"; T_KEY[1]="$CERTS_DIR/client-valid.key"
 
 T_GROUP[2]="CRL"; T_KIND[2]="curl"
-T_TITLE[2]="FAIL: cliente revogado"
+T_TITLE[2]="FAIL: revoked client"
 T_DESC[2]="Same Intermediate CA, but this certificate's serial is in the assembled CRL
-no gateway. O Envoy checa a CRL (only_verify_leaf_cert_crl) e rejeita o
+at the gateway. Envoy checks the CRL (only_verify_leaf_cert_crl) and rejects the
 handshake, proving CRL revocation is applied."
 T_EXPECTED[2]="FAIL"; T_HOST[2]="$HOST_CRL"
 T_CERT[2]="$CERTS_DIR/client-revoked.crt"; T_KEY[2]="$CERTS_DIR/client-revoked.key"
 
 T_GROUP[3]="CRL"; T_KIND[3]="curl"
-T_TITLE[3]="FAIL: cert de CA desconhecida"
+T_TITLE[3]="FAIL: cert from an unknown CA"
 T_DESC[3]="Certificate issued by an external CA, unrelated to the lab hierarchy.
 The trust chain is not built — rejected before the CRL check even happens."
 T_EXPECTED[3]="FAIL"; T_HOST[3]="$HOST_CRL"
 T_CERT[3]="$CERTS_DIR/client-untrusted.crt"; T_KEY[3]="$CERTS_DIR/client-untrusted.key"
 
 T_GROUP[4]="CRL"; T_KIND[4]="curl"
-T_TITLE[4]="FAIL: sem certificado de cliente"
-T_DESC[4]="Nenhum certificado apresentado. Como require_client_certificate=true, o acesso
+T_TITLE[4]="FAIL: no client certificate"
+T_DESC[4]="No certificate presented. Since require_client_certificate=true,
 anonymous access is blocked at the handshake."
 T_EXPECTED[4]="FAIL"; T_HOST[4]="$HOST_CRL"
 T_CERT[4]=""; T_KEY[4]=""
 
 T_GROUP[5]="OCSP"; T_KIND[5]="ocsp"
-T_TITLE[5]="PASS: servidor grampeia resposta OCSP (staple)"
-T_DESC[5]="O cliente pede o status OCSP no handshake (status_request). O gateway responde
-com o certificado de servidor + a resposta OCSP grampeada. Espera-se
-'OCSP Response Status: successful' e 'Cert Status: good'."
+T_TITLE[5]="PASS: server staples OCSP response (staple)"
+T_DESC[5]="The client requests OCSP status in the handshake (status_request). The gateway
+responds with the server certificate + the stapled OCSP response. Expect
+'OCSP Response Status: successful' and 'Cert Status: good'."
 T_EXPECTED[5]="PASS"; T_HOST[5]="$HOST_OCSP"
 T_CERT[5]="$CERTS_DIR/client-valid.crt"; T_KEY[5]="$CERTS_DIR/client-valid.key"
 
@@ -89,15 +89,15 @@ print_header() {
   echo ""
   echo "  CRL — client certificate revocation"
   echo -e "  ${GREEN}[1]${RESET}${BOLD} PASS: valid client (not revoked)"
-  echo -e "  ${RED}[2]${RESET}${BOLD} FAIL: cliente revogado (na CRL)"
-  echo -e "  ${RED}[3]${RESET}${BOLD} FAIL: cert de CA desconhecida"
-  echo -e "  ${RED}[4]${RESET}${BOLD} FAIL: sem certificado de cliente"
+  echo -e "  ${RED}[2]${RESET}${BOLD} FAIL: revoked client (in the CRL)"
+  echo -e "  ${RED}[3]${RESET}${BOLD} FAIL: cert from an unknown CA"
+  echo -e "  ${RED}[4]${RESET}${BOLD} FAIL: no client certificate"
   echo ""
-  echo "  OCSP stapling — status do certificado de servidor"
-  echo -e "  ${GREEN}[5]${RESET}${BOLD} PASS: resposta OCSP grampeada (good)"
+  echo "  OCSP stapling — server certificate status"
+  echo -e "  ${GREEN}[5]${RESET}${BOLD} PASS: stapled OCSP response (good)"
   echo ""
   echo -e "  ${YELLOW}[A]${RESET}${BOLD} Run ALL scenarios"
-  echo -e "  ${DIM}[Q]${RESET}${BOLD} Sair"
+  echo -e "  ${DIM}[Q]${RESET}${BOLD} Quit"
   echo -e "${RESET}"
 }
 
@@ -141,8 +141,8 @@ run_curl_test() {
     case "$curl_exit" in
       7)  detail="Connection refused (porta 443 fechada?)" ;;
       28) detail="Timeout (host unreachable?)" ;;
-      35) detail="TLS handshake rejected (revogado/mTLS)" ;;
-      56) detail="Connection reset (revogado/mTLS)" ;;
+      35) detail="TLS handshake rejected (revoked/mTLS)" ;;
+      56) detail="Connection reset (revoked/mTLS)" ;;
       58|60) detail="Cert verification failed" ;;
       *)  detail="HTTP $http_code — curl exit $curl_exit" ;;
     esac
@@ -193,7 +193,7 @@ print_verdict() {
   if [[ "$actual" == "$expected" ]]; then
     echo -e "  ${GREEN}✓ SUCESSO — resultado conforme esperado ($expected)${RESET}"
   else
-    echo -e "  ${RED}✗ INESPERADO — esperava $expected, obteve $actual${RESET}"
+    echo -e "  ${RED}✗ UNEXPECTED — expected $expected, got $actual${RESET}"
   fi
   echo ""
 }
@@ -202,7 +202,7 @@ run_test() {
   local idx=$1 interactive="${2:-true}"
   echo ""
   echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-  echo -e "${BOLD}  CENÁRIO $idx — ${T_GROUP[$idx]} — ${T_TITLE[$idx]}${RESET}"
+  echo -e "${BOLD}  SCENARIO $idx — ${T_GROUP[$idx]} — ${T_TITLE[$idx]}${RESET}"
   echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
   echo ""
   echo -e "${DIM}${T_DESC[$idx]}${RESET}"
@@ -216,7 +216,7 @@ run_test() {
 
 run_all() {
   echo ""
-  echo -e "${BOLD}══════════ EXECUTANDO TODOS OS CENÁRIOS ══════════${RESET}"
+  echo -e "${BOLD}══════════ RUNNING ALL SCENARIOS ══════════${RESET}"
   local pass=0 fail=0
   for i in 1 2 3 4 5; do
     run_test "$i" "false"
@@ -226,7 +226,7 @@ run_all() {
   echo -e "${BOLD}RESUMO: ${GREEN}$pass OK${RESET}${BOLD}, ${RED}$fail inesperado(s)${RESET}"
   echo ""
   if [[ "$fail" -eq 0 ]]; then
-    echo -e "  ${GREEN}✓ TODOS OS CENÁRIOS CONFORME ESPERADO${RESET}"
+    echo -e "  ${GREEN}✓ ALL SCENARIOS AS EXPECTED${RESET}"
   else
     echo -e "  ${RED}✗ WARNING: $fail scenario(s) with an unexpected result${RESET}"
   fi

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# req048 — Limpeza: remove namespace, listener e RoleBinding
+# req048 — Cleanup: removes namespace, listener and RoleBinding
 set -euo pipefail
 
 echo "======================================================================"
-echo " REQ 048 — Limpeza: gRPC backend"
+echo " REQ 048 — Cleanup: gRPC backend"
 echo "======================================================================"
 
 REQ_NS="req048-grpc"
@@ -12,7 +12,7 @@ APPS_NS="rhcl-apps"
 GW_NAME=$(oc -n "$GW_NS" get gateway -o custom-columns=NAME:.metadata.name --no-headers 2>/dev/null | head -1 || echo "rhcl-apps-gateway")
 
 echo ""
-echo "Removendo listeners req048-grpc e req048-grpcroute do gateway..."
+echo "Removing listeners req048-grpc and req048-grpcroute from the gateway..."
 for LISTENER in req048-grpcroute req048-grpc; do
   LISTENER_INDEX=$(oc -n "$GW_NS" get gateway "$GW_NAME" \
     -o jsonpath='{range .spec.listeners[*]}{.name}{"\n"}{end}' 2>/dev/null | grep -n "^${LISTENER}$" | cut -d: -f1 || echo "")
@@ -28,25 +28,25 @@ for LISTENER in req048-grpcroute req048-grpc; do
 done
 
 echo ""
-echo "Removendo EnvoyFilter req048-grpc-streaming-no-buffer..."
+echo "Removing EnvoyFilter req048-grpc-streaming-no-buffer..."
 oc -n "$GW_NS" delete envoyfilter req048-grpc-streaming-no-buffer --ignore-not-found
-echo " ✓ EnvoyFilter removido"
+echo " ✓ EnvoyFilter removed"
 
 echo ""
-echo "Removendo namespace $REQ_NS (inclui Deployment, Service, HTTPRoute, GRPCRoute, AuthPolicy)..."
+echo "Removing namespace $REQ_NS (includes Deployment, Service, HTTPRoute, GRPCRoute, AuthPolicy)..."
 oc delete namespace "$REQ_NS" --ignore-not-found --wait=false
 echo " ✓ Namespace $REQ_NS marked for removal"
 
 echo ""
-echo "Removendo RoleBinding req048-image-puller em $APPS_NS..."
+echo "Removing RoleBinding req048-image-puller in $APPS_NS..."
 oc -n "$APPS_NS" delete rolebinding req048-image-puller --ignore-not-found
-echo " ✓ RoleBinding removido"
+echo " ✓ RoleBinding removed"
 
 echo ""
 echo "======================================================================"
-echo " LIMPEZA CONCLUÍDA"
+echo " CLEANUP COMPLETE"
 echo "======================================================================"
 echo ""
 echo "Note: namespace removal can take a few seconds to finish."
-echo "      Verifique com: oc get namespace $REQ_NS"
+echo "      Check with: oc get namespace $REQ_NS"
 echo ""

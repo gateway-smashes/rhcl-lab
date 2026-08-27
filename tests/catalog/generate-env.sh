@@ -13,7 +13,7 @@ OUT="${OUT:-/opt/app-root/src/env.json}"
 #
 # apiHost — hostname of the gateway exposing banking-api/pix-api. The interactive
 # pages use it to pre-fill the "host" field without the operator having to
-# digitar. Vem da mesma env var que o Ansible (apps) usa
+# type it. It comes from the same env var that Ansible (apps) uses
 # (APPS_CONNECTIVITY_ROUTE_HOSTNAME). When absent, the pages fall back to
 # window.location.host (= the catalog's own hostname).
 ENV_VARS="

@@ -1,25 +1,25 @@
 # Global rate limit, all Gateway instances on the same site.
 #
-# Como funciona:
-#   • RateLimitPolicy → traduzido pelo Kuadrant Operator em entradas no
-#     Limitador CR e config de rate-limit no Envoy do Gateway.
+# How it works:
+#   • RateLimitPolicy → translated by the Kuadrant Operator into entries on the
+#     Limitador CR and rate-limit config on the Gateway's Envoy.
 #   • Envoy (on any Gateway replica) consults the Limitador service
 #     via gRPC. Since there is ONE single Limitador ClusterIP cluster, all
 #     instances share the same counters.
 #
-# Default do lab: Limitador com storage in-memory + 1 replica → o "global"
-# desta policy abrange efetivamente o site inteiro.
+# Lab default: Limitador with in-memory storage + 1 replica → this policy's "global"
+# effectively spans the entire site.
 #
-# Como aplicar:
+# How to apply:
 #   oc apply -f tests/rate-limiting/manifests/01-global-same-site.yaml
 #
-# Validar:
+# Validate:
 #   HOST=$(oc get httproute banking-api-connectivity -n rhcl-apps \
 #          -o jsonpath='{.spec.hostnames[0]}')
 #   for i in $(seq 1 25); do
 #     curl -sk -o /dev/null -w "%{http_code}\n" "https://$HOST/api/echo"
 #   done | sort | uniq -c
-#   # Esperado: ~20x 200 + ~5x 429
+#   # Expected: ~20x 200 + ~5x 429
 apiVersion: kuadrant.io/v1
 kind: RateLimitPolicy
 metadata:

@@ -1,5 +1,5 @@
-# Service para o backend gRPC com appProtocol: kubernetes.io/h2c.
-# O campo appProtocol instrui o Istio/Envoy a conectar ao backend usando
+# Service for the gRPC backend with appProtocol: kubernetes.io/h2c.
+# The appProtocol field instructs Istio/Envoy to connect to the backend using
 # HTTP/2 cleartext (h2c), the native gRPC transport.
 #
 # Reference: https://kubernetes.io/docs/concepts/services-networking/service/#application-protocol

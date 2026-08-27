@@ -72,9 +72,9 @@ if [[ -n "${ELB}" ]]; then
   echo ""
   echo "ELB: ${ELB}"
   echo ""
-  echo "DNS: o OpenShift Ingress Operator cria o registro automaticamente"
-  echo "     (DNSRecord + Route53) quando o listener tem hostname."
-  echo "     Verifique:"
+  echo "DNS: the OpenShift Ingress Operator creates the record automatically"
+  echo "     (DNSRecord + Route53) when the listener has a hostname."
+  echo "     Verify:"
   echo "       oc get dnsrecord -n ${GW_NS} -l gateway.networking.k8s.io/gateway-name=${GW_NAME}"
   echo "     No need to create Route53 manually."
 fi

@@ -339,7 +339,7 @@ while $KEEP_RUNNING && ( $FOREVER || [[ $(date +%s) -lt $DEADLINE ]] ); do
       # total_tokens is what the TokenRateLimitPolicy meters. A "hi" prompt
       # bills ~1 token; this longer prompt bills ~40-50 so the token budget
       # actually fills (and 429s) at a demoable rate.
-      body='{"model":"banking-mock-gpt","messages":[{"role":"user","content":"Explique em duas frases o que e rate limiting de tokens em um AI gateway e por que ele importa."}]}'
+      body='{"model":"banking-mock-gpt","messages":[{"role":"user","content":"Explain in two sentences what token rate limiting in an AI gateway is and why it matters."}]}'
       ;;
   esac
 

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -627,7 +627,7 @@
 <body>
 
 <header class="topbar">
-  <button class="menu-toggle" id="menuToggle" aria-label="Abrir menu">☰ Menu</button>
+  <button class="menu-toggle" id="menuToggle" aria-label="Open menu">☰ Menu</button>
   <a class="topbar-brand" href="#top">
     <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
       <rect width="28" height="28" rx="4" fill="#EE0000"/>
@@ -642,8 +642,8 @@
   <nav class="sidebar" id="sidebar">
     <div class="nav-label">Overview</div>
     <a href="#intro">Introduction</a>
-    <a href="#arquitetura">Arquitetura</a>
-    <a href="#componentes">Componentes</a>
+    <a href="#arquitetura">Architecture</a>
+    <a href="#componentes">Components</a>
     <div class="nav-divider"></div>
     <div class="nav-label">Strategies</div>
     <a href="#extauthz">ext_authz (synchronous)</a>
@@ -652,11 +652,11 @@
     <div class="nav-divider"></div>
     <div class="nav-label">Operation</div>
     <a href="#deploy">Deploy</a>
-    <a href="#validar">Validar</a>
+    <a href="#validar">Validate</a>
     <a href="#limitacoes">Limitations</a>
     <a href="#manifests">Manifests</a>
     <a href="#cleanup">Cleanup</a>
-    <a href="#relacionados">Relacionados</a>
+    <a href="#relacionados">Related</a>
   </nav>
 
   <main class="content" id="top">
@@ -668,18 +668,18 @@
         method, headers, body and metadata before or in parallel with forwarding to the backend.
       </p>
       <p class="req-sub">
-        Dedicated stack in <code class="inline">tests/request-interception-mirror/manifests/</code> — it does not use the
-        <code class="inline">banking-api-v1</code> compartilhado. Deploy manual via
+        Dedicated stack in <code class="inline">tests/request-interception-mirror/manifests/</code> — it does not use the shared
+        <code class="inline">banking-api-v1</code> backend. Manual deploy via
         <code class="inline">./deploy.sh</code>.
       </p>
     </div>
 
     <div class="hero">
-      <div class="hero-kicker">Red Hat Connectivity Link · Lab isolado</div>
+      <div class="hero-kicker">Red Hat Connectivity Link · Isolated lab</div>
       <h1>Request interception at the gateway</h1>
       <p>
-        Gateway dedicado <code class="inline">req030-interceptor-gateway</code> com dois listeners
-        HTTP on separate hostnames — each strategy validated independently.
+        Dedicated gateway <code class="inline">req030-interceptor-gateway</code> with two HTTP listeners
+        on separate hostnames — each strategy validated independently.
       </p>
       <div class="hero-badges">
         <span class="hero-badge sync"><span class="dot"></span> req030-extauthz.* · ext_authz</span>
@@ -697,8 +697,8 @@
       </p>
       <div class="callout info">
         <strong>Principle:</strong> any internal HTTP service can play the role of
-        interceptor — basta apontar o extension provider (<code class="inline">envoyExtAuthzHttp</code>)
-        and/or the <code class="inline">RequestMirror</code> filter for your Deployment/Service.
+        interceptor — just point the extension provider (<code class="inline">envoyExtAuthzHttp</code>)
+        and/or the <code class="inline">RequestMirror</code> filter at your Deployment/Service.
       </div>
 
       <div class="table-wrap">
@@ -723,7 +723,7 @@
     </section>
 
     <section class="block" id="arquitetura">
-      <h2><span class="num">◎</span> Arquitetura</h2>
+      <h2><span class="num">◎</span> Architecture</h2>
       <p class="lead">
         Traffic enters via an OpenShift Route (edge TLS), passes through the dedicated gateway, and continues
         one of the two paths depending on the hostname.
@@ -732,7 +732,7 @@
       <div class="diagram-wrap">
         <div class="mermaid">
 flowchart TB
-    CLIENT["Cliente"]
+    CLIENT["Client"]
     ROUTE["OpenShift Route\n(edge TLS)"]
     GW["req030-interceptor-gateway\nGatewayClass: istio"]
     CLIENT --> ROUTE --> GW
@@ -750,12 +750,12 @@ flowchart TB
       <div class="callout warn">
         <strong>Lab design:</strong> in production you can combine both strategies on
         a single route; here we use distinct hostnames for clear validation (same pattern as
-        req050 com listeners CRL/OCSP separados).
+        req050 with separate CRL/OCSP listeners).
       </div>
     </section>
 
     <section class="block" id="componentes">
-      <h2><span class="num">▣</span> Componentes</h2>
+      <h2><span class="num">▣</span> Components</h2>
 
       <div class="table-wrap">
         <table>
@@ -766,7 +766,7 @@ flowchart TB
             <tr>
               <td><code>hello-world</code></td>
               <td><code>req030-apps</code></td>
-              <td>Backend de teste (<code>GET /</code>, <code>GET /ping</code>)</td>
+              <td>Test backend (<code>GET /</code>, <code>GET /ping</code>)</td>
             </tr>
             <tr>
               <td><code>request-interceptor</code></td>
@@ -776,22 +776,22 @@ flowchart TB
             <tr>
               <td><code>req030-interceptor-gateway</code></td>
               <td><code>req030-gateway</code></td>
-              <td>Gateway com listeners <code>http-extauthz</code> e <code>http-mirror</code></td>
+              <td>Gateway with listeners <code>http-extauthz</code> and <code>http-mirror</code></td>
             </tr>
             <tr>
               <td><code>req030-extauthz-route</code></td>
               <td><code>req030-gateway</code></td>
-              <td>HTTPRoute → hello-world (sem mirror)</td>
+              <td>HTTPRoute → hello-world (no mirror)</td>
             </tr>
             <tr>
               <td><code>req030-mirror-route</code></td>
               <td><code>req030-gateway</code></td>
-              <td>HTTPRoute com filtro <code>RequestMirror</code></td>
+              <td>HTTPRoute with <code>RequestMirror</code> filter</td>
             </tr>
             <tr>
               <td><code>req030-ext-authz</code></td>
               <td><code>req030-gateway</code></td>
-              <td><code>AuthorizationPolicy</code> CUSTOM no hostname extauthz</td>
+              <td><code>AuthorizationPolicy</code> CUSTOM on the extauthz hostname</td>
             </tr>
             <tr>
               <td><code>req030-request-interceptor</code></td>
@@ -801,18 +801,18 @@ flowchart TB
             <tr>
               <td><code>req030-gateway-to-apps</code></td>
               <td><code>req030-apps</code></td>
-              <td><code>ReferenceGrant</code> para refs cross-namespace</td>
+              <td><code>ReferenceGrant</code> for cross-namespace refs</td>
             </tr>
           </tbody>
         </table>
       </div>
 
       <div class="card">
-        <h3>Imagens</h3>
+        <h3>Images</h3>
         <ul>
           <li><code>hello-world</code> — <code>docker.io/testcontainers/helloworld:1.3.0</code></li>
           <li><code>request-interceptor</code> — <code>docker.io/dsferreira54/request-interceptor:latest</code>
-            (<a href="https://github.com/dsferreira54/request-interceptor" target="_blank" rel="noopener">fonte</a>)
+            (<a href="https://github.com/dsferreira54/request-interceptor" target="_blank" rel="noopener">source</a>)
           </li>
         </ul>
         <p>In demo mode the interceptor always allows (<code>200 OK</code>) and logs headers/body.</p>
@@ -822,31 +822,31 @@ flowchart TB
     <section class="block" id="extauthz">
       <h2><span class="num">1</span> External authorization — <code class="inline">http-extauthz</code></h2>
       <p class="lead">
-        O Envoy <strong>deve</strong> chamar o interceptor e receber allow/deny antes de encaminhar
+        Envoy <strong>must</strong> call the interceptor and receive allow/deny before forwarding
         to hello-world. Use it when interception may <strong>block</strong> traffic.
       </p>
 
       <div class="strategy-grid">
         <div class="strategy-card sync">
           <div class="icon">⏱</div>
-          <span class="pill block">Bloqueia o fluxo</span>
+          <span class="pill block">Blocks the flow</span>
           <h3>ext_authz (synchronous)</h3>
           <div class="hostname">req030-extauthz.&lt;zone&gt;</div>
           <ul>
             <li>Istio CR: <code class="inline">envoyExtAuthzHttp</code></li>
-            <li><code class="inline">AuthorizationPolicy</code> com <code class="inline">action: CUSTOM</code></li>
-            <li>Path no interceptor: <code class="inline">/check/...</code></li>
+            <li><code class="inline">AuthorizationPolicy</code> with <code class="inline">action: CUSTOM</code></li>
+            <li>Path on the interceptor: <code class="inline">/check/...</code></li>
             <li>Body up to 8192 bytes</li>
           </ul>
         </div>
         <div class="card" style="margin:0">
-          <h3>Fluxo</h3>
+          <h3>Flow</h3>
           <ol class="steps" style="margin:0">
-            <li>Cliente chama <code class="inline">https://req030-extauthz.&lt;zone&gt;/</code></li>
+            <li>Client calls <code class="inline">https://req030-extauthz.&lt;zone&gt;/</code></li>
             <li>Envoy applies the <code class="inline">AuthorizationPolicy</code> for the host</li>
-            <li>Envoy POST em <code class="inline">request-interceptor:8080/check/...</code></li>
+            <li>Envoy POSTs to <code class="inline">request-interceptor:8080/check/...</code></li>
             <li>The interceptor returns <code class="inline">200</code> + inspection headers</li>
-            <li>Envoy encaminha para <code class="inline">hello-world:8080</code></li>
+            <li>Envoy forwards to <code class="inline">hello-world:8080</code></li>
           </ol>
         </div>
       </div>
@@ -854,7 +854,7 @@ flowchart TB
       <div class="diagram-wrap">
         <div class="mermaid">
 sequenceDiagram
-    participant C as Cliente
+    participant C as Client
     participant E as Envoy Gateway
     participant I as request-interceptor
     participant B as hello-world
@@ -868,7 +868,7 @@ sequenceDiagram
       </div>
 
       <div class="card">
-        <h3>Extension provider (trecho)</h3>
+        <h3>Extension provider (excerpt)</h3>
 <pre><button class="copy-btn" onclick="copyCode(this)">copy</button><span class="yaml">- <span class="key">name:</span> <span class="val">req030-request-interceptor</span>
   <span class="key">envoyExtAuthzHttp:</span>
     <span class="key">service:</span> <span class="val">request-interceptor.req030-apps.svc.cluster.local</span>
@@ -877,7 +877,7 @@ sequenceDiagram
     <span class="key">includeRequestBodyInCheck:</span>
       <span class="key">maxRequestBytes:</span> <span class="val">8192</span></span></pre>
         <p style="font-size:13px;color:var(--rh-gray-400);">
-          Aplicado por <code class="inline">deploy-istio-extension-provider.sh</code> (merge-patch no Istio CR existente).
+          Applied by <code class="inline">deploy-istio-extension-provider.sh</code> (merge-patch on the existing Istio CR).
         </p>
       </div>
     </section>
@@ -896,19 +896,19 @@ sequenceDiagram
           <h3>RequestMirror (asynchronous)</h3>
           <div class="hostname">req030-mirror.&lt;zone&gt;</div>
           <ul>
-            <li>Filtro <code class="inline">RequestMirror</code> no HTTPRoute</li>
-            <li>Path original preservado</li>
+            <li><code class="inline">RequestMirror</code> filter on the HTTPRoute</li>
+            <li>Original path preserved</li>
             <li>A mirror failure does not affect the client</li>
             <li>No latency impact on the critical path</li>
           </ul>
         </div>
         <div class="card" style="margin:0">
-          <h3>Fluxo</h3>
+          <h3>Flow</h3>
           <ol class="steps" style="margin:0">
-            <li>Cliente chama <code class="inline">https://req030-mirror.&lt;zone&gt;/</code></li>
-            <li>Envoy aplica filtro <code class="inline">RequestMirror</code></li>
+            <li>Client calls <code class="inline">https://req030-mirror.&lt;zone&gt;/</code></li>
+            <li>Envoy applies the <code class="inline">RequestMirror</code> filter</li>
             <li>An async copy goes to <code class="inline">request-interceptor</code></li>
-            <li>Original segue para <code class="inline">hello-world</code> sem esperar o mirror</li>
+            <li>Original proceeds to <code class="inline">hello-world</code> without waiting for the mirror</li>
           </ol>
         </div>
       </div>
@@ -916,7 +916,7 @@ sequenceDiagram
       <div class="diagram-wrap">
         <div class="mermaid">
 sequenceDiagram
-    participant C as Cliente
+    participant C as Client
     participant E as Envoy Gateway
     participant I as request-interceptor
     participant B as hello-world
@@ -925,7 +925,7 @@ sequenceDiagram
         E->>B: POST /
         B-->>E: 200 response
         E-->>C: 200 response
-    and Espelhamento
+    and Mirroring
         E->>I: POST / — identical copy
         Note over I: response discarded
     end
@@ -945,7 +945,7 @@ sequenceDiagram
         <table>
           <thead>
             <tr>
-              <th>Aspecto</th>
+              <th>Aspect</th>
               <th>ext_authz</th>
               <th>RequestMirror</th>
             </tr>
@@ -955,8 +955,8 @@ sequenceDiagram
             <tr><td>Latency impact</td><td>Synchronous round-trip</td><td>Minimal (async)</td></tr>
             <tr><td>Config surface</td><td>Istio CR + AuthorizationPolicy</td><td>Filter on the HTTPRoute</td></tr>
             <tr><td>Body visibility</td><td>Up to 8192 B (<code>maxRequestBytes</code>)</td><td>Full request copy</td></tr>
-            <tr><td>Path no interceptor</td><td><code>/check/...</code></td><td>Path original</td></tr>
-            <tr><td>Caso de uso</td><td>WAF, policy engine, auth customizada</td><td>Audit log, SIEM, shadow traffic</td></tr>
+            <tr><td>Path on the interceptor</td><td><code>/check/...</code></td><td>Original path</td></tr>
+            <tr><td>Use case</td><td>WAF, policy engine, custom auth</td><td>Audit log, SIEM, shadow traffic</td></tr>
           </tbody>
         </table>
       </div>
@@ -970,24 +970,24 @@ sequenceDiagram
       </p>
 
       <div class="card">
-        <h3>Deploy completo</h3>
+        <h3>Full deploy</h3>
 <pre><button class="copy-btn" onclick="copyCode(this)">copy</button>export RHCL_ZONE_ROOT_DOMAIN=example.com   # adjust to your cluster
 cd tests/request-interception-mirror/manifests
 ./deploy.sh</pre>
-        <p>O script executa 8 etapas: namespaces, apps, gateway, extension provider (interativo), AuthorizationPolicy, HTTPRoutes, Routes e DnsIngress (best-effort).</p>
+        <p>The script runs 8 steps: namespaces, apps, gateway, extension provider (interactive), AuthorizationPolicy, HTTPRoutes, Routes and DnsIngress (best-effort).</p>
       </div>
 
       <div class="callout info">
         <strong>Extension provider:</strong> in step 6 the script lists the cluster's Istio CRs and
-        pede qual patchar — nunca substitua a lista inteira de <code class="inline">extensionProviders</code>.
+        prompts which one to patch — never replace the entire <code class="inline">extensionProviders</code> list.
       </div>
     </section>
 
     <section class="block" id="validar">
-      <h2><span class="num">✓</span> Validar</h2>
+      <h2><span class="num">✓</span> Validate</h2>
 
       <div class="card">
-        <h3>Teste automatizado</h3>
+        <h3>Automated test</h3>
 <pre><button class="copy-btn" onclick="copyCode(this)">copy</button>export RHCL_ZONE_ROOT_DOMAIN=example.com
 cd tests/request-interception-mirror/manifests
 ./test-req030.sh</pre>
@@ -1016,12 +1016,12 @@ oc -n req030-apps logs deployment/request-interceptor --tail=20 | grep -E 'REQUE
       <div class="card">
         <h3>Success criteria</h3>
         <ul class="checklist">
-          <li><code>hello-world</code> e <code>request-interceptor</code> Available em <code>req030-apps</code></li>
-          <li>Gateway Programmed com listeners <code>http-extauthz</code> e <code>http-mirror</code></li>
-          <li><code>https://req030-extauthz.&lt;zone&gt;/</code> retorna HTTP 200</li>
-          <li><code>https://req030-mirror.&lt;zone&gt;/</code> retorna HTTP 200</li>
+          <li><code>hello-world</code> and <code>request-interceptor</code> Available in <code>req030-apps</code></li>
+          <li>Gateway Programmed with listeners <code>http-extauthz</code> and <code>http-mirror</code></li>
+          <li><code>https://req030-extauthz.&lt;zone&gt;/</code> returns HTTP 200</li>
+          <li><code>https://req030-mirror.&lt;zone&gt;/</code> returns HTTP 200</li>
           <li>The interceptor logs show traffic from <strong>both</strong> hostnames</li>
-          <li>Istio CR inclui <code>req030-request-interceptor</code> em <code>extensionProviders</code></li>
+          <li>Istio CR includes <code>req030-request-interceptor</code> in <code>extensionProviders</code></li>
         </ul>
       </div>
     </section>
@@ -1033,9 +1033,9 @@ oc -n req030-apps logs deployment/request-interceptor --tail=20 | grep -E 'REQUE
         <table>
           <thead><tr><th>Topic</th><th>Limitation</th></tr></thead>
           <tbody>
-            <tr><td>Body no ext_authz</td><td>Apenas os primeiros <strong>8192 bytes</strong> (<code>maxRequestBytes</code>)</td></tr>
+            <tr><td>Body in ext_authz</td><td>Only the first <strong>8192 bytes</strong> (<code>maxRequestBytes</code>)</td></tr>
             <tr><td>RequestMirror</td><td>Fire-and-forget — mirror failures do not fail the client request</td></tr>
-            <tr><td>Istio CR</td><td>Operador gerencia o CR; extension provider exige merge-patch</td></tr>
+            <tr><td>Istio CR</td><td>Operator manages the CR; extension provider requires merge-patch</td></tr>
             <tr><td>Image pull</td><td>The cluster must reach Docker Hub for <code>dsferreira54/request-interceptor</code></td></tr>
             <tr><td>Demo interceptor</td><td>Always allows — in production it can return <code>403</code></td></tr>
           </tbody>
@@ -1051,18 +1051,18 @@ oc -n req030-apps logs deployment/request-interceptor --tail=20 | grep -E 'REQUE
           <thead><tr><th>File</th><th>Resource</th><th>Purpose</th></tr></thead>
           <tbody>
             <tr><td><code>00-namespace.yaml</code></td><td>Namespace ×2</td><td><code>req030-gateway</code>, <code>req030-apps</code></td></tr>
-            <tr><td><code>10-gateway.yaml</code></td><td>Gateway</td><td>Gateway dedicado, dois listeners HTTP</td></tr>
-            <tr><td><code>15-hello-world-app.yaml</code></td><td>Deployment, Service</td><td>Backend de teste</td></tr>
+            <tr><td><code>10-gateway.yaml</code></td><td>Gateway</td><td>Dedicated gateway, two HTTP listeners</td></tr>
+            <tr><td><code>15-hello-world-app.yaml</code></td><td>Deployment, Service</td><td>Test backend</td></tr>
             <tr><td><code>16-request-interceptor-app.yaml</code></td><td>Deployment, Service</td><td>Interception app</td></tr>
             <tr><td><code>20-httproute-extauthz.yaml</code></td><td>HTTPRoute</td><td>Listener extauthz → hello-world</td></tr>
-            <tr><td><code>21-httproute-mirror.yaml</code></td><td>HTTPRoute</td><td>Listener mirror com RequestMirror</td></tr>
+            <tr><td><code>21-httproute-mirror.yaml</code></td><td>HTTPRoute</td><td>Mirror listener with RequestMirror</td></tr>
             <tr><td><code>25-referencegrant.yaml</code></td><td>ReferenceGrant</td><td>Refs cross-namespace gateway → apps</td></tr>
-            <tr><td><code>36-authorizationpolicy.yaml</code></td><td>AuthorizationPolicy</td><td>CUSTOM ext_authz no host extauthz</td></tr>
-            <tr><td><code>deploy-istio-extension-provider.sh</code></td><td>Istio CR patch</td><td>Merge interativo de <code>envoyExtAuthzHttp</code></td></tr>
+            <tr><td><code>36-authorizationpolicy.yaml</code></td><td>AuthorizationPolicy</td><td>CUSTOM ext_authz on the extauthz host</td></tr>
+            <tr><td><code>deploy-istio-extension-provider.sh</code></td><td>Istio CR patch</td><td>Interactive merge of <code>envoyExtAuthzHttp</code></td></tr>
             <tr><td><code>30-openshift-routes.yaml</code></td><td>Route ×2</td><td>Edge TLS for the gateway Service</td></tr>
             <tr><td><code>dnsingress-*.yaml</code></td><td>DnsIngress</td><td>DNS automation (best-effort)</td></tr>
             <tr><td><code>deploy.sh</code></td><td>—</td><td>One-shot deploy orchestration</td></tr>
-            <tr><td><code>test-req030.sh</code></td><td>—</td><td>Validador interativo</td></tr>
+            <tr><td><code>test-req030.sh</code></td><td>—</td><td>Interactive validator</td></tr>
           </tbody>
         </table>
       </div>
@@ -1088,7 +1088,7 @@ oc delete -f 00-namespace.yaml --ignore-not-found</pre>
     </section>
 
     <section class="block" id="relacionados">
-      <h2><span class="num">↗</span> Relacionados</h2>
+      <h2><span class="num">↗</span> Related</h2>
 
       <div class="table-wrap">
         <table>
@@ -1098,7 +1098,7 @@ oc delete -f 00-namespace.yaml --ignore-not-found</pre>
             <tr><td>Request enrichment</td><td>Identity-header enrichment; this item focuses on <strong>inspection</strong></td></tr>
             <tr><td><a href="../backend-http-protocols/README.md">backend-http-protocols</a></td><td>Upstream HTTP protocol selection; orthogonal to interception</td></tr>
             <tr><td><code>tests/request-interception-mirror/README.md</code></td><td>Full technical runbook (Markdown version)</td></tr>
-            <tr><td><code>tests/request-interception-mirror/README.md</code></td><td>Resumo operacional em Markdown</td></tr>
+            <tr><td><code>tests/request-interception-mirror/README.md</code></td><td>Operational summary in Markdown</td></tr>
           </tbody>
         </table>
       </div>
@@ -1155,7 +1155,7 @@ oc delete -f 00-namespace.yaml --ignore-not-found</pre>
     const pre = btn.closest('pre');
     const text = pre.innerText.replace(/^copy\n?/, '').trim();
     navigator.clipboard.writeText(text).then(() => {
-      btn.textContent = 'copiado!';
+      btn.textContent = 'copied!';
       btn.classList.add('done');
       setTimeout(() => { btn.textContent = 'copy'; btn.classList.remove('done'); }, 2000);
     });

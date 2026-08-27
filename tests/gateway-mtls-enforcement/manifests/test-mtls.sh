@@ -2,14 +2,14 @@
 # =============================================================================
 # test-mtls.sh — Interactive mTLS validation script
 #
-# Uso:
-#   ./test-mtls.sh             # menu interativo
-#   ./test-mtls.sh <N>         # executa teste N (1-8) e sai
-#   ./test-mtls.sh A           # executa todos os testes
+# Usage:
+#   ./test-mtls.sh             # interactive menu
+#   ./test-mtls.sh <N>         # runs test N (1-8) and exits
+#   ./test-mtls.sh A           # runs all tests
 #
-# Requer:
-#   - RHCL_ZONE_ROOT_DOMAIN definido
-#   - Pasta certs/ com os certificados gerados (via generate-certs.sh)
+# Requires:
+#   - RHCL_ZONE_ROOT_DOMAIN set
+#   - certs/ folder with the generated certificates (via generate-certs.sh)
 # =============================================================================
 set -uo pipefail
 
@@ -64,7 +64,7 @@ declare -a TEST_GROUP
 # --- REQ 056 ---
 TEST_GROUP[1]="REQ 056"
 TEST_TITLE[1]="PASS: cert signed by the Intermediate CA"
-TEST_DESC[1]="Apresenta ao gateway um certificado de cliente assinado diretamente pela CA
+TEST_DESC[1]="Presents to the gateway a client certificate signed directly by the
 Intermediate. Since the https-single-ca listener trusts only that CA,
 the mTLS handshake succeeds and the backend returns HTTP 200."
 TEST_EXPECTED[1]="PASS"
@@ -73,9 +73,9 @@ TEST_CERT[1]="$CERTS_DIR/client-chain.crt"
 TEST_KEY[1]="$CERTS_DIR/client-chain.key"
 
 TEST_GROUP[2]="REQ 056"
-TEST_TITLE[2]="FAIL: cert assinado pela Root CA"
-TEST_DESC[2]="Apresenta um certificado assinado diretamente pela Root CA. Apesar de a Root
-be the 'parent' of the Intermediate in the PKI hierarchy, this listener trusts ONLY the
+TEST_TITLE[2]="FAIL: cert signed by the Root CA"
+TEST_DESC[2]="Presents a certificate signed directly by the Root CA. Although the Root
+is the 'parent' of the Intermediate in the PKI hierarchy, this listener trusts ONLY the
 Intermediate — it does not walk up the chain. The handshake is rejected."
 TEST_EXPECTED[2]="FAIL"
 TEST_HOST[2]="$HOST056"
@@ -83,17 +83,17 @@ TEST_CERT[2]="$CERTS_DIR/client-direct.crt"
 TEST_KEY[2]="$CERTS_DIR/client-direct.key"
 
 TEST_GROUP[3]="REQ 056"
-TEST_TITLE[3]="FAIL: cert de CA desconhecida"
-TEST_DESC[3]="Apresenta um certificado emitido por uma CA completamente externa e sem
+TEST_TITLE[3]="FAIL: cert from an unknown CA"
+TEST_DESC[3]="Presents a certificate issued by a completely external CA with no
 relation to the lab hierarchy. The gateway does not recognize this CA, so the
-handshake mTLS falha imediatamente."
+mTLS handshake fails immediately."
 TEST_EXPECTED[3]="FAIL"
 TEST_HOST[3]="$HOST056"
 TEST_CERT[3]="$CERTS_DIR/client-untrusted.crt"
 TEST_KEY[3]="$CERTS_DIR/client-untrusted.key"
 
 TEST_GROUP[4]="REQ 056"
-TEST_TITLE[4]="FAIL: sem certificado de cliente"
+TEST_TITLE[4]="FAIL: no client certificate"
 TEST_DESC[4]="Sends no client certificate. Since require_client_certificate=true,
 the gateway requires identification. Without a certificate the connection is rejected,
 proving anonymous access is blocked."
@@ -104,18 +104,18 @@ TEST_KEY[4]=""
 
 # --- REQ 051 ---
 TEST_GROUP[5]="REQ 051"
-TEST_TITLE[5]="PASS: cert com cadeia completa (bundle)"
+TEST_TITLE[5]="PASS: cert with full chain (bundle)"
 TEST_DESC[5]="Presents the client certificate (signed by the Intermediate) together with the
 Intermediate cert in the bundle, forming the leaf→intermediate→root chain.
-O listener confia na Root, percorre a cadeia e aceita o handshake."
+The listener trusts the Root, walks the chain, and accepts the handshake."
 TEST_EXPECTED[5]="PASS"
 TEST_HOST[5]="$HOST051"
 TEST_CERT[5]="$CERTS_DIR/client-chain-bundle.crt"
 TEST_KEY[5]="$CERTS_DIR/client-chain.key"
 
 TEST_GROUP[6]="REQ 051"
-TEST_TITLE[6]="PASS: cert assinado diretamente pela Root"
-TEST_DESC[6]="Apresenta um certificado assinado diretamente pela Root CA. Como o listener
+TEST_TITLE[6]="PASS: cert signed directly by the Root"
+TEST_DESC[6]="Presents a certificate signed directly by the Root CA. Since the listener
 trusts the Root and the cert was issued by it, validation is direct — it does not
 need to walk the chain. The handshake is accepted."
 TEST_EXPECTED[6]="PASS"
@@ -124,7 +124,7 @@ TEST_CERT[6]="$CERTS_DIR/client-direct.crt"
 TEST_KEY[6]="$CERTS_DIR/client-direct.key"
 
 TEST_GROUP[7]="REQ 051"
-TEST_TITLE[7]="FAIL: cert de CA desconhecida"
+TEST_TITLE[7]="FAIL: cert from an unknown CA"
 TEST_DESC[7]="Same scenario as test 3 (external CA), now against the Root CA listener.
 The trust chain cannot be built up to the configured Root, so
 o Envoy rejeita o handshake."
@@ -134,7 +134,7 @@ TEST_CERT[7]="$CERTS_DIR/client-untrusted.crt"
 TEST_KEY[7]="$CERTS_DIR/client-untrusted.key"
 
 TEST_GROUP[8]="REQ 051"
-TEST_TITLE[8]="FAIL: sem certificado de cliente"
+TEST_TITLE[8]="FAIL: no client certificate"
 TEST_DESC[8]="With no certificate presented, the client is rejected by both listeners.
 Proves require_client_certificate=true is active, requiring mutual
 authentication regardless of the trust model."
@@ -143,7 +143,7 @@ TEST_HOST[8]="$HOST051"
 TEST_CERT[8]=""
 TEST_KEY[8]=""
 
-# --- REQ 056 (extra) — full chain incluindo a Root contra o listener Single-CA ---
+# --- REQ 056 (extra) — full chain including the Root against the Single-CA listener ---
 TEST_GROUP[9]="REQ 056"
 TEST_TITLE[9]="PASS: full chain (leaf+intermediate+ROOT) on the Intermediate CA"
 TEST_DESC[9]="Against the https-single-ca listener (which trusts ONLY the Intermediate), the client
@@ -158,7 +158,7 @@ TEST_KEY[9]="$CERTS_DIR/client-chain.key"
 # --- ACCEPT_UNTRUSTED — the chain is NOT enforced; it only requires presenting a cert ---
 TEST_GROUP[10]="ACCEPT_UNTRUSTED"
 TEST_TITLE[10]="PASS: cert from an UNtrusted CA is accepted"
-TEST_DESC[10]="Listener https-accept-untrusted usa trust_chain_verification=ACCEPT_UNTRUSTED:
+TEST_DESC[10]="Listener https-accept-untrusted uses trust_chain_verification=ACCEPT_UNTRUSTED:
 chain verification becomes NON-fatal. The SAME client-untrusted rejected on the
 req056 listener (test 3) is ACCEPTED here, proving the ACCEPT_UNTRUSTED effect — the
 CA trust is no longer enforced."
@@ -170,7 +170,7 @@ TEST_KEY[10]="$CERTS_DIR/client-untrusted.key"
 TEST_GROUP[11]="ACCEPT_UNTRUSTED"
 TEST_TITLE[11]="PASS: any valid cert is accepted (trust not enforced)"
 TEST_DESC[11]="Same listener, with the client-chain (signed by the Intermediate). Also accepted.
-Sob ACCEPT_UNTRUSTED, qualquer cert apresentado passa — inclusive o casamento por SAN
+Under ACCEPT_UNTRUSTED, any presented cert passes — including the SAN match
 (match_typed_subject_alt_names) is NOT enforced. To gate by SAN use VERIFY_TRUST_CHAIN."
 TEST_EXPECTED[11]="PASS"
 TEST_HOST[11]="$HOSTUNTRUSTED"
@@ -178,8 +178,8 @@ TEST_CERT[11]="$CERTS_DIR/client-chain.crt"
 TEST_KEY[11]="$CERTS_DIR/client-chain.key"
 
 TEST_GROUP[12]="ACCEPT_UNTRUSTED"
-TEST_TITLE[12]="FAIL: sem certificado de cliente"
-TEST_DESC[12]="Sem apresentar certificado. require_client_certificate=true continua ativo neste
+TEST_TITLE[12]="FAIL: no client certificate"
+TEST_DESC[12]="Without presenting a certificate. require_client_certificate=true is still active on this
 listener, so anonymous access is blocked even with ACCEPT_UNTRUSTED — the only
 guarantee left is 'a cert must be presented'."
 TEST_EXPECTED[12]="FAIL"
@@ -187,13 +187,13 @@ TEST_HOST[12]="$HOSTUNTRUSTED"
 TEST_CERT[12]=""
 TEST_KEY[12]=""
 
-# --- XFCC — encaminhar o cert do cliente ao backend via header ---
+# --- XFCC — forward the client cert to the backend via header ---
 TEST_GROUP[13]="XFCC"
-TEST_TITLE[13]="PASS: cert do cliente encaminhado ao backend (x-forwarded-client-cert)"
-TEST_DESC[13]="Com o EnvoyFilter req051-xfcc (forward_client_cert_details=SANITIZE_SET +
-set_current_client_cert_details cert/chain/subject), o gateway injeta o header
-x-forwarded-client-cert com o PEM do cert do cliente. Chama /api/echo (backend echo-server) com um cert
-valid and confirms the backend received the XFCC containing Cert=."
+TEST_TITLE[13]="PASS: client cert forwarded to the backend (x-forwarded-client-cert)"
+TEST_DESC[13]="With the EnvoyFilter req051-xfcc (forward_client_cert_details=SANITIZE_SET +
+set_current_client_cert_details cert/chain/subject), the gateway injects the header
+x-forwarded-client-cert with the PEM of the client cert. Calls /api/echo (backend echo-server) with a valid cert
+and confirms the backend received the XFCC containing Cert=."
 TEST_EXPECTED[13]="PASS"
 TEST_HOST[13]="$HOST056"
 TEST_CERT[13]="$CERTS_DIR/client-chain.crt"
@@ -213,7 +213,7 @@ run_xfcc_test() {
   echo -e "${CYAN}Comando:${RESET}"
   echo -e "${DIM}curl -kv --cert $cert --key $key https://$host/api/echo${RESET}"
   echo ""
-  echo -e "${YELLOW}Expected result:${RESET} ${GREEN}HTTP 200 + header x-forwarded-client-cert com Cert= (PEM)${RESET}"
+  echo -e "${YELLOW}Expected result:${RESET} ${GREEN}HTTP 200 + x-forwarded-client-cert header with Cert= (PEM)${RESET}"
   echo ""
   echo -e "${CYAN}Executando...${RESET}"
   echo -e "${DIM}────────────────────────────────────────────────────────${RESET}"
@@ -235,14 +235,14 @@ print(h.get('x-forwarded-client-cert') or (d.get('forwarded') or {}).get('x-forw
 " 2>/dev/null)
 
   # Full JSON response from the echo backend (contains the XFCC header with the cert)
-  echo -e "${CYAN}Resposta JSON completa do backend (echo):${RESET}"
+  echo -e "${CYAN}Full JSON response from the backend (echo):${RESET}"
   echo -e "${DIM}"
   python3 -m json.tool "$tmpout" 2>/dev/null || cat "$tmpout"
   echo -e "${RESET}"
 
-  # Certificado do cliente, decodificado (URL-decode) do campo Cert= do XFCC
+  # Client certificate, decoded (URL-decode) from the XFCC Cert= field
   if [[ -n "$xfcc" ]]; then
-    echo -e "${CYAN}Certificado do cliente (PEM decodificado do XFCC):${RESET}"
+    echo -e "${CYAN}Client certificate (PEM decoded from XFCC):${RESET}"
     echo -e "${DIM}"
     python3 -c "
 import json, re, urllib.parse
@@ -250,7 +250,7 @@ d = json.load(open('$tmpout'))
 h = (d.get('request') or {}).get('headers') or {}
 x = h.get('x-forwarded-client-cert') or (d.get('forwarded') or {}).get('x-forwarded-client-cert', '')
 m = re.search(r'Cert=\"([^\"]*)\"', x)
-print(urllib.parse.unquote(m.group(1)) if m else '(sem campo Cert=)')
+print(urllib.parse.unquote(m.group(1)) if m else '(no Cert= field)')
 " 2>/dev/null
     echo -e "${RESET}"
   fi
@@ -259,9 +259,9 @@ print(urllib.parse.unquote(m.group(1)) if m else '(sem campo Cert=)')
 
   local actual detail
   if [[ "$http_code" == "200" ]] && echo "$xfcc" | grep -q "Cert="; then
-    actual="PASS"; detail="XFCC recebido no backend (com Cert PEM)"
+    actual="PASS"; detail="XFCC received at the backend (with Cert PEM)"
   else
-    actual="FAIL"; detail="HTTP $http_code — XFCC ausente ou sem Cert"
+    actual="FAIL"; detail="HTTP $http_code — XFCC missing or no Cert"
   fi
   rm -f "$tmpout"
   LAST_TEST_RESULT="$actual"
@@ -271,7 +271,7 @@ print(urllib.parse.unquote(m.group(1)) if m else '(sem campo Cert=)')
   if [[ "$actual" == "${TEST_EXPECTED[$idx]}" ]]; then
     echo -e "  ${GREEN}✓ SUCESSO${RESET} — ${detail}"
   else
-    echo -e "  ${RED}✗ INESPERADO${RESET} — Esperava ${TEST_EXPECTED[$idx]}, obteve $actual"
+    echo -e "  ${RED}✗ UNEXPECTED${RESET} — Expected ${TEST_EXPECTED[$idx]}, got $actual"
   fi
   echo ""
   if [[ "$interactive" == "true" ]]; then
@@ -291,27 +291,27 @@ print_header() {
   echo ""
   echo "  Single-CA (trusts only the Intermediate)"
   echo -e "  ${GREEN}[1]${RESET}${BOLD} PASS: cert signed by the Intermediate CA"
-  echo -e "  ${RED}[2]${RESET}${BOLD} FAIL: cert assinado pela Root CA"
-  echo -e "  ${RED}[3]${RESET}${BOLD} FAIL: cert de CA desconhecida"
-  echo -e "  ${RED}[4]${RESET}${BOLD} FAIL: sem certificado de cliente"
-  echo -e "  ${GREEN}[9]${RESET}${BOLD} PASS: cadeia completa (leaf+intermediate+ROOT)"
+  echo -e "  ${RED}[2]${RESET}${BOLD} FAIL: cert signed by the Root CA"
+  echo -e "  ${RED}[3]${RESET}${BOLD} FAIL: cert from an unknown CA"
+  echo -e "  ${RED}[4]${RESET}${BOLD} FAIL: no client certificate"
+  echo -e "  ${GREEN}[9]${RESET}${BOLD} PASS: full chain (leaf+intermediate+ROOT)"
   echo ""
-  echo "  REQ 051 — Chain-CA (confia na Root, aceita cadeia)"
-  echo -e "  ${GREEN}[5]${RESET}${BOLD} PASS: cert com cadeia completa (bundle)"
-  echo -e "  ${GREEN}[6]${RESET}${BOLD} PASS: cert assinado diretamente pela Root"
-  echo -e "  ${RED}[7]${RESET}${BOLD} FAIL: cert de CA desconhecida"
-  echo -e "  ${RED}[8]${RESET}${BOLD} FAIL: sem certificado de cliente"
+  echo "  REQ 051 — Chain-CA (trusts the Root, accepts the chain)"
+  echo -e "  ${GREEN}[5]${RESET}${BOLD} PASS: cert with full chain (bundle)"
+  echo -e "  ${GREEN}[6]${RESET}${BOLD} PASS: cert signed directly by the Root"
+  echo -e "  ${RED}[7]${RESET}${BOLD} FAIL: cert from an unknown CA"
+  echo -e "  ${RED}[8]${RESET}${BOLD} FAIL: no client certificate"
   echo ""
   echo "  ACCEPT_UNTRUSTED — chain not enforced; only requires a cert"
   echo -e "  ${GREEN}[10]${RESET}${BOLD} PASS: cert from an untrusted CA is accepted"
   echo -e "  ${GREEN}[11]${RESET}${BOLD} PASS: any valid cert is accepted"
-  echo -e "  ${RED}[12]${RESET}${BOLD} FAIL: sem certificado de cliente"
+  echo -e "  ${RED}[12]${RESET}${BOLD} FAIL: no client certificate"
   echo ""
-  echo "  XFCC — encaminhar cert do cliente ao backend"
-  echo -e "  ${GREEN}[13]${RESET}${BOLD} PASS: cert no header x-forwarded-client-cert"
+  echo "  XFCC — forward the client cert to the backend"
+  echo -e "  ${GREEN}[13]${RESET}${BOLD} PASS: cert in the x-forwarded-client-cert header"
   echo ""
-  echo -e "  ${YELLOW}[A]${RESET}${BOLD} Executar TODOS os testes"
-  echo -e "  ${DIM}[Q]${RESET}${BOLD} Sair"
+  echo -e "  ${YELLOW}[A]${RESET}${BOLD} Run ALL tests"
+  echo -e "  ${DIM}[Q]${RESET}${BOLD} Quit"
   echo -e "${RESET}"
 }
 
@@ -339,7 +339,7 @@ run_test() {
 
   echo ""
   echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-  echo -e "${BOLD}  TESTE $idx — ${TEST_GROUP[$idx]} — ${TEST_TITLE[$idx]}${RESET}"
+  echo -e "${BOLD}  TEST $idx — ${TEST_GROUP[$idx]} — ${TEST_TITLE[$idx]}${RESET}"
   echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
   echo ""
   echo -e "${DIM}${TEST_DESC[$idx]}${RESET}"
@@ -424,7 +424,7 @@ run_test() {
       echo -e "  ${GREEN}✓ SUCCESS${RESET} — Connection rejected (expected)"
     fi
   else
-    echo -e "  ${RED}✗ INESPERADO${RESET} — Esperava $expected, obteve $actual_result"
+    echo -e "  ${RED}✗ UNEXPECTED${RESET} — Expected $expected, got $actual_result"
   fi
 
   echo ""
@@ -438,7 +438,7 @@ run_test() {
 run_all() {
   echo ""
   echo -e "${BOLD}══════════════════════════════════════════════════════════════${RESET}"
-  echo -e "${BOLD}       EXECUTANDO TODOS OS 13 TESTES                         ${RESET}"
+  echo -e "${BOLD}       RUNNING ALL 13 TESTS                         ${RESET}"
   echo -e "${BOLD}══════════════════════════════════════════════════════════════${RESET}"
 
   local pass=0
@@ -461,9 +461,9 @@ run_all() {
   echo ""
 
   if [[ "$fail" -eq 0 ]]; then
-    echo -e "  ${GREEN}✓ TODOS OS TESTES PASSARAM CONFORME ESPERADO${RESET}"
+    echo -e "  ${GREEN}✓ ALL TESTS PASSED AS EXPECTED${RESET}"
   else
-    echo -e "  ${RED}✗ ATENÇÃO: $fail TESTE(S) COM RESULTADO INESPERADO${RESET}"
+    echo -e "  ${RED}✗ WARNING: $fail TEST(S) WITH UNEXPECTED RESULT${RESET}"
   fi
   echo ""
 }
@@ -473,7 +473,7 @@ run_all() {
 # =============================================================================
 
 preflight() {
-  echo -e "${CYAN}Verificando conectividade com ${HOST056} ...${RESET}"
+  echo -e "${CYAN}Checking connectivity to ${HOST056} ...${RESET}"
   if curl -sk --connect-timeout 5 -o /dev/null "https://$HOST056/api/tls/info" 2>/dev/null; then
     echo -e "${GREEN}  ✓ TCP connection OK${RESET}"
   else
@@ -485,7 +485,7 @@ preflight() {
     elif [[ $rc -eq 6 ]]; then
       echo -e "${RED}  ✗ DNS failed — could not resolve ${HOST056}${RESET}"
     else
-      echo -e "${YELLOW}  ? curl exit $rc — pode ser normal (mTLS exige cert).${RESET}"
+      echo -e "${YELLOW}  ? curl exit $rc — may be normal (mTLS requires a cert).${RESET}"
     fi
   fi
   echo ""
@@ -495,7 +495,7 @@ preflight() {
 # Execution
 # =============================================================================
 
-# Modo direto (sem menu)
+# Direct mode (no menu)
 if [[ -n "$TEST_NUM" ]]; then
   preflight
   if [[ "$TEST_NUM" == "A" || "$TEST_NUM" == "a" ]]; then
@@ -509,7 +509,7 @@ if [[ -n "$TEST_NUM" ]]; then
   exit 0
 fi
 
-# Modo interativo (menu)
+# Interactive mode (menu)
 while true; do
   print_header
   echo -ne "  ${BOLD}Escolha [1-13, A, Q]: ${RESET}"

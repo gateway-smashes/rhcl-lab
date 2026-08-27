@@ -33,40 +33,40 @@ echo ""
 echo "--- 1. CRD GRPCRoute (Gateway API) ---"
 GRPC_CRD_VERSIONS=$(oc get crd grpcroutes.gateway.networking.k8s.io -o jsonpath='{.spec.versions[?(@.served==true)].name}' 2>/dev/null || echo "")
 if echo "$GRPC_CRD_VERSIONS" | grep -qw "v1"; then
-  check_pass "CRD grpcroutes.gateway.networking.k8s.io servido em v1 (GA)"
+  check_pass "CRD grpcroutes.gateway.networking.k8s.io served at v1 (GA)"
 else
   check_fail "GRPCRoute v1 NOT available (served versions: '${GRPC_CRD_VERSIONS:-none}')"
 fi
 
-# --- 2. Listener no gateway ---
+# --- 2. Listener on the gateway ---
 echo ""
-echo "--- 2. Listener req048-grpcroute no gateway ---"
+echo "--- 2. Listener req048-grpcroute on the gateway ---"
 LISTENER_EXISTS=$(oc -n "$GW_NS" get gateway "$GW_NAME" -o jsonpath='{.spec.listeners[*].name}' 2>/dev/null | tr ' ' '\n' | grep -c "^req048-grpcroute$" || true)
 if [ "${LISTENER_EXISTS:-0}" -gt 0 ]; then
-  check_pass "Listener req048-grpcroute presente no gateway"
+  check_pass "Listener req048-grpcroute present on the gateway"
 else
-  check_fail "Listener req048-grpcroute NÃO encontrado no gateway"
+  check_fail "Listener req048-grpcroute NOT found on the gateway"
 fi
 
-# --- 3. GRPCRoute aceito ---
+# --- 3. GRPCRoute accepted ---
 echo ""
 echo "--- 3. GRPCRoute req048-grpcroute ---"
 if oc -n "$REQ_NS" get grpcroute req048-grpcroute &>/dev/null; then
   ACCEPTED=$(oc -n "$REQ_NS" get grpcroute req048-grpcroute -o jsonpath='{.status.parents[?(@.parentRef.sectionName=="req048-grpcroute")].conditions[?(@.type=="Accepted")].status}' 2>/dev/null || echo "")
   if [ "$ACCEPTED" = "True" ]; then
-    check_pass "GRPCRoute req048-grpcroute aceito pelo gateway"
+    check_pass "GRPCRoute req048-grpcroute accepted by the gateway"
   else
-    check_warn "GRPCRoute existe mas status Accepted=$ACCEPTED"
+    check_warn "GRPCRoute exists but status Accepted=$ACCEPTED"
   fi
 else
-  check_fail "GRPCRoute req048-grpcroute NÃO encontrado"
+  check_fail "GRPCRoute req048-grpcroute NOT found"
 fi
 
 # --- 4. gRPC reflection via GRPCRoute (grpcurl list) ---
 echo ""
 echo "--- 4. gRPC reflection via GRPCRoute (list services) ---"
 if command -v grpcurl &>/dev/null; then
-  LIST_RESULT=$(grpcurl -plaintext "$HOST:80" list 2>&1 || echo "ERRO")
+  LIST_RESULT=$(grpcurl -plaintext "$HOST:80" list 2>&1 || echo "ERROR")
   if echo "$LIST_RESULT" | grep -q "io.gatewaysmashes.rhcl.grpc.BankingService"; then
     check_pass "Reflection via GRPCRoute: BankingService listed"
   else
@@ -74,19 +74,19 @@ if command -v grpcurl &>/dev/null; then
   fi
 else
   check_warn "grpcurl not installed — skipping native gRPC tests"
-  echo "         Instale: https://github.com/fullstorydev/grpcurl/releases"
+  echo "         Install: https://github.com/fullstorydev/grpcurl/releases"
 fi
 
 # --- 5. gRPC unary via GRPCRoute ---
 echo ""
-echo "--- 5. gRPC nativo (unary) via GRPCRoute ---"
+echo "--- 5. Native gRPC (unary) via GRPCRoute ---"
 if command -v grpcurl &>/dev/null; then
   GRPC_RESULT=$(grpcurl -plaintext -d '{"api_version":"v1"}' \
-    "$HOST:80" io.gatewaysmashes.rhcl.grpc.BankingService/GetSummary 2>&1 || echo "ERRO")
+    "$HOST:80" io.gatewaysmashes.rhcl.grpc.BankingService/GetSummary 2>&1 || echo "ERROR")
   if echo "$GRPC_RESULT" | grep -qE '"api_?[vV]ersion"'; then
     check_pass "gRPC unary GetSummary via GRPCRoute returned a valid response"
   else
-    check_warn "gRPC unary via GRPCRoute falhou: $(echo "$GRPC_RESULT" | head -2)"
+    check_warn "gRPC unary via GRPCRoute failed: $(echo "$GRPC_RESULT" | head -2)"
   fi
 fi
 
@@ -95,10 +95,10 @@ echo ""
 echo "--- 6. gRPC server-streaming via GRPCRoute ---"
 if command -v grpcurl &>/dev/null; then
   STREAM_RESULT=$(grpcurl -plaintext -d '{"interval_ms":300,"max_events":3}' \
-    "$HOST:80" io.gatewaysmashes.rhcl.grpc.BankingService/StreamHealth 2>&1 || echo "ERRO")
+    "$HOST:80" io.gatewaysmashes.rhcl.grpc.BankingService/StreamHealth 2>&1 || echo "ERROR")
   EVENTS=$(echo "$STREAM_RESULT" | grep -c '"timestamp"' || true)
   if [ "${EVENTS:-0}" -ge 2 ]; then
-    check_pass "Server-streaming via GRPCRoute: $EVENTS eventos recebidos"
+    check_pass "Server-streaming via GRPCRoute: $EVENTS events received"
   else
     check_warn "Server-streaming via GRPCRoute: $(echo "$STREAM_RESULT" | head -2)"
   fi
@@ -109,11 +109,11 @@ echo ""
 echo "--- 7. Coexistence: HTTPRoute example stays functional ---"
 if command -v grpcurl &>/dev/null; then
   HTTPROUTE_RESULT=$(grpcurl -plaintext -d '{"api_version":"v1"}' \
-    "$HOST_HTTPROUTE:80" io.gatewaysmashes.rhcl.grpc.BankingService/GetSummary 2>&1 || echo "ERRO")
+    "$HOST_HTTPROUTE:80" io.gatewaysmashes.rhcl.grpc.BankingService/GetSummary 2>&1 || echo "ERROR")
   if echo "$HTTPROUTE_RESULT" | grep -qE '"api_?[vV]ersion"'; then
-    check_pass "gRPC via HTTPRoute ($HOST_HTTPROUTE) continua OK"
+    check_pass "gRPC via HTTPRoute ($HOST_HTTPROUTE) still OK"
   else
-    check_warn "gRPC via HTTPRoute falhou: $(echo "$HTTPROUTE_RESULT" | head -2)"
+    check_warn "gRPC via HTTPRoute failed: $(echo "$HTTPROUTE_RESULT" | head -2)"
   fi
 fi
 
@@ -123,16 +123,16 @@ echo "--- 8. Explicit per-service matching (REST path → 404 from the gateway) 
 NOT_MATCHED=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
   "http://${HOST}/q/health/ready" 2>/dev/null || echo "000")
 if [ "$NOT_MATCHED" = "404" ]; then
-  check_pass "Path fora das rules do GRPCRoute rejeitado pelo gateway (HTTP 404)"
+  check_pass "Path outside the GRPCRoute rules rejected by the gateway (HTTP 404)"
 elif [ "$NOT_MATCHED" = "000" ]; then
   check_warn "Explicit matching test: timeout/unreachable (DNS or network)"
 else
-  check_warn "Path fora das rules retornou HTTP $NOT_MATCHED (esperado 404)"
+  check_warn "Path outside the rules returned HTTP $NOT_MATCHED (expected 404)"
 fi
 
-# --- 9. Informativo: gRPC-Web no hostname do GRPCRoute ---
+# --- 9. Informational: gRPC-Web on the GRPCRoute hostname ---
 echo ""
-echo "--- 9. Informativo: gRPC-Web no hostname do GRPCRoute ---"
+echo "--- 9. Informational: gRPC-Web on the GRPCRoute hostname ---"
 GRPC_WEB_RESPONSE=$(printf '\x00\x00\x00\x00\x04\x0a\x02v1' | \
   curl -sS -X POST --max-time 10 --data-binary @- \
     -H 'content-type: application/grpc-web+proto' \
@@ -142,7 +142,7 @@ GRPC_WEB_RESPONSE=$(printf '\x00\x00\x00\x00\x04\x0a\x02v1' | \
 if [ "$GRPC_WEB_RESPONSE" = "200" ]; then
   check_pass "gRPC-Web also responded via GRPCRoute (HTTP 200) — Envoy/Istio implementation behavior"
 else
-  check_warn "gRPC-Web via GRPCRoute: HTTP $GRPC_WEB_RESPONSE — esperado; a spec do GRPCRoute cobre apenas gRPC nativo (use o HTTPRoute para gRPC-Web)"
+  check_warn "gRPC-Web via GRPCRoute: HTTP $GRPC_WEB_RESPONSE — expected; the GRPCRoute spec covers only native gRPC (use the HTTPRoute for gRPC-Web)"
 fi
 
 # --- Governance note ---
@@ -151,12 +151,12 @@ echo "--- Governance note (RHCL 1.3.5) ---"
 echo "  ℹ Traffic routed by GRPCRoute does NOT go through Kuadrant"
 echo "    enforcement: AuthPolicy/RateLimitPolicy cannot target a GRPCRoute"
 echo "    and the wasm-shim only derives rules from HTTPRoutes (not even the"
-echo "    gateway se aplica). Para gRPC governado, use o exemplo HTTPRoute."
+echo "    gateway applies). For governed gRPC, use the HTTPRoute example."
 
-# --- Resumo ---
+# --- Summary ---
 echo ""
 echo "======================================================================"
-echo " RESULTADO: $PASS passed, $FAIL failed, $WARN warnings"
+echo " RESULT: $PASS passed, $FAIL failed, $WARN warnings"
 echo "======================================================================"
 
 if [ "$FAIL" -gt 0 ]; then
@@ -169,7 +169,7 @@ elif [ "$WARN" -gt 0 ]; then
   echo ""
   echo "Validation OK with warnings (network/DNS may not be reachable from this host)."
   echo ""
-  echo "Para testar de dentro do cluster:"
+  echo "To test from inside the cluster:"
   echo "  oc -n $REQ_NS run grpc-test --rm -i --restart=Never \\"
   echo "    --image=fullstorydev/grpcurl:latest -- \\"
   echo "    -plaintext -d '{\"api_version\":\"v1\"}' \\"

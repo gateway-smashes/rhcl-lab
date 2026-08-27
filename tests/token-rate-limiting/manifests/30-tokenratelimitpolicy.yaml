@@ -20,10 +20,10 @@ spec:
       # Note (RHCL-native token counting):
       # The Limitador 2.3.1 on this cluster already exposes a global Prometheus counter
       # `authorized_hits{limitador_namespace="rhcl-apps/banking-api-connectivity"}`
-      # incrementado pelo CEL de `add_n_to_counter` desta policy (≈ tokens autorizados
+      # incremented by this policy's `add_n_to_counter` CEL (≈ authorized tokens
       # accumulated for this route). This is the RHCL-native "token counter" that
-      # alimenta o dashboard do item 40 — sem precisar de Micrometer no
-      # banking-api. Per-consumer breakdown requer `spec.counters` aqui, o que
+      # feeds the item 40 dashboard — without needing Micrometer in
+      # banking-api. Per-consumer breakdown requires `spec.counters` here, which
       # would make the limit per-consumer (instead of global), and also depends on
       # labels Prometheus estendidos do Limitador (`spec.telemetry: exhaustive`
       # + `--metric-labels-default`) that in v2.3.1 do not cover `authorized_hits`.

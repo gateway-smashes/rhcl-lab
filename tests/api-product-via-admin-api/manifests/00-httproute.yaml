@@ -1,7 +1,7 @@
-# PIX API — HTTPRoute do produto novo. Path-based: /pix/v1/* (rewrite p/ /api/echo)
+# PIX API — HTTPRoute for the new product. Path-based: /pix/v1/* (rewrite to /api/echo)
 # on the SAME host as banking-api (banking-api-connectivity.<zone>), to avoid a Gateway
 # change. The backend is banking-api-v1 (reuses the existing one — the new product is
-# control-plane puro).
+# pure control plane).
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:

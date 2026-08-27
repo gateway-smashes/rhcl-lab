@@ -1,7 +1,7 @@
-# Service para demonstrar upstream HTTP/2 (h2c).
-# Aponta para os mesmos pods banking-api-v1 existentes no namespace.
-# O campo appProtocol: kubernetes.io/h2c instrui o Istio/Envoy a conectar
-# ao backend usando HTTP/2 cleartext (sem TLS).
+# Service to demonstrate HTTP/2 (h2c) upstream.
+# Points at the same existing banking-api-v1 pods in the namespace.
+# The appProtocol: kubernetes.io/h2c field instructs Istio/Envoy to connect
+# to the backend using HTTP/2 cleartext (no TLS).
 #
 # Reference: https://kubernetes.io/docs/concepts/services-networking/service/#application-protocol
 # Reference: https://istio.io/latest/docs/ops/configuration/traffic-management/protocol-selection/

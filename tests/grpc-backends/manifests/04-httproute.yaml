@@ -1,13 +1,13 @@
 # HTTPRoute for req048 — routes gRPC traffic via the RHCL gateway.
 #
-# O gRPC usa paths no formato /package.Service/Method (ex:
-# /io.gatewaysmashes.rhcl.grpc.BankingService/GetSummary). O HTTPRoute roteia
+# gRPC uses paths in the format /package.Service/Method (e.g.
+# /io.gatewaysmashes.rhcl.grpc.BankingService/GetSummary). The HTTPRoute routes
 # all traffic (PathPrefix /) to the gRPC backend, with no URLRewrite,
-# para que os paths gRPC cheguem intactos ao servidor.
+# so that the gRPC paths reach the server intact.
 #
 # Placeholders substituted by the apply.sh script via sed:
 #   {{ namespace }}         → req048-grpc
-#   {{ gateway_name }}      → nome do gateway detectado
+#   {{ gateway_name }}      → detected gateway name
 #   {{ gateway_namespace }} → openshift-ingress
 #   {{ hostname }}          → req048-grpc.<CLUSTER_DOMAIN>
 apiVersion: gateway.networking.k8s.io/v1

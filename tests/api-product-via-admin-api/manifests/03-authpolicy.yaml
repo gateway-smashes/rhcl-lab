@@ -1,6 +1,6 @@
 # PIX API — AuthPolicy: api-key required (header `api-key`), except OPTIONS preflight.
-# Selector pega secrets com label app=pix-api-keys (isolado das chaves do banking-api).
-# response.success.filters exporta userid/plan-id pra correlacionar com a PlanPolicy.
+# Selector picks secrets labeled app=pix-api-keys (isolated from the banking-api keys).
+# response.success.filters exports userid/plan-id to correlate with the PlanPolicy.
 apiVersion: kuadrant.io/v1
 kind: AuthPolicy
 metadata:
@@ -23,8 +23,8 @@ spec:
         when:
           - predicate: "request.method != 'OPTIONS'"
         apiKey:
-          # true: Authorino busca Secrets em QUALQUER ns (o Authorino vive no ns
-          # dele — kuadrant-system; o Secret da api-key vive em rhcl-apps). Sem
+          # true: Authorino looks for Secrets in ANY ns (Authorino lives in its own
+          # ns — kuadrant-system; the api-key Secret lives in rhcl-apps). Without
           # this, Authorino does not see the Secret and returns 401 "missing api-key header".
           allNamespaces: true
           selector:
@@ -45,9 +45,9 @@ spec:
                 plan-id:
                   selector: auth.identity.metadata.annotations.secret\.kuadrant\.io/plan-id
         headers:
-          # x-consumer-id: nome do Secret da api-key (ex.: pix-api-key-tester).
-          # Capturado pelo Telemetry CR do req041 como label `request_headers_x_consumer_id`
-          # no `istio_requests_total` → alimenta o card "Top consumers" no
+          # x-consumer-id: name of the api-key Secret (e.g., pix-api-key-tester).
+          # Captured by the req041 Telemetry CR as label `request_headers_x_consumer_id`
+          # on `istio_requests_total` → feeds the "Top consumers" card in the
           # custom-rhcl-console plugin (API Product detail).
           x-consumer-id:
             plain:

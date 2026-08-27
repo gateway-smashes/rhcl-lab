@@ -1,8 +1,8 @@
 # Kuadrant CR — enables RHCL metrics and tracing
 #
-# Este arquivo NÃO deve ser usado com "oc apply -f". Use "oc patch" para
-# adicionar apenas o campo observability sem sobrescrever outros campos
-# do CR Kuadrant existente:
+# This file must NOT be used with "oc apply -f". Use "oc patch" to
+# add only the observability field without overwriting other fields
+# of the existing Kuadrant CR:
 #
 #   oc -n kuadrant-system patch kuadrant kuadrant --type=merge \
 #     -p "$(yq -o=json '.spec | {"spec": .}' tests/opentelemetry-traces-metrics/manifests/07-kuadrant-observability.yaml)"
