@@ -699,6 +699,21 @@ apps_ledger_route_name: "{{ lookup('ansible.builtin.env', 'APPS_LEDGER_ROUTE_NAM
 apps_ledger_route_hostname: "{{ lookup('ansible.builtin.env', 'APPS_LEDGER_ROUTE_HOSTNAME') | default('', true) }}"
 apps_ledger_http_listener_name: "{{ lookup('ansible.builtin.env', 'APPS_LEDGER_HTTP_LISTENER_NAME') | default('ledger-http', true) }}"
 apps_ledger_auth_policy_name: "{{ lookup('ansible.builtin.env', 'APPS_LEDGER_AUTH_POLICY_NAME') | default('ledger-allow-public', true) }}"
+# --- load-generator: continuous traffic / 5xx generator (demo utility, OFF by default) ---
+# Quarkus app (apps/backend/load-generator) that fires a tunable stream of requests
+# at the gateway — a configurable 5xx share via banking-api /api/test/echo-error —
+# to feed the dashboards, error logs and traces. It CALLS the gateway (no HTTPRoute/
+# AuthPolicy of its own). Off unless APPS_LOAD_GENERATOR_ENABLED=true; toggling it
+# off removes its Deployment/Service/Route/BuildConfig/ImageStream on the next install.
+apps_load_generator_enabled: "{{ lookup('ansible.builtin.env', 'APPS_LOAD_GENERATOR_ENABLED') | default('false', true) | bool }}"
+apps_load_generator_name: "{{ lookup('ansible.builtin.env', 'APPS_LOAD_GENERATOR_NAME') | default('load-generator', true) }}"
+apps_load_generator_image_name: "{{ lookup('ansible.builtin.env', 'APPS_LOAD_GENERATOR_IMAGE_NAME') | default('load-generator', true) }}"
+apps_load_generator_source_dir: "{{ lookup('ansible.builtin.env', 'APPS_LOAD_GENERATOR_SOURCE_DIR') | default('', true) }}"
+apps_load_generator_rps: "{{ lookup('ansible.builtin.env', 'APPS_LOAD_GENERATOR_RPS') | default('5', true) }}"
+apps_load_generator_error_rate: "{{ lookup('ansible.builtin.env', 'APPS_LOAD_GENERATOR_ERROR_RATE') | default('0.8', true) }}"
+apps_load_generator_autostart: "{{ lookup('ansible.builtin.env', 'APPS_LOAD_GENERATOR_AUTOSTART') | default('true', true) }}"
+apps_load_generator_api_key_secret: "{{ lookup('ansible.builtin.env', 'APPS_LOAD_GENERATOR_API_KEY_SECRET') | default('banking-api-key-alice', true) }}"
+apps_load_generator_api_key_secret_key: "{{ lookup('ansible.builtin.env', 'APPS_LOAD_GENERATOR_API_KEY_SECRET_KEY') | default('api_key', true) }}"
 
 # PIX API — second demo product on top of the same gateway. Mock backend
 # (quay.io/jsimas/mock-api) so the deploy is cheap; the value of having

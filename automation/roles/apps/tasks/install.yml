@@ -67,6 +67,12 @@
         if (apps_ledger_source_dir | trim | length) > 0
         else (playbook_dir ~ '/../../apps/backend/ledger-api')
       }}
+    apps_load_generator_source_dir_resolved: >-
+      {{
+        (apps_load_generator_source_dir | trim)
+        if (apps_load_generator_source_dir | trim | length) > 0
+        else (playbook_dir ~ '/../../apps/backend/load-generator')
+      }}
 
 - name: Assert RHOAI MaaS API key is set when RHOAI app is enabled
   ansible.builtin.assert:
@@ -1380,3 +1386,87 @@
   retries: "{{ apps_wait_retries | int }}"
   delay: "{{ apps_wait_delay | int }}"
   when: apps_ipfilter_enabled
+
+# ---------------------------------------------------------------------------
+# load-generator — continuous traffic / 5xx generator (demo utility).
+# Self-contained and gated by apps_load_generator_enabled (default false): off
+# unless requested, and torn down when disabled. It CALLS the gateway, so there
+# is no HTTPRoute/AuthPolicy — just ImageStream/BuildConfig/Deployment/Service/
+# Route. Placed last so the connectivity api-key Secret it references exists.
+# ---------------------------------------------------------------------------
+- name: Apply load-generator resources
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', item) | from_yaml }}"
+  loop:
+    - load-generator-imagestream.yml.j2
+    - load-generator-buildconfig.yml.j2
+    - load-generator-service.yml.j2
+    - load-generator-deployment.yml.j2
+    - load-generator-route.yml.j2
+  when: apps_load_generator_enabled
+
+- name: Start the load-generator image build
+  ansible.builtin.command:
+    argv:
+      - oc
+      - start-build
+      - "bc/{{ apps_load_generator_image_name }}"
+      - "--from-dir={{ apps_load_generator_source_dir_resolved }}"
+      - -n
+      - "{{ apps_namespace }}"
+      - --wait=true
+      - --follow=true
+  register: apps_load_generator_build
+  changed_when: true
+  when:
+    - apps_load_generator_enabled
+    - not apps_skip_build
+    - apps_image_source != 'quay'
+
+- name: Trigger load-generator rollout when the build is skipped or image comes from Quay
+  ansible.builtin.command:
+    argv:
+      - oc
+      - rollout
+      - restart
+      - "deployment/{{ apps_load_generator_name }}"
+      - -n
+      - "{{ apps_namespace }}"
+  changed_when: true
+  when:
+    - apps_load_generator_enabled
+    - apps_skip_build or apps_image_source == 'quay'
+
+- name: Wait for load-generator deployment availability
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ apps_namespace }}"
+    name: "{{ apps_load_generator_name }}"
+  register: apps_load_generator_deployment
+  changed_when: false
+  failed_when: false
+  until:
+    - apps_load_generator_deployment.resources | length == 1
+    - (apps_load_generator_deployment.resources[0].status.availableReplicas | default(0)) | int >= 1
+  retries: "{{ apps_wait_retries | int }}"
+  delay: "{{ apps_wait_delay | int }}"
+  when: apps_load_generator_enabled
+
+- name: Remove load-generator resources when disabled
+  kubernetes.core.k8s:
+    state: absent
+    api_version: "{{ item.api_version }}"
+    kind: "{{ item.kind }}"
+    namespace: "{{ apps_namespace }}"
+    name: "{{ item.name }}"
+  loop:
+    - {api_version: apps/v1, kind: Deployment, name: "{{ apps_load_generator_name }}"}
+    - {api_version: v1, kind: Service, name: "{{ apps_load_generator_name }}"}
+    - {api_version: route.openshift.io/v1, kind: Route, name: "{{ apps_load_generator_name }}"}
+    - {api_version: build.openshift.io/v1, kind: BuildConfig, name: "{{ apps_load_generator_image_name }}"}
+    - {api_version: image.openshift.io/v1, kind: ImageStream, name: "{{ apps_load_generator_image_name }}"}
+  loop_control:
+    label: "{{ item.kind }}/{{ item.name }}"
+  when: not apps_load_generator_enabled

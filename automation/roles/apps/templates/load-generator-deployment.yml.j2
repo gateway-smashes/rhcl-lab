@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ apps_load_generator_name }}
+  namespace: {{ apps_namespace }}
+  labels:
+    app.kubernetes.io/part-of: rhcl-banking-poc
+  annotations:
+    image.openshift.io/triggers: |-
+      [{"from":{"kind":"ImageStreamTag","name":"{{ apps_load_generator_image_name }}:latest","namespace":"{{ apps_namespace }}"},"fieldPath":"spec.template.spec.containers[?(@.name==\"{{ apps_load_generator_name }}\")].image"}]
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: {{ apps_load_generator_name }}
+  template:
+    metadata:
+      labels:
+        app: {{ apps_load_generator_name }}
+    spec:
+      containers:
+        - name: {{ apps_load_generator_name }}
+          image: image-registry.openshift-image-registry.svc:5000/{{ apps_namespace }}/{{ apps_load_generator_image_name }}:latest
+          imagePullPolicy: Always
+          env:
+            - name: APP_INSTANCE_NAME
+              value: {{ apps_load_generator_name }}
+            # Target the banking-api gateway host (exercises the full RHCL path,
+            # so the gateway dashboards/logs/traces light up).
+            - name: LOADGEN_TARGET_BASE_URL
+              value: "https://{{ apps_connectivity_route_hostname_resolved }}"
+            # api-key for the authenticated endpoints, from the gold-tier Secret
+            # the connectivity apikey task creates ({{ apps_load_generator_api_key_secret }}).
+            - name: LOADGEN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ apps_load_generator_api_key_secret }}
+                  key: {{ apps_load_generator_api_key_secret_key }}
+            - name: LOADGEN_RPS
+              value: "{{ apps_load_generator_rps }}"
+            - name: LOADGEN_ERROR_RATE
+              value: "{{ apps_load_generator_error_rate }}"
+            - name: LOADGEN_AUTOSTART
+              value: "{{ apps_load_generator_autostart }}"
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20

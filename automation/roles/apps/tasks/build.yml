@@ -12,11 +12,11 @@
 - name: Assert build target is supported
   ansible.builtin.assert:
     that:
-      - apps_build_target in ['all', 'backend', 'frontend', 'ipfilter', 'rhoai', 'rhoai-backend', 'rhoai-frontend', 'ledger']
+      - apps_build_target in ['all', 'backend', 'frontend', 'ipfilter', 'rhoai', 'rhoai-backend', 'rhoai-frontend', 'ledger', 'load-generator']
     fail_msg: >-
       apps_build_target='{{ apps_build_target }}' is invalid. Set
       APPS_BUILD_TARGET to 'all' (default), 'backend', 'frontend', 'ipfilter',
-      'rhoai', 'rhoai-backend', 'rhoai-frontend', or 'ledger'.
+      'rhoai', 'rhoai-backend', 'rhoai-frontend', 'ledger', or 'load-generator'.
 
 - name: Resolve application source directories
   ansible.builtin.set_fact:
@@ -56,6 +56,12 @@
         if (apps_ledger_source_dir | trim | length) > 0
         else (playbook_dir ~ '/../../apps/backend/ledger-api')
       }}
+    apps_load_generator_source_dir_resolved: >-
+      {{
+        (apps_load_generator_source_dir | trim)
+        if (apps_load_generator_source_dir | trim | length) > 0
+        else (playbook_dir ~ '/../../apps/backend/load-generator')
+      }}
 
 - name: Build a list of targets to rebuild
   ansible.builtin.set_fact:
@@ -78,6 +84,9 @@
         +
         ([{'name': 'ledger', 'bc': apps_ledger_image_name, 'dir': apps_ledger_source_dir_resolved | trim}]
           if apps_ledger_enabled and apps_build_target in ['all', 'ledger'] else [])
+        +
+        ([{'name': 'load-generator', 'bc': apps_load_generator_image_name, 'dir': apps_load_generator_source_dir_resolved | trim}]
+          if apps_load_generator_enabled and apps_build_target in ['all', 'load-generator'] else [])
       }}
 
 - name: Stat resolved application source directories
