@@ -153,6 +153,36 @@ gateway_api_controller_wait_retries: "{{ lookup('ansible.builtin.env', 'GATEWAY_
 gateway_api_controller_wait_delay: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_CONTROLLER_WAIT_DELAY') | default('5', true) | int }}"
 gateway_api_controller_wait_strict: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_CONTROLLER_WAIT_STRICT') | default('true', true) | bool }}"
 
+# OpenShift Service Mesh 3 (servicemeshoperator3 / the Sail operator) is the
+# controller behind the gateway. On OCP 4.19+ Gateway API is GA, but the
+# `openshift.io/gateway-controller/v1` controller — istiod-openshift-gateway in
+# openshift-ingress, provisioned by the cluster ingress operator — only comes
+# up once OSSM 3 is installed. Without it the GatewayClass is created but never
+# Accepted and the controller-wait fails with "istiod Deployments found: none".
+# The gateway_api role subscribes it (openshift-operators uses the cluster's
+# global OperatorGroup, so no OperatorGroup is created here).
+#
+# Gated by gateway_api_install_operator, which — like rhcl_install_operator and
+# the other per-role toggles — defaults to OPERATORS_INSTALL_ENABLED. Set it to
+# false (Banco do Brasil manual-operator profile) to verify-only: the role then
+# asserts the OSSM 3 CRD is already present and fails with an actionable message
+# instead of subscribing it.
+gateway_api_install_operator: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_INSTALL_OPERATOR') | default(operators_install_enabled, true) | bool }}"
+gateway_api_ossm_namespace: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_OSSM_NAMESPACE') | default('openshift-operators', true) }}"
+gateway_api_ossm_operator_name: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_OSSM_OPERATOR_NAME') | default('servicemeshoperator3', true) }}"
+gateway_api_ossm_subscription_name: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_OSSM_SUBSCRIPTION_NAME') | default('servicemeshoperator3', true) }}"
+gateway_api_ossm_channel: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_OSSM_CHANNEL') | default('stable', true) }}"
+gateway_api_ossm_source: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_OSSM_SOURCE') | default('redhat-operators', true) }}"
+gateway_api_ossm_source_namespace: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_OSSM_SOURCE_NAMESPACE') | default('openshift-marketplace', true) }}"
+# Optional pin. Leave empty to let OLM resolve the channel head (validated on
+# servicemeshoperator3.v3.4.2); set to pin a specific CSV for reproductions.
+gateway_api_ossm_starting_csv: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_OSSM_STARTING_CSV') | default('', true) }}"
+# CRD used to verify OSSM 3 is present on the verify-only path (Sail operator's
+# primary CRD).
+gateway_api_ossm_crd: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_OSSM_CRD') | default('istios.sailoperator.io', true) }}"
+gateway_api_ossm_wait_retries: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_OSSM_WAIT_RETRIES') | default('30', true) | int }}"
+gateway_api_ossm_wait_delay: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_OSSM_WAIT_DELAY') | default('10', true) | int }}"
+
 cert_manager_namespace: "{{ lookup('ansible.builtin.env', 'CERT_MANAGER_NAMESPACE') | default('cert-manager-operator', true) }}"
 cert_manager_operator_name: "{{ lookup('ansible.builtin.env', 'CERT_MANAGER_OPERATOR_NAME') | default('openshift-cert-manager-operator', true) }}"
 cert_manager_subscription_name: "{{ lookup('ansible.builtin.env', 'CERT_MANAGER_SUBSCRIPTION_NAME') | default('openshift-cert-manager-operator', true) }}"

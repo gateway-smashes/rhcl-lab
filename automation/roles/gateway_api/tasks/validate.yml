@@ -36,6 +36,27 @@
       Gateway API native mode conflicts with an active OpenShift Service Mesh v2 subscription.
       Remove the conflicting subscription before validating RHCL prerequisites.
 
+# OSSM 3 is the controller behind the GatewayClass — istiod-openshift-gateway
+# only comes up once it is installed. Probe its CRD via `oc get crd` (the Python
+# kubernetes-client blows up on this call on some controller nodes).
+- name: Probe the OSSM 3 CRD
+  ansible.builtin.command:
+    cmd: "oc get crd {{ gateway_api_ossm_crd }} --ignore-not-found -o name"
+  register: gateway_api_ossm_crd_probe
+  changed_when: false
+
+- name: Assert that OpenShift Service Mesh 3 is installed
+  ansible.builtin.assert:
+    that:
+      - (gateway_api_ossm_crd_probe.stdout | default('') | length) > 0
+    fail_msg: >-
+      OpenShift Service Mesh 3 is not installed — the CRD
+      '{{ gateway_api_ossm_crd }}' is missing. The
+      '{{ gateway_api_gatewayclass_name }}' GatewayClass has no controller
+      without it. Install it (playbooks/gateway_api-install.yml does this) or
+      subscribe '{{ gateway_api_ossm_operator_name }}' in
+      '{{ gateway_api_ossm_namespace }}'.
+
 - name: Query the required GatewayClass
   kubernetes.core.k8s_info:
     api_version: gateway.networking.k8s.io/v1
