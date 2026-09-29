@@ -140,7 +140,15 @@ mcp_gateway_listener_update_if_exists: "{{ lookup('ansible.builtin.env', 'MCP_GA
 # parity clusters (pair with RHCL_PIN_V13_ENABLED=true).
 # See docs/known-issues/rhcl-14-gateway-wasm-incompat.md.
 gateway_api_gatewayclass_name: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_GATEWAYCLASS_NAME') | default('istio', true) }}"
-gateway_api_controller_name: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_CONTROLLER_NAME') | default('istio.io/gateway-controller', true) }}"
+# controllerName for the GatewayClass this role manages. On OCP 4.19+ the
+# built-in Gateway API implementation (istiod-openshift-gateway in
+# openshift-ingress, brought up by the cluster ingress operator once OSSM 3 is
+# installed) registers as `openshift.io/gateway-controller/v1` — this is the
+# value both the `istio` and `openshift-default` GatewayClasses carry on the
+# cluster. The old `istio.io/gateway-controller` never matched, so the
+# GatewayClass was created but never Accepted and the controller-wait failed.
+# See automation/README_TEST_INSTALLATION_GATEWAY_API.md.
+gateway_api_controller_name: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_CONTROLLER_NAME') | default('openshift.io/gateway-controller/v1', true) }}"
 gateway_api_controller_namespace: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_CONTROLLER_NAMESPACE') | default('openshift-ingress', true) }}"
 gateway_api_controller_deployment: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_CONTROLLER_DEPLOYMENT') | default('istiod-openshift-gateway', true) }}"
 # Espera pelo controller do gateway. O teto era 300s (30x10s) e, como a task
