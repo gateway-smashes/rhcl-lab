@@ -1,0 +1,14 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: {{ gateway_api_ossm_subscription_name }}
+  namespace: {{ gateway_api_ossm_namespace }}
+spec:
+  channel: {{ gateway_api_ossm_channel }}
+  installPlanApproval: Automatic
+  name: {{ gateway_api_ossm_operator_name }}
+  source: {{ gateway_api_ossm_source }}
+  sourceNamespace: {{ gateway_api_ossm_source_namespace }}
+{% if gateway_api_ossm_starting_csv | length > 0 %}
+  startingCSV: {{ gateway_api_ossm_starting_csv }}
+{% endif %}

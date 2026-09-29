@@ -6,7 +6,21 @@ This guide validates the Gateway API prerequisite installed by `playbooks/gatewa
 
 - `KUBECONFIG` points to the target cluster, or `oc login` already created a working context
 - OpenShift `4.19+`
-- `GatewayClass` `openshift-default` was applied by the automation
+- The `GatewayClass` (default `istio`) was applied by the automation
+
+## What the playbook installs
+
+The `openshift.io/gateway-controller/v1` controller — `istiod-openshift-gateway`
+in `openshift-ingress`, provisioned by the cluster ingress operator — only comes
+up once **Red Hat OpenShift Service Mesh 3** (`servicemeshoperator3`, the Sail
+operator) is installed. The `gateway_api` role therefore subscribes OSSM 3
+(channel `stable`, in `openshift-operators`) before applying the GatewayClass,
+then waits for `istiod-openshift-gateway` to report an available replica.
+
+On the manual-operator profile, set `GATEWAY_API_INSTALL_OPERATOR=false` (or
+`OPERATORS_INSTALL_ENABLED=false`): the role then verifies OSSM 3 is already
+present (CRD `istios.sailoperator.io`) instead of subscribing it, and fails with
+an actionable message if it is missing.
 
 ## Run the playbook
 
@@ -14,6 +28,18 @@ This guide validates the Gateway API prerequisite installed by `playbooks/gatewa
 cd automation
 ANSIBLE_LOCAL_TEMP=/private/tmp/ansible-local ansible-playbook playbooks/gateway_api-install.yml
 ```
+
+## Verify OpenShift Service Mesh 3
+
+```bash
+oc get crd istios.sailoperator.io
+oc -n openshift-operators get csv | grep servicemeshoperator3
+```
+
+Expected result:
+
+- CRD `istios.sailoperator.io` exists
+- the `servicemeshoperator3` CSV `PHASE` is `Succeeded`
 
 ## Verify the GatewayClass
 

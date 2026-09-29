@@ -36,6 +36,112 @@
       Gateway API native mode conflicts with an active OpenShift Service Mesh v2 subscription.
       Remove the conflicting subscription before enabling Gateway API.
 
+# ---------------------------------------------------------------------------
+# OpenShift Service Mesh 3 (servicemeshoperator3 / Sail operator) — the
+# controller behind the gateway.
+#
+# On OCP 4.19+ Gateway API is GA, but the `openshift.io/gateway-controller/v1`
+# controller (istiod-openshift-gateway in openshift-ingress, provisioned by the
+# cluster ingress operator) only comes up once OSSM 3 is installed. Without it
+# the GatewayClass below is created but never Accepted, and the controller-wait
+# at the end of this file fails with "istiod Deployments found: none".
+#
+# openshift-operators ships the cluster's global OperatorGroup, so we only add
+# a Subscription here (no OperatorGroup, which would clash with the global one).
+#
+# Gated by gateway_api_install_operator (defaults to OPERATORS_INSTALL_ENABLED):
+# when false we verify-only — assert the OSSM 3 CRD is already present and fail
+# with an actionable message otherwise (manual-operator profile).
+# ---------------------------------------------------------------------------
+- name: Ensure the OpenShift Service Mesh 3 Subscription exists
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'ossm-subscription.yml.j2') | from_yaml }}"
+  when: gateway_api_install_operator | bool
+
+- name: Wait for the OSSM 3 subscription to report a current CSV
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ gateway_api_ossm_namespace }}"
+    name: "{{ gateway_api_ossm_subscription_name }}"
+  register: gateway_api_ossm_subscription
+  changed_when: false
+  failed_when: false
+  until:
+    - gateway_api_ossm_subscription.resources | length == 1
+    - gateway_api_ossm_subscription.resources[0].status.currentCSV is defined
+  retries: "{{ gateway_api_ossm_wait_retries | int }}"
+  delay: "{{ gateway_api_ossm_wait_delay | int }}"
+  when: gateway_api_install_operator | bool
+
+- name: Wait for the OSSM 3 CSV to succeed
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ gateway_api_ossm_namespace }}"
+    name: "{{ gateway_api_ossm_subscription.resources[0].status.currentCSV }}"
+  register: gateway_api_ossm_csv
+  changed_when: false
+  failed_when: false
+  until:
+    - gateway_api_ossm_csv.resources | length == 1
+    - gateway_api_ossm_csv.resources[0].status.phase == "Succeeded"
+  retries: "{{ gateway_api_ossm_wait_retries | int }}"
+  delay: "{{ gateway_api_ossm_wait_delay | int }}"
+  when:
+    - gateway_api_install_operator | bool
+    - gateway_api_ossm_subscription.resources | default([]) | length == 1
+    - gateway_api_ossm_subscription.resources[0].status.currentCSV is defined
+
+- name: Fail when OSSM 3 did not reach Succeeded
+  ansible.builtin.assert:
+    # Single expression so Jinja's `and` short-circuits: indexing [0] on an
+    # empty resources list would otherwise blow up before the length guard.
+    that:
+      - >-
+        (gateway_api_ossm_csv.resources | default([]) | length == 1)
+        and ((gateway_api_ossm_csv.resources | default([]))[0].status.phase | default('')) == "Succeeded"
+    fail_msg: >-
+      OpenShift Service Mesh 3 ('{{ gateway_api_ossm_operator_name }}',
+      channel '{{ gateway_api_ossm_channel }}') did not reach a Succeeded CSV in
+      '{{ gateway_api_ossm_namespace }}' within
+      {{ (gateway_api_ossm_wait_retries | int) * (gateway_api_ossm_wait_delay | int) }}s.
+      The '{{ gateway_api_gatewayclass_name }}' GatewayClass has no controller
+      without it. Check the Subscription / InstallPlan in
+      '{{ gateway_api_ossm_namespace }}'.
+  when: gateway_api_install_operator | bool
+
+# Verify-only path (gateway_api_install_operator=false). Use `oc get crd`
+# instead of kubernetes.core.k8s_info — the Python kubernetes-client on the
+# customer's controller node blows up with `ResourceField.__init__() got
+# multiple values for argument 'self'` (same reason as the rhcl / observability
+# roles).
+- name: Probe the OSSM 3 CRD (GATEWAY_API_INSTALL_OPERATOR=false)
+  ansible.builtin.command:
+    cmd: "oc get crd {{ gateway_api_ossm_crd }} --ignore-not-found -o name"
+  register: gateway_api_ossm_crd_probe
+  changed_when: false
+  when: not (gateway_api_install_operator | bool)
+
+- name: Verify OpenShift Service Mesh 3 is present
+  ansible.builtin.assert:
+    that:
+      - (gateway_api_ossm_crd_probe.stdout | default('') | length) > 0
+    fail_msg: >-
+      GATEWAY_API_INSTALL_OPERATOR=false (or OPERATORS_INSTALL_ENABLED=false)
+      but OpenShift Service Mesh 3 is not installed — the CRD
+      '{{ gateway_api_ossm_crd }}' is missing. The
+      '{{ gateway_api_gatewayclass_name }}' GatewayClass has no controller
+      without it (istiod-openshift-gateway never comes up in
+      '{{ gateway_api_controller_namespace }}'). Install it manually — a
+      Subscription '{{ gateway_api_ossm_subscription_name }}' for package
+      '{{ gateway_api_ossm_operator_name }}' (channel
+      '{{ gateway_api_ossm_channel }}', source '{{ gateway_api_ossm_source }}')
+      in '{{ gateway_api_ossm_namespace }}' — or set
+      GATEWAY_API_INSTALL_OPERATOR=true.
+  when: not (gateway_api_install_operator | bool)
+
 # GatewayClass.spec.controllerName is IMMUTABLE per the Gateway API schema.
 # We have to handle three cases distinctly:
 #
@@ -168,10 +274,10 @@
 # every run and still reported success. Say what was looked for instead.
 # Only on the failure path: find the istiod Deployments the cluster actually
 # runs so the error names the candidates instead of asking for a manual grep.
-# Which istiod serves `istio.io/gateway-controller` differs by install — the
-# OpenShift Ingress Operator provisions istiod-openshift-gateway in
-# openshift-ingress, while a standalone Service Mesh runs its own istiod in
-# istio-system.
+# Which istiod serves `openshift.io/gateway-controller/v1` differs by install —
+# the OpenShift Ingress Operator provisions istiod-openshift-gateway in
+# openshift-ingress (once OSSM 3 is installed, above), while a standalone
+# Service Mesh runs its own istiod in istio-system.
 - name: Look up istiod Deployments to name the candidates
   kubernetes.core.k8s_info:
     api_version: apps/v1
