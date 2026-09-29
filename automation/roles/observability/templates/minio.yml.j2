@@ -37,6 +37,12 @@ metadata:
     app: minio
 spec:
   replicas: 1
+  # RWO PVC (minio-data): a RollingUpdate would try to start the new pod
+  # before the old one releases the volume, and it deadlocks on a
+  # Multi-Attach error ("Volume is already exclusively attached to one node").
+  # Recreate tears the old pod down first, so the new one can attach.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: minio
@@ -49,7 +55,13 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: minio
-          image: quay.io/minio/minio:latest
+          # Mirrored to quay.io/gateway-smashes (source of truth) from
+          # cgr.dev/chainguard/minio:latest. MinIO gated anonymous pulls on
+          # quay.io/minio/* and docker.io/minio/* in 2025 ("unauthorized"),
+          # which broke this image on clean clusters. The Chainguard build is
+          # nonroot, tolerates OpenShift's arbitrary uid, and its entrypoint is
+          # /usr/bin/minio, so the `server …` args below work unchanged.
+          image: quay.io/gateway-smashes/minio:latest
           imagePullPolicy: IfNotPresent
           args:
             - server
@@ -151,7 +163,13 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: mc
-          image: quay.io/minio/mc:latest
+          # Mirrored to quay.io/gateway-smashes (source of truth) from
+          # cgr.dev/chainguard/minio-client:latest-dev. Same 2025 pull gating
+          # as the minio server image above (quay.io/minio/mc + docker.io/minio/mc
+          # now return "unauthorized"). The `-dev` Chainguard variant ships
+          # /bin/sh, which the retry loop below (command: /bin/sh -c) needs;
+          # it is nonroot and tolerates OpenShift's arbitrary uid.
+          image: quay.io/gateway-smashes/minio-client:latest
           imagePullPolicy: IfNotPresent
           envFrom:
             - secretRef:
