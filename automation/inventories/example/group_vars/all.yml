@@ -1076,21 +1076,21 @@ apps_connectivity_anonymous_extra_paths: "{{ (lookup('ansible.builtin.env', 'APP
 
 # ---------------------------------------------------------------------------
 # Custom RHCL Console — OpenShift Console dynamic plugin.
-# Repo: github.com/redhat-rhcl-poc/custom-rhcl-console (privado).
+# Repo: github.com/gateway-smashes/kuadrant-console (source of truth).
 # Instalado pela role custom_console / custom_console-install.yml (também roda
 # no fim do install-all). Toggle com CUSTOM_CONSOLE_ENABLED=false.
 # ---------------------------------------------------------------------------
 custom_console_enabled: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_ENABLED') | default('true', true) | bool }}"
-custom_console_namespace: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_NAMESPACE') | default('custom-rhcl-console', true) }}"
+custom_console_namespace: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_NAMESPACE') | default('kuadrant-console', true) }}"
 custom_console_name: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_NAME') | default('custom-rhcl-console', true) }}"
-custom_console_plugin_name: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_PLUGIN_NAME') | default('custom-rhcl-console', true) }}"
+custom_console_plugin_name: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_PLUGIN_NAME') | default('kuadrant-console', true) }}"
 custom_console_display_name: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DISPLAY_NAME') | default('Connectivity Link', true) }}"
 # Runtime ConfigMap consumed by the plugin's pluginConfig.usePluginConfig
 # hook. Hosts the per-environment overrides we don't want baked into the
 # image (Grafana / Tempo discovery, Developer Portal URL, the req018
 # Cost Monitoring pricing table). The plugin watches it via
 # useK8sWatchResource, so a `data:` edit propagates without a rollout.
-custom_console_config_configmap_name: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_CONFIG_CONFIGMAP_NAME') | default('custom-rhcl-console-config', true) }}"
+custom_console_config_configmap_name: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_CONFIG_CONFIGMAP_NAME') | default('kuadrant-console-config', true) }}"
 # Links absolutos que o browser abre direto. Deixe VAZIO para o role derivar
 # `https://<prefixo>.<apps-domain>` do próprio cluster (é o que o lab usa);
 # preencha para apontar a uma instância mantida pelo cliente. Se ficar vazio
@@ -1103,27 +1103,21 @@ custom_console_dns_prober_url: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE
 # plugin (padrão <rota>-<namespace>.<apps-domain>).
 custom_console_developer_portal_route_prefix: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DEVELOPER_PORTAL_ROUTE_PREFIX') | default('devportal', true) }}"
 custom_console_internal_developer_hub_route_prefix: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_INTERNAL_DEVELOPER_HUB_ROUTE_PREFIX') | default('rhdh', true) }}"
-custom_console_dns_prober_route_prefix: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DNS_PROBER_ROUTE_PREFIX') | default('dns-prober-custom-rhcl-console', true) }}"
+custom_console_dns_prober_route_prefix: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DNS_PROBER_ROUTE_PREFIX') | default('dns-prober-kuadrant-console', true) }}"
 custom_console_grafana_namespace: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_GRAFANA_NAMESPACE') | default('', true) }}"
 custom_console_grafana_route_name: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_GRAFANA_ROUTE_NAME') | default('', true) }}"
 custom_console_grafana_dashboard_prefix: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_GRAFANA_DASHBOARD_PREFIX') | default('', true) }}"
 custom_console_tempo_namespace: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_TEMPO_NAMESPACE') | default('', true) }}"
 custom_console_tempo_gateway_route_name: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_TEMPO_GATEWAY_ROUTE_NAME') | default('', true) }}"
 custom_console_tempo_stack_name: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_TEMPO_STACK_NAME') | default('', true) }}"
-# Imagem casada com a instalação que está rodando no cluster (tag pinada 1.1).
-# nginx do plugin serve HTTPS na porta 9001 (não 8080 como no exemplo do README).
-# Plugin do RHCL Console (custom). Default aponta pra `:latest` do fork
-# `hodrigohamalho/custom-rhcl-console`, que é a imagem mantida pela equipe
-# do PoC (Backends tab com Drawer, dedupe de backends, APIProduct backends
-# card, fluxo de APIKey approval via APIKeyApproval CR, etc.).
-#
-# A imagem antiga `quay.io/jsimas/custom-rhcl-console:1.1` ficou congelada
-# em julho/agosto de 2026 e não tem nenhum dos refactors. Não usar.
-#
-# `imagePullPolicy: Always` (também default) garante que cada rollout puxe
-# o digest mais recente da tag `:latest` — então um `oc rollout restart`
-# já atualiza o cluster sem precisar mexer aqui.
-custom_console_image: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_IMAGE') | default('quay.io/hodrigohamalho/custom-rhcl-console:1.0', true) }}"
+# Plugin do RHCL Console — imagem publicada em quay.io/gateway-smashes/kuadrant-console
+# (source of truth do org gateway-smashes). O nginx do plugin serve HTTPS na
+# porta 9001. O plugin id embutido é `kuadrant-console` e ele lê o ConfigMap
+# `kuadrant-console-config` no namespace `kuadrant-console` (hard-coded em
+# console-plugin/src/utils/pluginConfig.ts) — por isso os defaults de namespace,
+# plugin_name e configmap_name acima usam exatamente esses valores.
+# imagePullPolicy Always: um `oc rollout restart` puxa o digest mais novo da tag.
+custom_console_image: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_IMAGE') | default('quay.io/gateway-smashes/kuadrant-console:1.5.1', true) }}"
 custom_console_image_pull_policy: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_IMAGE_PULL_POLICY') | default('Always', true) }}"
 custom_console_image_pull_secret: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_IMAGE_PULL_SECRET') | default('', true) }}"
 custom_console_replicas: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_REPLICAS') | default('1', true) | int }}"

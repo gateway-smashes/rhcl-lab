@@ -133,10 +133,10 @@ developer_hub_keycloak_pod: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_KEY
 developer_hub_keycloak_admin_user: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_KEYCLOAK_ADMIN_USER') | default(rhbk_admin_username | default('admin'), true) }}"
 developer_hub_keycloak_admin_password: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_KEYCLOAK_ADMIN_PASSWORD') | default(rhbk_admin_password | default('redhat'), true) }}"
 
-# --- Console link wiring (custom-rhcl-console) ---
+# --- Console link wiring (kuadrant-console) ---
 developer_hub_wire_console_link: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_WIRE_CONSOLE_LINK') | default('true', true) | bool }}"
-developer_hub_console_config_namespace: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_CONSOLE_CONFIG_NAMESPACE') | default('custom-rhcl-console', true) }}"
-developer_hub_console_config_name: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_CONSOLE_CONFIG_NAME') | default('custom-rhcl-console-config', true) }}"
+developer_hub_console_config_namespace: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_CONSOLE_CONFIG_NAMESPACE') | default('kuadrant-console', true) }}"
+developer_hub_console_config_name: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_CONSOLE_CONFIG_NAME') | default('kuadrant-console-config', true) }}"
 
 # npm registry base (integrity hash lookup — no npm binary needed).
 developer_hub_npm_registry: "{{ lookup('ansible.builtin.env', 'DEVELOPER_HUB_NPM_REGISTRY') | default('https://registry.npmjs.org', true) }}"
