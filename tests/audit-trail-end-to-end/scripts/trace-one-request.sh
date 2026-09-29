@@ -20,7 +20,7 @@ HOST="${AUDIT_HOST:-}"                                     # REQUIRED: gateway h
 API_KEY="${AUDIT_API_KEY:-alice-gold-secret}"             # a valid consumer key
 REQ_PATH="${AUDIT_PATH:-/api/test/propagate?target=gateway&calls=2}"  # protected + returns traceId
 GW_NS="${AUDIT_GATEWAY_NS:-openshift-ingress}"
-GW_DEPLOY="${AUDIT_GATEWAY_DEPLOY:-rhcl-apps-gateway-openshift-default}"
+GW_DEPLOY="${AUDIT_GATEWAY_DEPLOY:-rhcl-apps-gateway-istio}"
 GW_CONTAINER="${AUDIT_ISTIO_CONTAINER:-istio-proxy}"
 TEMPO_TENANT="${AUDIT_TEMPO_TENANT:-dev}"
 TEMPO_ROUTE="${AUDIT_TEMPO_ROUTE:-}"                       # auto-derived if empty
