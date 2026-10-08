@@ -1127,6 +1127,40 @@ custom_console_service_port: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_S
 custom_console_cert_secret_name: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_CERT_SECRET_NAME') | default('custom-rhcl-console-cert', true) }}"
 custom_console_remove_namespace: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_REMOVE_NAMESPACE') | default('true', true) | bool }}"
 
+# DNS Prober companion — the service behind the ConsolePlugin `dns-prober`
+# proxy alias and the plugin's `dnsProberUrl` link. The role configures the
+# plugin to reach it; these knobs make the role also DEPLOY it (Deployment +
+# Service + Route in the plugin namespace), so the feature works on a fresh
+# install instead of needing a hand-built workload. Toggle with
+# CUSTOM_CONSOLE_DNS_PROBER_ENABLED=false.
+custom_console_dns_prober_enabled: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DNS_PROBER_ENABLED') | default('true', true) | bool }}"
+custom_console_dns_prober_name: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DNS_PROBER_NAME') | default('dns-prober', true) }}"
+# image = pull the published image (default). build = build in-cluster from the
+# kuadrant-console repo (dns-prober/ Dockerfile) via a BuildConfig, the
+# egress-free path when the external registry isn't reachable.
+custom_console_dns_prober_image_source: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DNS_PROBER_IMAGE_SOURCE') | default('image', true) }}"
+# Published in quay.io/gateway-smashes/kuadrant-console (same public repo as the
+# plugin image, dns-prober-* tags). Built from github.com/gateway-smashes/kuadrant-console
+# (dns-prober/) — a Quarkus service that serves HTTPS on 8443 from the minted
+# serving-cert and HTTP on 8080 for health probes.
+custom_console_dns_prober_image: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DNS_PROBER_IMAGE') | default('quay.io/gateway-smashes/kuadrant-console:dns-prober-1.0', true) }}"
+custom_console_dns_prober_image_pull_policy: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DNS_PROBER_IMAGE_PULL_POLICY') | default('Always', true) }}"
+custom_console_dns_prober_image_pull_secret: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DNS_PROBER_IMAGE_PULL_SECRET') | default('', true) }}"
+custom_console_dns_prober_replicas: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DNS_PROBER_REPLICAS') | default('1', true) | int }}"
+custom_console_dns_prober_http_port: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DNS_PROBER_HTTP_PORT') | default('8080', true) | int }}"
+custom_console_dns_prober_https_port: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DNS_PROBER_HTTPS_PORT') | default('8443', true) | int }}"
+# OpenShift serving-cert secret minted by the annotation on the prober Service;
+# Quarkus terminates TLS on the https port from it. The ConsolePlugin proxy
+# requires HTTPS on the target Service, so this is what makes the prober
+# reachable through /api/proxy/plugin/...
+custom_console_dns_prober_cert_secret_name: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DNS_PROBER_CERT_SECRET_NAME') | default('dns-prober-tls', true) }}"
+# In-cluster build source (only used when image_source=build).
+custom_console_dns_prober_git_uri: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DNS_PROBER_GIT_URI') | default('https://github.com/gateway-smashes/kuadrant-console.git', true) }}"
+custom_console_dns_prober_git_ref: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DNS_PROBER_GIT_REF') | default('', true) }}"
+custom_console_dns_prober_context_dir: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DNS_PROBER_CONTEXT_DIR') | default('/dns-prober', true) }}"
+custom_console_dns_prober_dockerfile_path: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DNS_PROBER_DOCKERFILE_PATH') | default('Dockerfile', true) }}"
+custom_console_dns_prober_git_source_secret: "{{ lookup('ansible.builtin.env', 'CUSTOM_CONSOLE_DNS_PROBER_GIT_SOURCE_SECRET') | default('', true) }}"
+
 # ---------------------------------------------------------------------------
 # Tests catalog (rhcl-lab-git) — site estático (nginx) que lista os req*/ + req*.md
 # e renderiza os READMEs (viewer/reproduzir). Builda da pasta tests/ deste repo.

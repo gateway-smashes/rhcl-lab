@@ -41,3 +41,26 @@
       the ConsolePlugin '{{ custom_console_plugin_name }}', and that it's listed in
       console.operator/cluster spec.plugins.
     success_msg: "Custom RHCL Console is deployed, registered, and enabled."
+
+- name: Assert the DNS Prober companion is available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ custom_console_namespace }}"
+    name: "{{ custom_console_dns_prober_name }}"
+  register: custom_console_dns_prober_deploy
+  changed_when: false
+  when: custom_console_dns_prober_enabled | bool
+
+- name: Fail when the DNS Prober companion is not available
+  ansible.builtin.assert:
+    that:
+      - custom_console_dns_prober_deploy.resources | length == 1
+      - (custom_console_dns_prober_deploy.resources[0].status.availableReplicas | default(0)) >= 1
+    fail_msg: >-
+      DNS Prober enabled but its Deployment '{{ custom_console_dns_prober_name }}' in
+      '{{ custom_console_namespace }}' is not available — the ConsolePlugin `dns-prober`
+      proxy target would be dead. Check the pod and the '{{ custom_console_dns_prober_cert_secret_name }}'
+      serving-cert secret.
+    success_msg: "DNS Prober companion is deployed and available."
+  when: custom_console_dns_prober_enabled | bool

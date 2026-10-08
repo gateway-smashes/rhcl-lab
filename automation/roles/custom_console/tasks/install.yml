@@ -11,6 +11,58 @@
     name: "{{ custom_console_namespace }}"
     state: present
 
+# --- DNS Prober companion (the ConsolePlugin `dns-prober` proxy target) ------
+# The role already *configures* the plugin to reach a prober (dnsProberUrl in
+# the ConfigMap + the `dns-prober` proxy alias on the ConsolePlugin), but until
+# now nothing deployed the prober itself, so the feature was dead on a fresh
+# install. Deploy it here, in the plugin's own namespace, gated by
+# custom_console_dns_prober_enabled. image_source=build builds it in-cluster
+# from the kuadrant-console repo; otherwise the workload pulls the published
+# quay.io/gateway-smashes image.
+- name: Create the DNS Prober ImageStream + BuildConfig (Git source)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'dns-prober-build.yml.j2') | from_yaml_all | list }}"
+  when:
+    - custom_console_dns_prober_enabled | bool
+    - custom_console_dns_prober_image_source == 'build'
+
+- name: Start a DNS Prober build (picks up the latest dns-prober/ content)
+  ansible.builtin.command:
+    argv: "{{ ['oc'] + (['--kubeconfig=' ~ kcfg] if kcfg | length > 0 else []) + ['-n', custom_console_namespace, 'start-build', custom_console_dns_prober_name] }}"
+  vars:
+    kcfg: "{{ lookup('ansible.builtin.env', 'KUBECONFIG') }}"
+  register: custom_console_dns_prober_build
+  changed_when: "'started' in (custom_console_dns_prober_build.stdout | default(''))"
+  failed_when: false
+  when:
+    - custom_console_dns_prober_enabled | bool
+    - custom_console_dns_prober_image_source == 'build'
+
+- name: Wait for the DNS Prober image to be available in the ImageStream
+  kubernetes.core.k8s_info:
+    api_version: image.openshift.io/v1
+    kind: ImageStream
+    namespace: "{{ custom_console_namespace }}"
+    name: "{{ custom_console_dns_prober_name }}"
+  register: custom_console_dns_prober_is
+  changed_when: false
+  failed_when: false
+  until:
+    - custom_console_dns_prober_is.resources | length == 1
+    - (custom_console_dns_prober_is.resources[0].status.tags | default([])) | length > 0
+  retries: 40
+  delay: 15
+  when:
+    - custom_console_dns_prober_enabled | bool
+    - custom_console_dns_prober_image_source == 'build'
+
+- name: Deploy the DNS Prober companion (ServiceAccount + Deployment + Service + Route)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'dns-prober.yml.j2') | from_yaml_all | list }}"
+  when: custom_console_dns_prober_enabled | bool
+
 # The Developer Portal / Developer Hub links are absolute URLs the browser
 # opens directly, so they can't be relative — but hard-coding them per cluster
 # would break every other install. Derive them from the cluster's own apps
