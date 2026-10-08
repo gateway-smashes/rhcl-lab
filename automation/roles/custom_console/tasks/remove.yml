@@ -35,6 +35,28 @@
     name: "{{ custom_console_plugin_name }}"
     state: absent
 
+# When the namespace is preserved, tear down the DNS Prober companion
+# explicitly (the namespace deletion below covers the usual case). Not gated on
+# custom_console_dns_prober_enabled so toggling the prober off and removing the
+# role still cleans up a previously deployed one.
+- name: Remove the DNS Prober companion objects
+  kubernetes.core.k8s:
+    api_version: "{{ item.api_version }}"
+    kind: "{{ item.kind }}"
+    namespace: "{{ custom_console_namespace }}"
+    name: "{{ custom_console_dns_prober_name }}"
+    state: absent
+  loop:
+    - { api_version: route.openshift.io/v1, kind: Route }
+    - { api_version: apps/v1, kind: Deployment }
+    - { api_version: v1, kind: Service }
+    - { api_version: v1, kind: ServiceAccount }
+    - { api_version: build.openshift.io/v1, kind: BuildConfig }
+    - { api_version: image.openshift.io/v1, kind: ImageStream }
+  loop_control:
+    label: "{{ item.kind }}/{{ custom_console_dns_prober_name }}"
+  when: not (custom_console_remove_namespace | bool)
+
 - name: Remove the custom console namespace (Deployment + Service)
   kubernetes.core.k8s:
     api_version: v1
