@@ -1,0 +1,117 @@
+# MCP broker TLS front — the Service the console plugin's `mcp-broker` proxy
+# alias points at. The MCP gateway serves plain HTTP, but the OpenShift console
+# dynamic-plugin proxy requires the target Service to serve HTTPS. This is a
+# tiny nginx TLS terminator that forwards — WITH the gateway's `mcp` listener
+# Host header — to the Istio MCP gateway (so the MCP Router forwards tools/call),
+# streaming (SSE) unbuffered.
+#
+# It lives in the namespace/name the ConsolePlugin expects
+# ({{ mcp_gateway_broker_tls_namespace }}/{{ mcp_gateway_broker_tls_service_name }}),
+# while the upstream and Host header are DERIVED from this MCP gateway install
+# ({{ _mcp_broker_tls_upstream }} , Host {{ _mcp_broker_tls_host }}) rather than
+# hardcoded — so it tracks whatever gateway namespace / listener hostname the
+# role resolved.
+{% set _mcp_broker_tls_upstream = mcp_gateway_broker_tls_upstream if (mcp_gateway_broker_tls_upstream | default('') | length > 0) else ('http://' ~ mcp_gateway_private_host) %}
+{% set _mcp_broker_tls_host = mcp_gateway_broker_tls_upstream_host if (mcp_gateway_broker_tls_upstream_host | default('') | length > 0) else (mcp_gateway_listener_hostname_resolved | default('', true)) %}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ mcp_gateway_broker_tls_service_name }}-nginx
+  namespace: {{ mcp_gateway_broker_tls_namespace }}
+  labels:
+    app: {{ mcp_gateway_broker_tls_service_name }}
+    rhcl-lab/managed-by: mcp-gateway-role
+data:
+  nginx.conf: |
+    worker_processes 1;
+    error_log /dev/stderr warn;
+    pid /tmp/nginx.pid;
+    events { worker_connections 1024; }
+    http {
+      client_body_temp_path /tmp/cb; proxy_temp_path /tmp/px;
+      fastcgi_temp_path /tmp/fc; uwsgi_temp_path /tmp/uw; scgi_temp_path /tmp/sc;
+      server {
+        listen {{ mcp_gateway_broker_tls_port }} ssl;
+        ssl_certificate     /etc/tls/tls.crt;
+        ssl_certificate_key /etc/tls/tls.key;
+        location / {
+          # Route through the MCP GATEWAY (Istio gateway + MCP Router ext_proc),
+          # NOT the broker Service directly: the router forwards tools/call to the
+          # backend server; the broker alone only aggregates tools/list.
+          proxy_pass {{ _mcp_broker_tls_upstream }};
+          # Must match the gateway's `mcp` listener hostname.
+          proxy_set_header Host {{ _mcp_broker_tls_host }};
+          proxy_http_version 1.1;
+          proxy_set_header Connection "";
+          proxy_buffering off;
+          proxy_read_timeout 3600s;
+          chunked_transfer_encoding on;
+        }
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ mcp_gateway_broker_tls_service_name }}
+  namespace: {{ mcp_gateway_broker_tls_namespace }}
+  labels:
+    app: {{ mcp_gateway_broker_tls_service_name }}
+    rhcl-lab/managed-by: mcp-gateway-role
+  annotations:
+    # Platform mints the TLS serving cert into this secret (mounted by the pod).
+    service.beta.openshift.io/serving-cert-secret-name: {{ mcp_gateway_broker_tls_cert_secret_name }}
+spec:
+  selector:
+    app: {{ mcp_gateway_broker_tls_service_name }}
+  ports:
+    - name: https
+      port: {{ mcp_gateway_broker_tls_port }}
+      targetPort: {{ mcp_gateway_broker_tls_port }}
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ mcp_gateway_broker_tls_service_name }}
+  namespace: {{ mcp_gateway_broker_tls_namespace }}
+  labels:
+    app: {{ mcp_gateway_broker_tls_service_name }}
+    rhcl-lab/managed-by: mcp-gateway-role
+spec:
+  replicas: {{ mcp_gateway_broker_tls_replicas }}
+  selector:
+    matchLabels:
+      app: {{ mcp_gateway_broker_tls_service_name }}
+  template:
+    metadata:
+      labels:
+        app: {{ mcp_gateway_broker_tls_service_name }}
+    spec:
+      containers:
+        - name: nginx
+          image: {{ mcp_gateway_broker_tls_image }}
+          imagePullPolicy: {{ mcp_gateway_broker_tls_image_pull_policy }}
+          ports:
+            - containerPort: {{ mcp_gateway_broker_tls_port }}
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+            - name: tls
+              mountPath: /etc/tls
+              readOnly: true
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { cpu: 100m, memory: 128Mi }
+{% if mcp_gateway_broker_tls_image_pull_secret | length > 0 %}
+      imagePullSecrets:
+        - name: {{ mcp_gateway_broker_tls_image_pull_secret }}
+{% endif %}
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: {{ mcp_gateway_broker_tls_service_name }}-nginx
+        - name: tls
+          secret:
+            secretName: {{ mcp_gateway_broker_tls_cert_secret_name }}

@@ -6,17 +6,23 @@
 # certificate, and forwards — WITH the mcp listener Host header — to the Istio
 # gateway (so the MCP Router forwards tools/call), streaming (SSE) unbuffered.
 #
-# IMPORTANT: set the Host header below to your gateway's mcp listener hostname
-# (mcp.<apps-domain>), e.g. via envsubst before applying.
+# Targets the Ansible-role install (the mcp_gateway role): the gateway compat
+# Service is `rhcl-mcp-gateway-istio` in `mcp-gateway`, and the TLS front lives
+# in `mcp-system` — the namespace/name the ConsolePlugin `mcp-broker` proxy
+# alias points at (custom_console role). The mcp_gateway role now renders and
+# applies this automatically (broker-tls-front.yml.j2); this manifest is the
+# hand-apply equivalent.
 #
-# The ConsolePlugin CR's `mcp-broker` proxy alias points at this Service:8443
-# (custom_console role adds it; or patch it live — see the README).
+# Set the Host header to your gateway's `mcp` listener hostname before applying:
+#   export APPS_DOMAIN="$(oc get ingresses.config cluster -o jsonpath='{.spec.domain}')"
+#   export MCP_PUBLIC_HOST="mcp-gateway.${APPS_DOMAIN}"
+#   envsubst < 50-broker-tls-proxy.yaml | oc apply -f -
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: mcp-broker-tls-nginx
-  namespace: gateway-system
+  namespace: mcp-system
 data:
   nginx.conf: |
     worker_processes 1;
@@ -35,9 +41,9 @@ data:
           # NOT the broker Service directly. The router forwards tools/call to
           # the backend server; the broker alone only aggregates tools/list and
           # answers tools/call with "broker doesn't forward tool calls".
-          proxy_pass http://mcp-gateway-istio.gateway-system.svc.cluster.local:8080;
-          # Must match the gateway's "mcp" listener hostname (== gateway.publicHost).
-          proxy_set_header Host mcp.apps.CHANGE-ME.example.com;
+          proxy_pass http://rhcl-mcp-gateway-istio.mcp-gateway.svc.cluster.local:8080;
+          # Must match the gateway's "mcp" listener hostname.
+          proxy_set_header Host ${MCP_PUBLIC_HOST};
           proxy_http_version 1.1;
           proxy_set_header Connection "";
           proxy_buffering off;
@@ -51,7 +57,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: mcp-broker-tls
-  namespace: gateway-system
+  namespace: mcp-system
   annotations:
     service.beta.openshift.io/serving-cert-secret-name: mcp-broker-tls-cert
   labels:
@@ -68,7 +74,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: mcp-broker-tls
-  namespace: gateway-system
+  namespace: mcp-system
   labels:
     app: mcp-broker-tls
 spec:
