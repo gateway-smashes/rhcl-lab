@@ -130,6 +130,32 @@ mcp_gateway_validate_url: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_VALIDAT
 mcp_gateway_remove_listener: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_REMOVE_LISTENER') | default('false', true) | bool }}"
 mcp_gateway_listener_update_if_exists: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_LISTENER_UPDATE_IF_EXISTS') | default('false', true) | bool }}"
 
+# MCP broker TLS front — the HTTPS Service the console plugin's `mcp-broker`
+# proxy alias points at. The console dynamic-plugin proxy requires HTTPS, but
+# the MCP gateway serves plain HTTP, so the role fronts it with a tiny nginx
+# TLS terminator. Lives in the namespace/name the ConsolePlugin expects
+# (mcp-system/mcp-broker-tls by default — the console contract), while the
+# upstream and Host header are DERIVED from this install (see below), not
+# hardcoded. Without it the in-console "try it" playground is dead.
+# Toggle with MCP_GATEWAY_BROKER_TLS_FRONT_ENABLED=false.
+mcp_gateway_broker_tls_front_enabled: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_BROKER_TLS_FRONT_ENABLED') | default('true', true) | bool }}"
+mcp_gateway_broker_tls_namespace: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_BROKER_TLS_NAMESPACE') | default('mcp-system', true) }}"
+mcp_gateway_broker_tls_service_name: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_BROKER_TLS_SERVICE_NAME') | default('mcp-broker-tls', true) }}"
+mcp_gateway_broker_tls_cert_secret_name: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_BROKER_TLS_CERT_SECRET_NAME') | default('mcp-broker-tls-cert', true) }}"
+mcp_gateway_broker_tls_port: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_BROKER_TLS_PORT') | default('8443', true) | int }}"
+mcp_gateway_broker_tls_replicas: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_BROKER_TLS_REPLICAS') | default('1', true) | int }}"
+# nginx-unprivileged binds the TLS port as non-root. Override for a mirrored
+# registry on disconnected clusters.
+mcp_gateway_broker_tls_image: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_BROKER_TLS_IMAGE') | default('nginxinc/nginx-unprivileged:stable-alpine', true) }}"
+mcp_gateway_broker_tls_image_pull_policy: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_BROKER_TLS_IMAGE_PULL_POLICY') | default('IfNotPresent', true) }}"
+mcp_gateway_broker_tls_image_pull_secret: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_BROKER_TLS_IMAGE_PULL_SECRET') | default('', true) }}"
+# Upstream + Host header. Empty ⇒ derived from this install: the proxy target
+# defaults to http://<mcp_gateway_private_host> (the gateway compat Service) and
+# the Host header to the resolved `mcp` listener hostname. Set these only to
+# front a gateway the role didn't resolve on its own.
+mcp_gateway_broker_tls_upstream: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_BROKER_TLS_UPSTREAM') | default('', true) }}"
+mcp_gateway_broker_tls_upstream_host: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_BROKER_TLS_UPSTREAM_HOST') | default('', true) }}"
+
 # Default flipped to the Sail-managed `istio` class on 2026-07-08. RHCL
 # 1.4.x's wasm-shim config still breaks the ingress-operator-managed
 # `openshift-default` gateway data plane (unknown wasm field + remote

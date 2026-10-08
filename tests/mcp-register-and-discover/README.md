@@ -97,25 +97,33 @@ opens the guided wizard.
 
 The playground must reach the **MCP gateway** (Istio + MCP Router), not the
 broker directly — the broker only *lists* tools; the router *forwards*
-`tools/call`. The console proxy needs HTTPS, so add a serving-cert TLS front
-(routing to the gateway with the `mcp` Host header) + the `mcp-broker` proxy
-alias. **Set the Host header first** to your `mcp` listener hostname:
+`tools/call`. The console proxy needs HTTPS, so a serving-cert TLS front
+("mcp-broker-tls" in **`mcp-system`**) routes to the gateway with the `mcp`
+Host header, and the ConsolePlugin gets an `mcp-broker` proxy alias.
+
+With the Ansible automation this is applied for you: the `mcp_gateway` role
+renders the TLS front (`broker-tls-front.yml.j2`, deriving the upstream and
+Host from the install) and the `custom_console` role adds the `mcp-broker`
+alias. The manifest below is the hand-apply equivalent for that role install
+(gateway compat Service `rhcl-mcp-gateway-istio` in `mcp-gateway`). **Set the
+Host header first** to your `mcp` listener hostname:
 
 ```bash
-sed "s/mcp.apps.CHANGE-ME.example.com/${MCP_PUBLIC_HOST}/" \
-  tests/req073-mcp-gateway/manifests/50-broker-tls-proxy.yaml | oc apply -f -
+export APPS_DOMAIN="$(oc get ingresses.config cluster -o jsonpath='{.spec.domain}')"
+export MCP_PUBLIC_HOST="mcp-gateway.${APPS_DOMAIN}"
+envsubst < tests/mcp-register-and-discover/manifests/50-broker-tls-proxy.yaml | oc apply -f -
 
 # add the proxy alias to the deployed ConsolePlugin (or re-run the custom_console role)
-oc patch consoleplugin custom-rhcl-console --type=json -p '[{"op":"add","path":"/spec/proxy/-","value":{"alias":"mcp-broker","authorization":"None","endpoint":{"type":"Service","service":{"name":"mcp-broker-tls","namespace":"gateway-system","port":8443}}}}]'
+oc patch consoleplugin kuadrant-console --type=json -p '[{"op":"add","path":"/spec/proxy/-","value":{"alias":"mcp-broker","authorization":"None","endpoint":{"type":"Service","service":{"name":"mcp-broker-tls","namespace":"mcp-system","port":8443}}}}]'
 oc -n openshift-console rollout restart deployment/console
 ```
 
-Then open a server's detail page → **Connect to broker** → the `everything_*`
-tools list; pick one, pass JSON args, **Call**. Verify the path from a pod:
+Then open a server's detail page → **Connect to broker** → the registered
+server's tools list; pick one, pass JSON args, **Call**. Verify the path from a pod:
 
 ```bash
-oc -n gateway-system run mcptest --rm -i --restart=Never --image=curlimages/curl -- sh -c '
-  H=https://mcp-broker-tls.gateway-system.svc:8443/mcp
+oc -n mcp-system run mcptest --rm -i --restart=Never --image=curlimages/curl -- sh -c '
+  H=https://mcp-broker-tls.mcp-system.svc:8443/mcp
   SID=$(curl -sk -D - -o /dev/null -X POST $H -H "accept: application/json, text/event-stream" -H "content-type: application/json" \
     -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"t\",\"version\":\"1\"}}}" | tr -d "\r" | awk "tolower(\$1)==\"mcp-session-id:\"{print \$2}")
   curl -sk -X POST $H -H "mcp-session-id: $SID" -H "accept: application/json, text/event-stream" -H "content-type: application/json" -d "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}" >/dev/null

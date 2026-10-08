@@ -672,3 +672,57 @@
   kubernetes.core.k8s:
     state: present
     definition: "{{ lookup('template', 'podmonitor-mcp-gateway-istio.yml.j2') | from_yaml }}"
+
+# ---------------------------------------------------------------
+# MCP broker TLS front — the Service the console plugin's `mcp-broker` proxy
+# alias points at ({{ mcp_gateway_broker_tls_namespace }}/{{ mcp_gateway_broker_tls_service_name }}).
+# The console proxy requires HTTPS but the MCP gateway serves plain HTTP, so
+# this nginx TLS terminator fronts it. Upstream + Host header are derived from
+# THIS install (mcp_gateway_private_host + the resolved `mcp` listener hostname),
+# not hardcoded, so it tracks whatever gateway namespace / hostname the role
+# resolved. Without it the in-console "try it" playground is dead.
+# ---------------------------------------------------------------
+- name: Ensure the MCP broker TLS front namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ mcp_gateway_broker_tls_namespace }}"
+    state: present
+  when: mcp_gateway_broker_tls_front_enabled | bool
+
+- name: Deploy the MCP broker TLS front (ConfigMap + Service + Deployment)
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'broker-tls-front.yml.j2') | from_yaml_all | list }}"
+  when: mcp_gateway_broker_tls_front_enabled | bool
+
+- name: Wait for the MCP broker TLS front deployment to be available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ mcp_gateway_broker_tls_namespace }}"
+    name: "{{ mcp_gateway_broker_tls_service_name }}"
+  register: mcp_gateway_broker_tls_deploy
+  changed_when: false
+  failed_when: false
+  until:
+    - mcp_gateway_broker_tls_deploy.resources | length == 1
+    - (mcp_gateway_broker_tls_deploy.resources[0].status.availableReplicas | default(0)) >= 1
+  retries: 30
+  delay: 10
+  when: mcp_gateway_broker_tls_front_enabled | bool
+
+- name: Remove the MCP broker TLS front when disabled
+  kubernetes.core.k8s:
+    api_version: "{{ item.api_version }}"
+    kind: "{{ item.kind }}"
+    namespace: "{{ mcp_gateway_broker_tls_namespace }}"
+    name: "{{ item.name }}"
+    state: absent
+  loop:
+    - { api_version: apps/v1, kind: Deployment, name: "{{ mcp_gateway_broker_tls_service_name }}" }
+    - { api_version: v1, kind: Service, name: "{{ mcp_gateway_broker_tls_service_name }}" }
+    - { api_version: v1, kind: ConfigMap, name: "{{ mcp_gateway_broker_tls_service_name }}-nginx" }
+  loop_control:
+    label: "{{ item.kind }}/{{ item.name }}"
+  when: not (mcp_gateway_broker_tls_front_enabled | bool)

@@ -201,6 +201,23 @@
     state: absent
   when: mcp_gateway_namespace != mcp_gateway_server_backend_service_namespace
 
+# The TLS front lives in a namespace the console contract owns (default
+# mcp-system), which may be shared, so remove its objects rather than the
+# namespace.
+- name: Remove the MCP broker TLS front objects
+  kubernetes.core.k8s:
+    api_version: "{{ item.api_version }}"
+    kind: "{{ item.kind }}"
+    namespace: "{{ mcp_gateway_broker_tls_namespace }}"
+    name: "{{ item.name }}"
+    state: absent
+  loop:
+    - { api_version: apps/v1, kind: Deployment, name: "{{ mcp_gateway_broker_tls_service_name }}" }
+    - { api_version: v1, kind: Service, name: "{{ mcp_gateway_broker_tls_service_name }}" }
+    - { api_version: v1, kind: ConfigMap, name: "{{ mcp_gateway_broker_tls_service_name }}-nginx" }
+  loop_control:
+    label: "{{ item.kind }}/{{ item.name }}"
+
 - name: Remove the MCP gateway namespace and all operator resources inside it
   kubernetes.core.k8s:
     api_version: v1
