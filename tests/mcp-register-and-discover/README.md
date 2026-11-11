@@ -61,7 +61,7 @@ The chart creates the Gateway but **not** the extension — apply it, then the
 controller provisions the broker + `/mcp` route + EnvoyFilter:
 
 ```bash
-oc apply -f tests/req073-mcp-gateway/manifests/05-mcpgatewayextension.yaml
+oc apply -f tests/mcp-register-and-discover/manifests/05-mcpgatewayextension.yaml
 oc -n gateway-system wait mcpgatewayextension/mcp-gateway --for=condition=Ready=True --timeout=3m
 oc -n gateway-system get deploy mcp-gateway            # the broker
 ```
@@ -69,10 +69,10 @@ oc -n gateway-system get deploy mcp-gateway            # the broker
 ### 3. Deploy the sample server and register it
 
 ```bash
-oc apply -f tests/req073-mcp-gateway/manifests/10-everything-server.yaml
-oc apply -f tests/req073-mcp-gateway/manifests/20-everything-server-httproute.yaml
-oc apply -f tests/req073-mcp-gateway/manifests/30-mcpserverregistration.yaml
-oc apply -f tests/req073-mcp-gateway/manifests/40-mcpvirtualserver.yaml   # optional
+oc apply -f tests/mcp-register-and-discover/manifests/10-everything-server.yaml
+oc apply -f tests/mcp-register-and-discover/manifests/20-everything-server-httproute.yaml
+oc apply -f tests/mcp-register-and-discover/manifests/30-mcpserverregistration.yaml
+oc apply -f tests/mcp-register-and-discover/manifests/40-mcpvirtualserver.yaml   # optional
 
 oc -n mcp-test rollout status deploy/everything-server --timeout=2m
 oc -n mcp-test wait mcpserverregistration/everything-server --for=condition=Ready=True --timeout=3m
@@ -103,7 +103,7 @@ alias. **Set the Host header first** to your `mcp` listener hostname:
 
 ```bash
 sed "s/mcp.apps.CHANGE-ME.example.com/${MCP_PUBLIC_HOST}/" \
-  tests/req073-mcp-gateway/manifests/50-broker-tls-proxy.yaml | oc apply -f -
+  tests/mcp-register-and-discover/manifests/50-broker-tls-proxy.yaml | oc apply -f -
 
 # add the proxy alias to the deployed ConsolePlugin (or re-run the custom_console role)
 oc patch consoleplugin custom-rhcl-console --type=json -p '[{"op":"add","path":"/spec/proxy/-","value":{"alias":"mcp-broker","authorization":"None","endpoint":{"type":"Service","service":{"name":"mcp-broker-tls","namespace":"gateway-system","port":8443}}}}]'
@@ -136,7 +136,7 @@ oc -n gateway-system run mcptest --rm -i --restart=Never --image=curlimages/curl
 ## Cleanup
 
 ```bash
-oc delete -f tests/req073-mcp-gateway/manifests/ --ignore-not-found
+oc delete -f tests/mcp-register-and-discover/manifests/ --ignore-not-found
 helm uninstall mcp-gateway -n mcp-system
 oc delete ns mcp-test gateway-system mcp-system --ignore-not-found
 ```
