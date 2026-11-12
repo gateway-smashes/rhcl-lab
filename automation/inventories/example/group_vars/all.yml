@@ -52,7 +52,7 @@ rhcl_pin_v13_enabled: "{{ lookup('ansible.builtin.env', 'RHCL_PIN_V13_ENABLED') 
 rhcl_pin_catalog_name: "{{ lookup('ansible.builtin.env', 'RHCL_PIN_CATALOG_NAME') | default('redhat-operators-v418', true) }}"
 rhcl_pin_catalog_namespace: "{{ lookup('ansible.builtin.env', 'RHCL_PIN_CATALOG_NAMESPACE') | default('openshift-marketplace', true) }}"
 rhcl_pin_catalog_image: "{{ lookup('ansible.builtin.env', 'RHCL_PIN_CATALOG_IMAGE') | default('registry.redhat.io/redhat/redhat-operator-index:v4.18', true) }}"
-rhcl_operator_channel: "{{ lookup('ansible.builtin.env', 'RHCL_OPERATOR_CHANNEL') | default('stable', true) }}"
+rhcl_operator_channel: "{{ lookup('ansible.builtin.env', 'RHCL_OPERATOR_CHANNEL') | default('stable-1.5', true) }}"
 # When pinning, default the source to the v4.18 catalog above so OLM picks
 # 1.3.x and resolves authorino/limitador/dns deps from the same index.
 rhcl_operator_source: "{{ lookup('ansible.builtin.env', 'RHCL_OPERATOR_SOURCE') | default(rhcl_pin_catalog_name if (rhcl_pin_v13_enabled | bool) else 'redhat-operators', true) }}"
@@ -131,16 +131,18 @@ mcp_gateway_remove_listener: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_REMO
 mcp_gateway_listener_update_if_exists: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_LISTENER_UPDATE_IF_EXISTS') | default('false', true) | bool }}"
 
 # Default flipped to the Sail-managed `istio` class on 2026-07-08. RHCL
-# 1.4.x's wasm-shim config still breaks the ingress-operator-managed
-# `openshift-default` gateway data plane (unknown wasm field + remote
-# fetch loop → gateway pod OOMKilled) — the exact known-issue that got
-# 1.4.0 deprecated. On the Sail data plane (OSSM 3.3.5 / Istio 1.26.4+)
-# RHCL 1.4.1 enforces correctly end-to-end (validated on cluster-mck9f).
-# Set GATEWAY_API_GATEWAYCLASS_NAME=openshift-default only for 1.3.x
-# parity clusters (pair with RHCL_PIN_V13_ENABLED=true).
-# See docs/known-issues/rhcl-14-gateway-wasm-incompat.md.
-gateway_api_gatewayclass_name: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_GATEWAYCLASS_NAME') | default('istio', true) }}"
-gateway_api_controller_name: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_CONTROLLER_NAME') | default('istio.io/gateway-controller', true) }}"
+# Gateway API provider: the OpenShift Ingress Operator (the supported
+# default on OCP 4.20+ with RHCL 1.5). It provisions a Red Hat-managed
+# istiod (`istiod-openshift-gateway`, Sail-based Istio) in openshift-ingress
+# and serves the `openshift-default` GatewayClass — no OSSM via OLM needed.
+# The 1.4.x wasm-shim bug that used to OOM this data plane is fixed in 1.5;
+# validated end-to-end on the 1.5 single-node cluster for this release.
+# For an east-west service mesh (sidecar/ambient mTLS, mesh Telemetry),
+# install OSSM 3 additionally and override to put the gateways on the Sail
+# data plane instead: GATEWAY_API_GATEWAYCLASS_NAME=istio and
+# GATEWAY_API_CONTROLLER_NAME=istio.io/gateway-controller.
+gateway_api_gatewayclass_name: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_GATEWAYCLASS_NAME') | default('openshift-default', true) }}"
+gateway_api_controller_name: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_CONTROLLER_NAME') | default('openshift.io/gateway-controller/v1', true) }}"
 gateway_api_controller_namespace: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_CONTROLLER_NAMESPACE') | default('openshift-ingress', true) }}"
 gateway_api_controller_deployment: "{{ lookup('ansible.builtin.env', 'GATEWAY_API_CONTROLLER_DEPLOYMENT') | default('istiod-openshift-gateway', true) }}"
 # Espera pelo controller do gateway. O teto era 300s (30x10s) e, como a task
