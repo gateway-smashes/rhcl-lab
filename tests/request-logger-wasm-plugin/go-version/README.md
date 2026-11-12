@@ -163,7 +163,7 @@ This approach stores the WASM inside an OCI image on Quay.io, then copies it int
 ### Step 1: Build and push the WASM image to Quay.io
 
 ```bash
-IMAGE=quay.io/jsimas/request-logger-wasm:1.2   # increment tag on each rebuild
+IMAGE=quay.io/gateway-smashes/request-logger-wasm:1.2   # increment tag on each rebuild
 
 podman build -t $IMAGE -f Containerfile.wasm .
 podman push $IMAGE
@@ -214,7 +214,7 @@ oc apply -f kubernetes/envoyfilter-request-logger.yaml
 
 ```bash
 ./build.sh
-IMAGE=quay.io/jsimas/request-logger-wasm:1.x   # increment tag
+IMAGE=quay.io/gateway-smashes/request-logger-wasm:1.x   # increment tag
 podman build -t $IMAGE -f Containerfile.wasm .
 podman push $IMAGE
 oc set image deployment/$GATEWAY_DEPLOYMENT -n $GATEWAY_NAMESPACE copy-wasm-plugin=$IMAGE

@@ -1026,7 +1026,7 @@ rhbk_remove_namespace: "{{ lookup('ansible.builtin.env', 'RHBK_REMOVE_NAMESPACE'
 # The `banking-*` roles drive the gateway's JWT AuthPolicy (see
 # `apps_connectivity_jwt_required_role` below) — they protect the API.
 # The `api-*` roles drive the **Developer Portal** (its own repo,
-# hodrigohamalho/rhcl-developer-portal — security/Roles.java) —
+# gateway-smashes/rhcl-developer-portal — security/Roles.java) —
 # they gate the Settings → Administration screens (manage APIs, plans,
 # subscriptions). The portal frontend reads `realm_access.roles` from
 # the token and hides admin menus when missing.

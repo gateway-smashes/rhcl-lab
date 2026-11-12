@@ -69,7 +69,7 @@ catalog, golden-path templates and TechDocs.
 ## Why RHDH (and not only the standalone Developer Portal from req0XX)
 
 The PoC provides a purpose-built **Developer Portal** (its own repo,
-`hodrigohamalho/rhcl-developer-portal`, Quarkus + React) that covers the same consumer flow. RHDH is the answer to a
+`gateway-smashes/rhcl-developer-portal`, Quarkus + React) that covers the same consumer flow. RHDH is the answer to a
 **different** customer question: banks that have *already standardised on an
 Internal Developer Platform* want API self-service to live **inside that
 platform**, next to their services, CI, docs and scorecards — not in a separate
@@ -335,7 +335,7 @@ Manual smoke (the actual self-service story):
 
 - **req018 (Cost Monitoring)** and the API Products / Plans / Keys the Kuadrant
   plugin surfaces are the same CRs the RHCL console renders.
-- Complements the **standalone Developer Portal** (`hodrigohamalho/rhcl-developer-portal`) — same
+- Complements the **standalone Developer Portal** (`gateway-smashes/rhcl-developer-portal`) — same
   Keycloak realm, different portal surface; a customer picks one.
 - Auth realm comes from **`rhbk-install`** (Keycloak) — the `developer_hub` role
   depends on it for the OIDC issuer + client.

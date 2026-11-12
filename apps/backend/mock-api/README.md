@@ -135,8 +135,8 @@ podman login quay.io
 ```
 
 ```bash
-podman build -t quay.io/jsimas/mock-api:latest .
-podman push quay.io/jsimas/mock-api:latest
+podman build -t quay.io/gateway-smashes/mock-api:latest .
+podman push quay.io/gateway-smashes/mock-api:latest
 ```
 
 The image runs as a non-root user and listens on port **8080** by default.

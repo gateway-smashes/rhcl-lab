@@ -370,8 +370,8 @@ Todas as vars têm formato `lookup('ansible.builtin.env', 'VAR_NAME') | default(
 | `APPS_BACKEND_IMAGE_NAME` | `banking-api` | Tag base da imagem backend |
 | `APPS_FRONTEND_IMAGE_NAME` | `mobile-bank` | Tag base da imagem frontend |
 | `APPS_IMAGE_SOURCE` | `build` | `build` (BuildConfig + start-build) ou `quay` (pull do Quay) |
-| `APPS_BACKEND_IMAGE_QUAY` | `quay.io/hodrigohamalho/red-bank-backend:backend` | Imagem backend (se source=quay) |
-| `APPS_FRONTEND_IMAGE_QUAY` | `quay.io/hodrigohamalho/red-bank-backend:frontend` | Imagem frontend |
+| `APPS_BACKEND_IMAGE_QUAY` | `quay.io/gateway-smashes/red-bank-backend:backend` | Imagem backend (se source=quay) |
+| `APPS_FRONTEND_IMAGE_QUAY` | `quay.io/gateway-smashes/red-bank-backend:frontend` | Imagem frontend |
 | `APPS_BACKEND_SOURCE_DIR` | `apps/backend/banking-api` | Path do source (se source=build) |
 | `APPS_FRONTEND_SOURCE_DIR` | `apps/frontend/mobile-bank` | Path do source |
 | `APPS_SKIP_BUILD` | `false` | Pula start-build mesmo com source=build |

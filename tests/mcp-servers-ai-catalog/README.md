@@ -80,7 +80,7 @@ Register catalog only: `bash tests/mcp-servers-ai-catalog/scripts/patch-catalog.
 
 ## Apply on the cluster (production — Quay images)
 
-Pre-built images (default repository `quay.io/rh_ee_tavelino/mcp`):
+Pre-built images (default repository `quay.io/gateway-smashes/mcp`):
 
 | Server | Image tag |
 | --- | --- |
@@ -101,7 +101,7 @@ Apply manifests under [`manifests/prod/`](manifests/prod/) — no `ImageStream` 
 export KUBECONFIG=/path/to/active/kubeconfig
 export RHCL_ZONE_ROOT_DOMAIN="$(oc get ingresses.config.openshift.io cluster \
   -o jsonpath='{.spec.domain}')"
-export MCP_QUAY_REPO=quay.io/rh_ee_tavelino/mcp
+export MCP_QUAY_REPO=quay.io/gateway-smashes/mcp
 export MCP_IMAGE_TAG=latest
 
 bash tests/mcp-servers-ai-catalog/scripts/apply-prod.sh

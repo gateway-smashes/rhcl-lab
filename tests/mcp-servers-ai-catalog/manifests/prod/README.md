@@ -21,9 +21,9 @@ Build and push images first: [`../../scripts/build-push-quay.sh`](../../scripts/
 Default image repository:
 
 ```text
-quay.io/rh_ee_tavelino/mcp:rhcl-lab-info-mcp-latest
-quay.io/rh_ee_tavelino/mcp:rhcl-text-tools-mcp-latest
-quay.io/rh_ee_tavelino/mcp:rhcl-time-tools-mcp-latest
+quay.io/gateway-smashes/mcp:rhcl-lab-info-mcp-latest
+quay.io/gateway-smashes/mcp:rhcl-text-tools-mcp-latest
+quay.io/gateway-smashes/mcp:rhcl-time-tools-mcp-latest
 ```
 
 Override with `MCP_QUAY_REPO` and `MCP_IMAGE_TAG` (for example `0.1.0`).
