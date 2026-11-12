@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REPO="${MCP_QUAY_REPO:-quay.io/rh_ee_tavelino/mcp}"
+REPO="${MCP_QUAY_REPO:-quay.io/gateway-smashes/mcp}"
 TAG="${MCP_IMAGE_TAG:-latest}"
 
 usage() {
@@ -13,7 +13,7 @@ Usage: $(basename "$0")
 Builds the three MCP server Containerfiles and pushes to Quay.
 
 Environment:
-  MCP_QUAY_REPO   Target repository (default: quay.io/rh_ee_tavelino/mcp)
+  MCP_QUAY_REPO   Target repository (default: quay.io/gateway-smashes/mcp)
   MCP_IMAGE_TAG   Tag suffix (default: latest)
 
 Images produced:

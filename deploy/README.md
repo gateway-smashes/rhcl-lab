@@ -24,8 +24,8 @@ If the automatic build does not start, follow the manual build/push procedure be
 Use `podman` to build and push images to Quay (fallback/manual flow).
 
 Suggested image names:
-- `quay.io/hodrigohamalho/red-bank-backend:latest`
-- `quay.io/hodrigohamalho/red-bank-frontend:latest`
+- `quay.io/gateway-smashes/red-bank-backend:latest`
+- `quay.io/gateway-smashes/red-bank-frontend:latest`
 
 Login:
 
@@ -37,10 +37,10 @@ Build `dev` images:
 
 ```bash
 # Backend
-podman build -t quay.io/hodrigohamalho/red-bank-backend:dev apps/backend/banking-api
+podman build -t quay.io/gateway-smashes/red-bank-backend:dev apps/backend/banking-api
 
 # Frontend
-podman build -t quay.io/hodrigohamalho/red-bank-frontend:dev \
+podman build -t quay.io/gateway-smashes/red-bank-frontend:dev \
   --build-arg PRIMARY_BACKEND_URL="https://<backend-route>/api/v1/accounts/summary" \
   --build-arg SECONDARY_BACKEND_URL="https://<backend-route>/api/v2/accounts/summary" \
   --build-arg DEFAULT_FLOW_MODE="round_robin" \
@@ -50,8 +50,8 @@ podman build -t quay.io/hodrigohamalho/red-bank-frontend:dev \
 Push `dev` images:
 
 ```bash
-podman push quay.io/hodrigohamalho/red-bank-backend:dev
-podman push quay.io/hodrigohamalho/red-bank-frontend:dev
+podman push quay.io/gateway-smashes/red-bank-backend:dev
+podman push quay.io/gateway-smashes/red-bank-frontend:dev
 ```
 
 For `prod`, build/push the same images with `:prod` tag.
@@ -61,16 +61,16 @@ For `prod`, build/push the same images with `:prod` tag.
 Dev (local backends):
 
 ```bash
-podman build -t quay.io/hodrigohamalho/red-bank-backend:dev apps/backend/banking-api
+podman build -t quay.io/gateway-smashes/red-bank-backend:dev apps/backend/banking-api
 
-podman build -t quay.io/hodrigohamalho/red-bank-frontend:dev \
+podman build -t quay.io/gateway-smashes/red-bank-frontend:dev \
   --build-arg PRIMARY_BACKEND_URL="http://localhost:8080/api/v1/accounts/summary" \
   --build-arg SECONDARY_BACKEND_URL="http://localhost:8081/api/v2/accounts/summary" \
   --build-arg DEFAULT_FLOW_MODE="round_robin" \
   apps/frontend/mobile-bank
 
-podman push quay.io/hodrigohamalho/red-bank-backend:dev
-podman push quay.io/hodrigohamalho/red-bank-frontend:dev
+podman push quay.io/gateway-smashes/red-bank-backend:dev
+podman push quay.io/gateway-smashes/red-bank-frontend:dev
 ```
 
 Dev (OpenShift route already available):
@@ -78,13 +78,13 @@ Dev (OpenShift route already available):
 ```bash
 BACKEND_HOST=$(oc get route red-bank-backend -n red-bank-dev -o jsonpath='{.spec.host}')
 
-podman build -t quay.io/hodrigohamalho/red-bank-frontend:dev \
+podman build -t quay.io/gateway-smashes/red-bank-frontend:dev \
   --build-arg PRIMARY_BACKEND_URL="https://${BACKEND_HOST}/api/v1/accounts/summary" \
   --build-arg SECONDARY_BACKEND_URL="https://${BACKEND_HOST}/api/v2/accounts/summary" \
   --build-arg DEFAULT_FLOW_MODE="round_robin" \
   apps/frontend/mobile-bank
 
-podman push quay.io/hodrigohamalho/red-bank-frontend:dev
+podman push quay.io/gateway-smashes/red-bank-frontend:dev
 ```
 
 Prod:
@@ -92,16 +92,16 @@ Prod:
 ```bash
 BACKEND_HOST=$(oc get route red-bank-backend -n red-bank-prod -o jsonpath='{.spec.host}')
 
-podman build -t quay.io/hodrigohamalho/red-bank-backend:prod apps/backend/banking-api
+podman build -t quay.io/gateway-smashes/red-bank-backend:prod apps/backend/banking-api
 
-podman build -t quay.io/hodrigohamalho/red-bank-frontend:prod \
+podman build -t quay.io/gateway-smashes/red-bank-frontend:prod \
   --build-arg PRIMARY_BACKEND_URL="https://${BACKEND_HOST}/api/v1/accounts/summary" \
   --build-arg SECONDARY_BACKEND_URL="https://${BACKEND_HOST}/api/v2/accounts/summary" \
   --build-arg DEFAULT_FLOW_MODE="round_robin" \
   apps/frontend/mobile-bank
 
-podman push quay.io/hodrigohamalho/red-bank-backend:prod
-podman push quay.io/hodrigohamalho/red-bank-frontend:prod
+podman push quay.io/gateway-smashes/red-bank-backend:prod
+podman push quay.io/gateway-smashes/red-bank-frontend:prod
 ```
 
 ## 2) Deploy to OpenShift

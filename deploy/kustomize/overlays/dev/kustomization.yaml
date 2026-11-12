@@ -8,9 +8,9 @@ resources:
   - ../../base
 
 images:
-  - name: quay.io/hodrigohamalho/red-bank-backend
-    newName: quay.io/hodrigohamalho/red-bank-backend
+  - name: quay.io/gateway-smashes/red-bank-backend
+    newName: quay.io/gateway-smashes/red-bank-backend
     newTag: dev
-  - name: quay.io/hodrigohamalho/red-bank-frontend
-    newName: quay.io/hodrigohamalho/red-bank-frontend
+  - name: quay.io/gateway-smashes/red-bank-frontend
+    newName: quay.io/gateway-smashes/red-bank-frontend
     newTag: dev

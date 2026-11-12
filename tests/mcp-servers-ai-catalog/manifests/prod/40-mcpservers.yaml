@@ -1,7 +1,7 @@
 # MCPServer CRs for the MCP Lifecycle Operator (OpenShift AI catalog deploy flow).
 # Requires CRD mcp.x-k8s.io/v1alpha1 MCPServer on the cluster.
 #
-#   export MCP_QUAY_REPO=quay.io/rh_ee_tavelino/mcp
+#   export MCP_QUAY_REPO=quay.io/gateway-smashes/mcp
 #   export MCP_IMAGE_TAG=latest
 #   envsubst < 40-mcpservers.yaml | oc apply -f -
 apiVersion: mcp.x-k8s.io/v1alpha1

@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: quay.io/hodrigohamalho/red-bank-frontend:latest
+          image: quay.io/gateway-smashes/red-bank-frontend:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080

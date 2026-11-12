@@ -1,6 +1,6 @@
 # Deployments for RHCL lab MCP servers — Quay images (no in-cluster build).
 #
-#   export MCP_QUAY_REPO=quay.io/rh_ee_tavelino/mcp
+#   export MCP_QUAY_REPO=quay.io/gateway-smashes/mcp
 #   export MCP_IMAGE_TAG=latest
 #   envsubst < 20-deployments.yaml | oc apply -f -
 apiVersion: apps/v1

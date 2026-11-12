@@ -572,8 +572,8 @@ apps_wait_retries: "{{ lookup('ansible.builtin.env', 'APPS_WAIT_RETRIES') | defa
 apps_wait_delay: "{{ lookup('ansible.builtin.env', 'APPS_WAIT_DELAY') | default('5', true) | int }}"
 # Emissão de certificado (cert-manager/ACME) leva legitimamente mais tempo.
 apps_wait_retries_long: "{{ lookup('ansible.builtin.env', 'APPS_WAIT_RETRIES_LONG') | default('60', true) | int }}"
-apps_backend_image_quay: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_IMAGE_QUAY') | default('quay.io/hodrigohamalho/red-bank-backend:backend-1.0', true) }}"
-apps_frontend_image_quay: "{{ lookup('ansible.builtin.env', 'APPS_FRONTEND_IMAGE_QUAY') | default('quay.io/hodrigohamalho/red-bank-backend:frontend-1.0', true) }}"
+apps_backend_image_quay: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_IMAGE_QUAY') | default('quay.io/gateway-smashes/red-bank-backend:backend-1.0', true) }}"
+apps_frontend_image_quay: "{{ lookup('ansible.builtin.env', 'APPS_FRONTEND_IMAGE_QUAY') | default('quay.io/gateway-smashes/red-bank-backend:frontend-1.0', true) }}"
 apps_ipfilter_image_quay: "{{ lookup('ansible.builtin.env', 'APPS_IPFILTER_IMAGE_QUAY') | default('', true) }}"
 
 # Req 47 — dedicated HTTPRoute that targets banking-api HTTPS (:8443) with BackendTLSPolicy.
@@ -695,7 +695,7 @@ apps_ledger_enabled: "{{ lookup('ansible.builtin.env', 'APPS_LEDGER_ENABLED') | 
 apps_ledger_name: "{{ lookup('ansible.builtin.env', 'APPS_LEDGER_NAME') | default('ledger-api', true) }}"
 apps_ledger_image_name: "{{ lookup('ansible.builtin.env', 'APPS_LEDGER_IMAGE_NAME') | default('ledger-api', true) }}"
 apps_ledger_source_dir: "{{ lookup('ansible.builtin.env', 'APPS_LEDGER_SOURCE_DIR') | default('', true) }}"
-apps_ledger_image_quay: "{{ lookup('ansible.builtin.env', 'APPS_LEDGER_IMAGE_QUAY') | default('quay.io/hodrigohamalho/ledger-api:1.0', true) }}"
+apps_ledger_image_quay: "{{ lookup('ansible.builtin.env', 'APPS_LEDGER_IMAGE_QUAY') | default('quay.io/gateway-smashes/ledger-api:1.0', true) }}"
 apps_ledger_route_name: "{{ lookup('ansible.builtin.env', 'APPS_LEDGER_ROUTE_NAME') | default('ledger-api', true) }}"
 apps_ledger_route_hostname: "{{ lookup('ansible.builtin.env', 'APPS_LEDGER_ROUTE_HOSTNAME') | default('', true) }}"
 apps_ledger_http_listener_name: "{{ lookup('ansible.builtin.env', 'APPS_LEDGER_HTTP_LISTENER_NAME') | default('ledger-http', true) }}"
@@ -717,7 +717,7 @@ apps_load_generator_api_key_secret: "{{ lookup('ansible.builtin.env', 'APPS_LOAD
 apps_load_generator_api_key_secret_key: "{{ lookup('ansible.builtin.env', 'APPS_LOAD_GENERATOR_API_KEY_SECRET_KEY') | default('api_key', true) }}"
 
 # PIX API — second demo product on top of the same gateway. Mock backend
-# (quay.io/jsimas/mock-api) so the deploy is cheap; the value of having
+# (quay.io/gateway-smashes/mock-api) so the deploy is cheap; the value of having
 # it is making the dashboards show *two* products with separate traffic,
 # routes and consumers — that's what tells the "API platform" story to
 # the BU. tests/simulate-api-traffic.sh --target=pix targets this stack.
@@ -732,7 +732,7 @@ apps_pix_auth_policy_name: "{{ lookup('ansible.builtin.env', 'APPS_PIX_AUTH_POLI
 apps_pix_apikey_secret_name: "{{ lookup('ansible.builtin.env', 'APPS_PIX_APIKEY_SECRET_NAME') | default('pix-api-keys', true) }}"
 apps_pix_apikey_secret_value: "{{ lookup('ansible.builtin.env', 'APPS_PIX_APIKEY_SECRET_VALUE') | default('pix-tester-secret', true) }}"
 apps_pix_apikey_tester_name: "{{ lookup('ansible.builtin.env', 'APPS_PIX_APIKEY_TESTER_NAME') | default('pix-api-key-tester', true) }}"
-apps_pix_image: "{{ lookup('ansible.builtin.env', 'APPS_PIX_IMAGE') | default('quay.io/jsimas/mock-api:latest', true) }}"
+apps_pix_image: "{{ lookup('ansible.builtin.env', 'APPS_PIX_IMAGE') | default('quay.io/gateway-smashes/mock-api:latest', true) }}"
 # The mock-api can be tuned via env. These four are the ones the demo
 # benefits from — anything more would be over-engineering for "GET 200".
 apps_pix_response_body: "{{ lookup('ansible.builtin.env', 'APPS_PIX_RESPONSE_BODY') | default('{\"status\":\"ok\",\"service\":\"pix\"}', true) }}"

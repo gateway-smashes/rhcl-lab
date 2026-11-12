@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: quay.io/hodrigohamalho/red-bank-backend:latest
+          image: quay.io/gateway-smashes/red-bank-backend:latest
           imagePullPolicy: IfNotPresent
           env:
             - name: APP_INSTANCE_NAME

@@ -10,7 +10,7 @@ SKIP_MCPSERVER=false
 SKIP_PLAYGROUND=false
 SKIP_LIFECYCLE=false
 
-export MCP_QUAY_REPO="${MCP_QUAY_REPO:-quay.io/rh_ee_tavelino/mcp}"
+export MCP_QUAY_REPO="${MCP_QUAY_REPO:-quay.io/gateway-smashes/mcp}"
 export MCP_IMAGE_TAG="${MCP_IMAGE_TAG:-latest}"
 
 usage() {
@@ -20,7 +20,7 @@ Usage: $(basename "$0") [options]
 Applies manifests from ${MF}/ using pre-built Quay images (no in-cluster build).
 
 Environment:
-  MCP_QUAY_REPO   Image repository (default: quay.io/rh_ee_tavelino/mcp)
+  MCP_QUAY_REPO   Image repository (default: quay.io/gateway-smashes/mcp)
   MCP_IMAGE_TAG   Tag suffix (default: latest → rhcl-*-mcp-latest)
 
 Options:

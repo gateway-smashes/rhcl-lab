@@ -47,7 +47,7 @@ spec:
     spec:
       containers:
         - name: mock-api
-          image: quay.io/jsimas/mock-api:latest
+          image: quay.io/gateway-smashes/mock-api:latest
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -129,7 +129,7 @@ spec:
     spec:
       containers:
         - name: mock-api
-          image: quay.io/jsimas/mock-api:latest
+          image: quay.io/gateway-smashes/mock-api:latest
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
