@@ -38,7 +38,7 @@ export AUDIT_HOST="banking-api.apps.<your-cluster-domain>"   # REQUIRED
 export AUDIT_API_KEY="alice-gold-secret"                     # a valid consumer key
 # defaults (override if the customer differs):
 # AUDIT_GATEWAY_NS=openshift-ingress
-# AUDIT_GATEWAY_DEPLOY=rhcl-apps-gateway-openshift-default
+# AUDIT_GATEWAY_DEPLOY=rhcl-apps-gateway-istio
 # AUDIT_ISTIO_CONTAINER=istio-proxy
 # AUDIT_TEMPO_TENANT=dev
 # AUDIT_PATH=/api/test/propagate?target=gateway&calls=2
@@ -47,7 +47,7 @@ export AUDIT_API_KEY="alice-gold-secret"                     # a valid consumer 
 > These map to the observability role vars (`OBSERVABILITY_*`) in
 > `automation/inventories/example/group_vars/all.yml` — e.g.
 > `APPS_CONNECTIVITY_GATEWAY_NAMESPACE`, and the gateway Deployment
-> `rhcl-apps-gateway-openshift-default`.
+> `rhcl-apps-gateway-istio`.
 
 ## Run it
 
@@ -72,7 +72,7 @@ is the same request you see as spans in Tempo — front to back.
 - **Frontend**: mobile-bank → **PoC Console → Trace Propagation** tab → *Run load*
   → shows the **Trace ID** and an **"Open in trace UI"** button (auto-built Tempo
   link).
-- **Audit log**: `oc -n openshift-ingress logs deploy/rhcl-apps-gateway-openshift-default -c istio-proxy --tail=50 | grep <flow-id>` — the JSON line with `consumer_id`.
+- **Audit log**: `oc -n openshift-ingress logs deploy/rhcl-apps-gateway-istio -c istio-proxy --tail=50 | grep <flow-id>` — the JSON line with `consumer_id`.
 - **Trace**: Console → **Observe → Traces** → instance `tempo-rhcl`, tenant `dev`
   → search the trace id → spans `rhcl-gateway → banking-api → ledger-api`.
 
