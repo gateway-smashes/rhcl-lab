@@ -573,7 +573,7 @@ apps_wait_delay: "{{ lookup('ansible.builtin.env', 'APPS_WAIT_DELAY') | default(
 # Emissão de certificado (cert-manager/ACME) leva legitimamente mais tempo.
 apps_wait_retries_long: "{{ lookup('ansible.builtin.env', 'APPS_WAIT_RETRIES_LONG') | default('60', true) | int }}"
 apps_backend_image_quay: "{{ lookup('ansible.builtin.env', 'APPS_BACKEND_IMAGE_QUAY') | default('quay.io/gateway-smashes/red-bank-backend:backend-1.0', true) }}"
-apps_frontend_image_quay: "{{ lookup('ansible.builtin.env', 'APPS_FRONTEND_IMAGE_QUAY') | default('quay.io/gateway-smashes/red-bank-backend:frontend-1.0', true) }}"
+apps_frontend_image_quay: "{{ lookup('ansible.builtin.env', 'APPS_FRONTEND_IMAGE_QUAY') | default('quay.io/gateway-smashes/red-bank-frontend:frontend-1.0', true) }}"
 apps_ipfilter_image_quay: "{{ lookup('ansible.builtin.env', 'APPS_IPFILTER_IMAGE_QUAY') | default('', true) }}"
 
 # Req 47 — dedicated HTTPRoute that targets banking-api HTTPS (:8443) with BackendTLSPolicy.
