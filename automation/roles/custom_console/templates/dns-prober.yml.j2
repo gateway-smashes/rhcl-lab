@@ -1,0 +1,130 @@
+# DNS Prober — companion service for the RHCL Console plugin. Colocated in the
+# plugin's own namespace ({{ custom_console_namespace }}) so the whole console
+# ecosystem lives together. The plugin reaches it through the ConsolePlugin
+# `dns-prober` proxy alias (same-origin /api/proxy/plugin/...), so it must serve
+# HTTPS: the Service carries the OpenShift serving-cert annotation and Quarkus
+# terminates TLS on 8443 from the minted secret.
+#
+# Source of truth for the image: github.com/gateway-smashes/kuadrant-console
+# (dns-prober/). Image published to quay.io/gateway-smashes; set
+# custom_console_dns_prober_image_source=build to build it in-cluster instead
+# (BuildConfig in dns-prober-build.yml.j2) so a closed external registry never
+# blocks install.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ custom_console_dns_prober_name }}
+  namespace: {{ custom_console_namespace }}
+  labels:
+    app: {{ custom_console_dns_prober_name }}
+    app.kubernetes.io/part-of: rhcl-custom-console
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ custom_console_dns_prober_name }}
+  namespace: {{ custom_console_namespace }}
+  labels:
+    app: {{ custom_console_dns_prober_name }}
+    app.kubernetes.io/part-of: rhcl-custom-console
+{% if custom_console_dns_prober_image_source == 'build' %}
+  annotations:
+    # Patched to the freshly built ImageStream digest by the image trigger.
+    image.openshift.io/triggers: |-
+      [{"from":{"kind":"ImageStreamTag","name":"{{ custom_console_dns_prober_name }}:latest","namespace":"{{ custom_console_namespace }}"},"fieldPath":"spec.template.spec.containers[?(@.name==\"{{ custom_console_dns_prober_name }}\")].image"}]
+{% endif %}
+spec:
+  replicas: {{ custom_console_dns_prober_replicas }}
+  selector:
+    matchLabels:
+      app: {{ custom_console_dns_prober_name }}
+  template:
+    metadata:
+      labels:
+        app: {{ custom_console_dns_prober_name }}
+    spec:
+      serviceAccountName: {{ custom_console_dns_prober_name }}
+      containers:
+        - name: {{ custom_console_dns_prober_name }}
+{% if custom_console_dns_prober_image_source == 'build' %}
+          # Patched by the image trigger above to the ImageStream digest.
+          image: image-registry.openshift-image-registry.svc:5000/{{ custom_console_namespace }}/{{ custom_console_dns_prober_name }}:latest
+{% else %}
+          image: {{ custom_console_dns_prober_image }}
+          imagePullPolicy: {{ custom_console_dns_prober_image_pull_policy }}
+{% endif %}
+          ports:
+            - containerPort: {{ custom_console_dns_prober_http_port }}
+              name: http
+            - containerPort: {{ custom_console_dns_prober_https_port }}
+              name: https
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/dns-prober-tls
+              readOnly: true
+          readinessProbe:
+            httpGet: { path: /q/health/ready, port: {{ custom_console_dns_prober_http_port }} }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /q/health/live, port: {{ custom_console_dns_prober_http_port }} }
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+{% if custom_console_dns_prober_image_source != 'build' and custom_console_dns_prober_image_pull_secret | length > 0 %}
+      imagePullSecrets:
+        - name: {{ custom_console_dns_prober_image_pull_secret }}
+{% endif %}
+      volumes:
+        # Cert Secret minted by OpenShift's service-serving-cert operator,
+        # triggered by the annotation on the Service below. On a fresh install
+        # it takes a few seconds to appear; the pod stays Pending until it lands.
+        - name: tls
+          secret:
+            secretName: {{ custom_console_dns_prober_cert_secret_name }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ custom_console_dns_prober_name }}
+  namespace: {{ custom_console_namespace }}
+  labels:
+    app: {{ custom_console_dns_prober_name }}
+    app.kubernetes.io/part-of: rhcl-custom-console
+  annotations:
+    # The ConsolePlugin proxy requires HTTPS on the target Service — this mints
+    # the cert Quarkus serves on {{ custom_console_dns_prober_https_port }}, and
+    # is what makes the /api/proxy/plugin/... path work.
+    service.beta.openshift.io/serving-cert-secret-name: {{ custom_console_dns_prober_cert_secret_name }}
+spec:
+  selector:
+    app: {{ custom_console_dns_prober_name }}
+  ports:
+    - name: http
+      port: {{ custom_console_dns_prober_http_port }}
+      targetPort: {{ custom_console_dns_prober_http_port }}
+      protocol: TCP
+    - name: https
+      port: {{ custom_console_dns_prober_https_port }}
+      targetPort: {{ custom_console_dns_prober_https_port }}
+      protocol: TCP
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ custom_console_dns_prober_name }}
+  namespace: {{ custom_console_namespace }}
+  labels:
+    app: {{ custom_console_dns_prober_name }}
+    app.kubernetes.io/part-of: rhcl-custom-console
+spec:
+  to:
+    kind: Service
+    name: {{ custom_console_dns_prober_name }}
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

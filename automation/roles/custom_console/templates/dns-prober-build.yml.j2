@@ -1,0 +1,47 @@
+# DNS Prober — build in-cluster from the kuadrant-console repo (dns-prober/
+# Dockerfile, a multi-stage Maven + Quarkus build). Only created when
+# custom_console_dns_prober_image_source=build, the egress-free alternative to
+# pulling the published quay.io/gateway-smashes image — so a closed external
+# registry (the recurring failure mode) never blocks install.
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: {{ custom_console_dns_prober_name }}
+  namespace: {{ custom_console_namespace }}
+  labels:
+    app: {{ custom_console_dns_prober_name }}
+    app.kubernetes.io/part-of: rhcl-custom-console
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: {{ custom_console_dns_prober_name }}
+  namespace: {{ custom_console_namespace }}
+  labels:
+    app: {{ custom_console_dns_prober_name }}
+    app.kubernetes.io/part-of: rhcl-custom-console
+spec:
+  source:
+    type: Git
+    git:
+      uri: {{ custom_console_dns_prober_git_uri }}
+{% if custom_console_dns_prober_git_ref | length > 0 %}
+      ref: {{ custom_console_dns_prober_git_ref }}
+{% endif %}
+{% if custom_console_dns_prober_git_source_secret | length > 0 %}
+    sourceSecret:
+      name: {{ custom_console_dns_prober_git_source_secret }}
+{% endif %}
+    contextDir: {{ custom_console_dns_prober_context_dir }}
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: {{ custom_console_dns_prober_dockerfile_path }}
+  output:
+    to:
+      kind: ImageStreamTag
+      name: {{ custom_console_dns_prober_name }}:latest
+  # ConfigChange triggers a build on create. Re-builds come from `oc start-build`
+  # in install.yml. Webhooks are left out (need an external secret + config).
+  triggers:
+    - type: ConfigChange
