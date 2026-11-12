@@ -130,7 +130,6 @@ mcp_gateway_validate_url: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_VALIDAT
 mcp_gateway_remove_listener: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_REMOVE_LISTENER') | default('false', true) | bool }}"
 mcp_gateway_listener_update_if_exists: "{{ lookup('ansible.builtin.env', 'MCP_GATEWAY_LISTENER_UPDATE_IF_EXISTS') | default('false', true) | bool }}"
 
-# Default flipped to the Sail-managed `istio` class on 2026-07-08. RHCL
 # Gateway API provider: the OpenShift Ingress Operator (the supported
 # default on OCP 4.20+ with RHCL 1.5). It provisions a Red Hat-managed
 # istiod (`istiod-openshift-gateway`, Sail-based Istio) in openshift-ingress
